@@ -52,6 +52,7 @@ Var RetainStorage
 
   IfFileExists "$INSTDIR\resources\scripts\gen-secrets.ps1" 0 missing_scripts
     CopyFiles /SILENT "$INSTDIR\resources\scripts\*.ps1" "$INSTDIR\scripts"
+    CopyFiles /SILENT "$INSTDIR\resources\scripts\*.cmd" "$INSTDIR\scripts"
     Goto after_scripts
   missing_scripts:
     MessageBox MB_ICONSTOP "Installer scripts missing from resources\scripts."
@@ -97,8 +98,8 @@ Var RetainStorage
   CreateDirectory "$SMPROGRAMS\Juman"
   CreateShortCut "$SMPROGRAMS\Juman\Juman.lnk" "$INSTDIR\Juman.exe"
   CreateShortCut "$DESKTOP\Juman.lnk" "$INSTDIR\Juman.exe"
-  CreateShortCut "$SMPROGRAMS\Juman\Repair Juman Services.lnk" "powershell.exe" '-NoProfile -ExecutionPolicy Bypass -Command "Start-Process powershell -Verb RunAs -Wait -ArgumentList ''-NoProfile'',''-ExecutionPolicy'',''Bypass'',''-File'',''$INSTDIR\scripts\repair-install.ps1'',''-InstallDir'',''$INSTDIR''"'
-  CreateShortCut "$SMPROGRAMS\Juman\Start Juman Services.lnk" "powershell.exe" '-NoProfile -ExecutionPolicy Bypass -Command "Start-Process powershell -Verb RunAs -Wait -ArgumentList ''-NoProfile'',''-ExecutionPolicy'',''Bypass'',''-File'',''$INSTDIR\scripts\start-services-elevated.ps1'',''-InstallDir'',''$INSTDIR''"'
+  CreateShortCut "$SMPROGRAMS\Juman\Repair Juman Services.lnk" "$INSTDIR\scripts\elevate-repair.cmd"
+  CreateShortCut "$SMPROGRAMS\Juman\Start Juman Services.lnk" "$INSTDIR\scripts\elevate-start-services.cmd"
 !macroend
 
 !macro customUnInstall
@@ -147,6 +148,8 @@ Var RetainStorage
     CopyFiles /SILENT "$INSTDIR\resources\services\JumanApi.xml" "$INSTDIR\backend\JumanApi.xml"
   IfFileExists "$INSTDIR\resources\scripts\*.ps1" 0 +2
     CopyFiles /SILENT "$INSTDIR\resources\scripts\*.ps1" "$INSTDIR\scripts"
+  IfFileExists "$INSTDIR\resources\scripts\*.cmd" 0 +2
+    CopyFiles /SILENT "$INSTDIR\resources\scripts\*.cmd" "$INSTDIR\scripts"
   nsExec::ExecToLog 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$INSTDIR\scripts\repair-install.ps1" -InstallDir "$INSTDIR"'
   Pop $0
   IntCmp $0 0 +2 +1 +1
