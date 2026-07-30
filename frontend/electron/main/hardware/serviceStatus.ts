@@ -102,15 +102,49 @@ async function winsw(cmd: string): Promise<void> {
   await execFileAsync(exe, [cmd], { windowsHide: true })
 }
 
+/** Launch an elevated PowerShell script (UAC). Returns after process exits. */
+async function runElevatedPowerShell(scriptPath: string, args: string[]): Promise<void> {
+  if (!existsSync(scriptPath)) {
+    throw new Error(`Script missing: ${scriptPath}`)
+  }
+  const argList = [
+    '-NoProfile',
+    '-ExecutionPolicy',
+    'Bypass',
+    '-File',
+    scriptPath,
+    ...args
+  ]
+    .map((a) => `'${a.replace(/'/g, "''")}'`)
+    .join(',')
+  const ps = `Start-Process -FilePath 'powershell.exe' -Verb RunAs -Wait -ArgumentList @(${argList})`
+  await execFileAsync(
+    'powershell.exe',
+    ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', ps],
+    { windowsHide: true }
+  )
+}
+
 export async function startBackendService(): Promise<BackendServiceStatus> {
   if (process.platform !== 'win32') return getBackendServiceStatus()
+  const elevated = join(installRoot(), 'scripts', 'start-services-elevated.ps1')
   try {
-    await execFileAsync('sc.exe', ['start', JUMAN_API_SERVICE_NAME], { windowsHide: true })
+    // Prefer elevated start so non-admin Electron can recover after install.
+    await runElevatedPowerShell(elevated, ['-InstallDir', installRoot()])
   } catch {
     try {
-      await winsw('start')
+      await execFileAsync('sc.exe', ['start', 'postgresql-x64-16'], { windowsHide: true })
     } catch {
       /* ignore */
+    }
+    try {
+      await execFileAsync('sc.exe', ['start', JUMAN_API_SERVICE_NAME], { windowsHide: true })
+    } catch {
+      try {
+        await winsw('start')
+      } catch {
+        /* ignore */
+      }
     }
   }
   return getBackendServiceStatus()
@@ -138,6 +172,13 @@ export async function restartBackendService(): Promise<BackendServiceStatus> {
 
 export async function repairBackendService(): Promise<BackendServiceStatus> {
   if (process.platform !== 'win32') return getBackendServiceStatus()
+  const repair = join(installRoot(), 'scripts', 'repair-install.ps1')
+  try {
+    await runElevatedPowerShell(repair, ['-InstallDir', installRoot()])
+    return getBackendServiceStatus()
+  } catch {
+    /* fall through to in-process repair */
+  }
   try {
     await winsw('stop')
   } catch {

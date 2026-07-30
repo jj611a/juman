@@ -97,7 +97,8 @@ Var RetainStorage
   CreateDirectory "$SMPROGRAMS\Juman"
   CreateShortCut "$SMPROGRAMS\Juman\Juman.lnk" "$INSTDIR\Juman.exe"
   CreateShortCut "$DESKTOP\Juman.lnk" "$INSTDIR\Juman.exe"
-  CreateShortCut "$SMPROGRAMS\Juman\Repair Juman Services.lnk" "powershell.exe" '-NoProfile -ExecutionPolicy Bypass -File "$INSTDIR\scripts\repair-install.ps1" -InstallDir "$INSTDIR"'
+  CreateShortCut "$SMPROGRAMS\Juman\Repair Juman Services.lnk" "powershell.exe" '-NoProfile -ExecutionPolicy Bypass -Command "Start-Process powershell -Verb RunAs -Wait -ArgumentList ''-NoProfile'',''-ExecutionPolicy'',''Bypass'',''-File'',''$INSTDIR\scripts\repair-install.ps1'',''-InstallDir'',''$INSTDIR''"'
+  CreateShortCut "$SMPROGRAMS\Juman\Start Juman Services.lnk" "powershell.exe" '-NoProfile -ExecutionPolicy Bypass -Command "Start-Process powershell -Verb RunAs -Wait -ArgumentList ''-NoProfile'',''-ExecutionPolicy'',''Bypass'',''-File'',''$INSTDIR\scripts\start-services-elevated.ps1'',''-InstallDir'',''$INSTDIR''"'
 !macroend
 
 !macro customUnInstall

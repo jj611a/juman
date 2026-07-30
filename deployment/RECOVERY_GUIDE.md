@@ -3,8 +3,19 @@
 ## Backend service down
 
 1. Confirm PostgreSQL: `sc query postgresql-x64-16`
-2. Start API: `sc start JumanApi` or Start Menu → **Repair Juman Services**
-3. Open logs: `%ProgramFiles%\Juman\logs` (or app “open logs”)
+2. Prefer Start Menu → **Start Juman Services** (requests Administrator / UAC)
+3. Or Repair: Start Menu → **Repair Juman Services**
+4. Open logs: `%ProgramFiles%\Juman\logs`
+
+Starting `JumanApi` / repairing WinSW requires elevation. The desktop app prompts UAC when you use **تشغيل خدمة API** on first-run.
+
+## Permission / ACL repair
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File "%ProgramFiles%\Juman\scripts\set-install-acls.ps1" -InstallDir "%ProgramFiles%\Juman"
+```
+
+Run elevated. Ensures LocalSystem can read `config\juman.env` and write `storage\` / `logs\`.
 
 ## Migrations behind / schema errors
 

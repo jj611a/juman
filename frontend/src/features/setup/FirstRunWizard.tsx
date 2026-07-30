@@ -163,16 +163,36 @@ export function FirstRunWizard({ onCompleted }: FirstRunWizardProps): React.Reac
             <Button type="button" disabled={busy} onClick={() => void verifyDb()}>
               اختبار الاتصال
             </Button>
-            <Button type="button" variant="ghost" onClick={() => setStep('company')}>
-              رجوع
-            </Button>
             <Button
               type="button"
               variant="outline"
               disabled={busy}
-              onClick={() => void apiClient.hardware.startBackend()}
+              onClick={() => {
+                void (async () => {
+                  setBusy(true)
+                  setError(null)
+                  try {
+                    await apiClient.hardware.startBackend()
+                    await apiClient.system.health()
+                    setDbOk(true)
+                    setStep('admin')
+                  } catch (err) {
+                    setDbOk(false)
+                    setError(
+                      err instanceof Error
+                        ? `${err.message} — وافق على صلاحية المسؤول (UAC) أو من قائمة ابدأ: Start Juman Services`
+                        : 'تعذر تشغيل الخدمة — يلزم صلاحية المسؤول'
+                    )
+                  } finally {
+                    setBusy(false)
+                  }
+                })()
+              }}
             >
               تشغيل خدمة API
+            </Button>
+            <Button type="button" variant="ghost" onClick={() => setStep('company')}>
+              رجوع
             </Button>
           </div>
         </section>

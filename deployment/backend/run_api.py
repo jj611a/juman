@@ -10,7 +10,7 @@ from pathlib import Path
 def _load_env_file(path: Path) -> None:
     if not path.is_file():
         return
-    for line in path.read_text(encoding="utf-8").splitlines():
+    for line in path.read_text(encoding="utf-8-sig").splitlines():
         raw = line.strip()
         if not raw or raw.startswith("#") or "=" not in raw:
             continue

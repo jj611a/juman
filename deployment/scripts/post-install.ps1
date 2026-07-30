@@ -57,7 +57,8 @@ $dbUrlUser = [uri]::EscapeDataString("juman")
 $dbUrlPass = [uri]::EscapeDataString($DbPassword)
 $dsn = "postgresql+asyncpg://$($dbUrlUser):$($dbUrlPass)@127.0.0.1:5432/juman"
 $envPath = Join-Path $InstallDir "config\juman.env"
-@(
+$utf8NoBom = New-Object System.Text.UTF8Encoding $false
+$envLines = @(
   "APP_NAME=Juman"
   "APP_ENV=production"
   "APP_DEBUG=false"
@@ -75,17 +76,19 @@ $envPath = Join-Path $InstallDir "config\juman.env"
   "JUMAN_DB_WAIT_TIMEOUT=180"
   "LOG_LEVEL=INFO"
   "LOG_JSON=false"
-) | Set-Content -Path $envPath -Encoding UTF8
+)
+[System.IO.File]::WriteAllLines($envPath, $envLines, $utf8NoBom)
 
-# Persist install secrets for recovery (ACL restricted by installer)
+# Persist install secrets for recovery (ACL restricted below)
 $credPath = Join-Path $InstallDir "config\install-credentials.txt"
-@(
+$credLines = @(
   "Generated at install — change admin password on first run."
   "IDENTITY_BOOTSTRAP_USERNAME=admin"
   "IDENTITY_BOOTSTRAP_PASSWORD=$BootstrapPassword"
   "DB_USER=juman"
   "DB_PASSWORD=$DbPassword"
-) | Set-Content -Path $credPath -Encoding UTF8
+)
+[System.IO.File]::WriteAllLines($credPath, $credLines, $utf8NoBom)
 
 $api = Join-Path $InstallDir "backend\juman-api.exe"
 if (-not (Test-Path $api)) { throw "Missing juman-api.exe" }
@@ -95,6 +98,16 @@ if ($LASTEXITCODE -ne 0) { throw "Migration failed exit=$LASTEXITCODE" }
 $winsw = Join-Path $InstallDir "backend\JumanApi.exe"
 if (-not (Test-Path $winsw)) { throw "Missing WinSW wrapper JumanApi.exe" }
 & $winsw install
+if ($LASTEXITCODE -ne 0) { throw "WinSW install failed exit=$LASTEXITCODE" }
 & $winsw start
+if ($LASTEXITCODE -ne 0) {
+  # Common on first boot if PG still warming — retry once
+  Start-Sleep -Seconds 5
+  & $winsw start
+  if ($LASTEXITCODE -ne 0) { throw "WinSW start failed exit=$LASTEXITCODE" }
+}
+
+& (Join-Path $scripts "set-install-acls.ps1") -InstallDir $InstallDir
+
 Wait-HttpOk -Url "http://127.0.0.1:8000/health"
 Write-Host "Post-install complete"
