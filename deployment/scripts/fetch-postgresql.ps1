@@ -2,7 +2,7 @@
 # Usage: powershell -File deployment/scripts/fetch-postgresql.ps1
 
 param(
-  [string]$Version = "16.6-1",
+  [string]$Version = "16.9-1",
   [string]$OutDir = ""
 )
 

@@ -30,7 +30,7 @@ Packaging **fails** if `juman-api.exe` or `WinSW-x64.exe` is missing.
 ## Clean PC install flow
 
 1. Run Setup as Administrator.
-2. Silent PostgreSQL 16 (when vendor exe bundled) → service `postgresql-x64-16`.
+2. Silent PostgreSQL 16 via `scripts\install-postgresql.ps1` (EDB unattended; data under `%ProgramData%\Juman\PostgreSQL\16\data`; log: `logs\postgresql-install.log`) → service `postgresql-x64-16`.
 3. Generate secrets → `config\.install-secrets.env` + `config\install-credentials.txt`.
 4. Create role/database `juman`, privileges.
 5. Write `config\juman.env` (includes `SECRET_KEY`).

@@ -69,14 +69,14 @@ Var RetainStorage
     Abort
   secrets_ok:
 
-  ; Silent PostgreSQL when vendor exe bundled
+  ; Silent PostgreSQL via dedicated script (logs to $INSTDIR\logs\postgresql-install.log)
   IfFileExists "$INSTDIR\resources\vendor\postgresql\*.exe" 0 skip_pg
-    DetailPrint "Installing PostgreSQL 16 (official silent)..."
-    nsExec::ExecToLog 'powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$$map=@{}; Get-Content ''$INSTDIR\config\.install-secrets.env'' | %%{ if($$_ -match ''^(.*?)=(.*)$$''){ $$map[$$matches[1]]=$$matches[2] } }; $$exe=(Get-ChildItem ''$INSTDIR\resources\vendor\postgresql\*.exe'' | Select-Object -First 1).FullName; $$args=@(''--mode'',''unattended'',''--unattendedmodeui'',''none'',''--superpassword'',$$map[''PG_SUPER_PASSWORD''],''--servicename'',''postgresql-x64-16'',''--serviceaccount'',''NT AUTHORITY\NetworkService'',''--serverport'',''5432'',''--prefix'',(Join-Path $$env:ProgramFiles ''PostgreSQL\16'')); $$p=Start-Process -FilePath $$exe -ArgumentList $$args -Wait -PassThru -NoNewWindow; exit $$p.ExitCode"'
+    DetailPrint "Installing PostgreSQL 16 (silent, logged)..."
+    nsExec::ExecToLog 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$INSTDIR\scripts\install-postgresql.ps1" -InstallDir "$INSTDIR"'
     Pop $0
     IntCmp $0 0 pg_ok pg_warn pg_warn
     pg_warn:
-      MessageBox MB_ICONEXCLAMATION "PostgreSQL silent install returned $0. If PG is already installed, post-install may still succeed."
+      MessageBox MB_ICONEXCLAMATION "PostgreSQL silent install returned $0. See $INSTDIR\logs\postgresql-install.log. If PG is already installed, post-install may still succeed."
     pg_ok:
   skip_pg:
 

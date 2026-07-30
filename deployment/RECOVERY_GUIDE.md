@@ -42,3 +42,20 @@ Or run `scripts\repair-install.ps1 -InstallDir "..."` (never drops DB/storage).
 ## Port 8000 conflict
 
 Stop the conflicting process or change `PORT=` in `config\juman.env`, then restart `JumanApi`.
+
+## PostgreSQL silent install failed
+
+1. Read `%ProgramFiles%\Juman\logs\postgresql-install.log` (written by `scripts\install-postgresql.ps1`).
+2. Also check `%ProgramFiles%\Juman\logs\postgresql-edb-debugtrace.log` and `%TEMP%\installbuilder_installer_*.log` (EDB installer).
+3. Confirm no leftover broken service: `sc query postgresql-x64-16`
+4. Re-run elevated:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File "%ProgramFiles%\Juman\scripts\install-postgresql.ps1" `
+  -InstallDir "%ProgramFiles%\Juman"
+```
+
+Requires `config\.install-secrets.env` with `PG_SUPER_PASSWORD` (created at install). Installer EXE must exist under `resources\vendor\postgresql\` or `vendor\postgresql\`.
+
+5. Data directory is `%ProgramData%\Juman\PostgreSQL\16\data` (not under Program Files) to avoid ACL/initcluster failures.
+6. If init still fails: uninstall broken EDB PostgreSQL from Apps & Features, delete `%ProgramData%\Juman\PostgreSQL` if empty/corrupt, reboot, Repair from Start Menu.
