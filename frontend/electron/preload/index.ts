@@ -5,6 +5,19 @@ import type { ApiInvokeRequest } from '../shared/apiInvoke'
 import type { SessionView } from '../shared/session'
 import type { StubResult } from '../shared/desktop'
 import type { AppRuntimeConfig } from '../shared/api'
+import type {
+  BackendServiceStatus,
+  CameraCapabilities,
+  FirstRunState,
+  HardwareDiagnosticsSnapshot,
+  HardwareStationConfig,
+  LabelPreview,
+  PrintStatus,
+  PrinterInfo,
+  PrinterProbeResult,
+  ScanEvent,
+  UpdateCheckResult
+} from '../shared/hardware'
 
 async function invoke<T>(channel: string, ...args: unknown[]): Promise<T> {
   const result = (await ipcRenderer.invoke(channel, ...args)) as ApiResult<T>
@@ -48,7 +61,14 @@ const juman = {
       invoke(IpcChannels.API_INVOKE, request)
   },
   app: {
-    getConfig: (): Promise<AppRuntimeConfig> => invoke(IpcChannels.APP_GET_CONFIG)
+    getConfig: (): Promise<AppRuntimeConfig> => invoke(IpcChannels.APP_GET_CONFIG),
+    getVersion: (): Promise<string> => invoke(IpcChannels.APP_GET_VERSION),
+    getFirstRunState: (): Promise<FirstRunState> => invoke(IpcChannels.APP_FIRST_RUN_STATE),
+    completeFirstRun: (): Promise<FirstRunState> => invoke(IpcChannels.APP_FIRST_RUN_COMPLETE),
+    checkUpdates: (): Promise<UpdateCheckResult> => invoke(IpcChannels.APP_UPDATES_CHECK),
+    readEnv: (): Promise<Record<string, string>> => invoke(IpcChannels.APP_READ_ENV),
+    patchEnv: (updates: Record<string, string>): Promise<Record<string, string>> =>
+      invoke(IpcChannels.APP_PATCH_ENV, updates)
   },
   desktop: {
     dialogs: {
@@ -67,12 +87,37 @@ const juman = {
     },
     fs: {
       stub: (): Promise<StubResult> => invoke(IpcChannels.DESKTOP_FS_STUB)
-    },
-    print: {
-      stub: (): Promise<StubResult> => invoke(IpcChannels.DESKTOP_PRINT_STUB)
-    },
-    barcode: {
-      stub: (): Promise<StubResult> => invoke(IpcChannels.DESKTOP_BARCODE_STUB)
+    }
+  },
+  hardware: {
+    getConfig: (): Promise<HardwareStationConfig> => invoke(IpcChannels.HARDWARE_GET_CONFIG),
+    setConfig: (patch: Partial<HardwareStationConfig>): Promise<HardwareStationConfig> =>
+      invoke(IpcChannels.HARDWARE_SET_CONFIG, patch),
+    listPrinters: (): Promise<PrinterInfo[]> => invoke(IpcChannels.HARDWARE_PRINTERS_LIST),
+    probePrinter: (): Promise<PrinterProbeResult> => invoke(IpcChannels.HARDWARE_PRINTER_PROBE),
+    diagnostics: (): Promise<HardwareDiagnosticsSnapshot> =>
+      invoke(IpcChannels.HARDWARE_DIAGNOSTICS),
+    testReceipt: (): Promise<PrintStatus> => invoke(IpcChannels.HARDWARE_RECEIPT_TEST),
+    previewLabel: (payload: { barcode: string; title?: string | null }): Promise<LabelPreview> =>
+      invoke(IpcChannels.HARDWARE_LABEL_PREVIEW, payload),
+    printLabel: (payload: { barcode: string; title?: string | null }): Promise<PrintStatus> =>
+      invoke(IpcChannels.HARDWARE_LABEL_PRINT, payload),
+    openDrawer: (): Promise<PrintStatus> => invoke(IpcChannels.HARDWARE_DRAWER_OPEN),
+    cameraCapabilities: (): Promise<CameraCapabilities> =>
+      invoke(IpcChannels.HARDWARE_CAMERA_CAPABILITIES),
+    backendStatus: (): Promise<BackendServiceStatus> => invoke(IpcChannels.HARDWARE_BACKEND_STATUS),
+    startBackend: (): Promise<BackendServiceStatus> => invoke(IpcChannels.HARDWARE_BACKEND_START),
+    stopBackend: (): Promise<BackendServiceStatus> => invoke(IpcChannels.HARDWARE_BACKEND_STOP),
+    restartBackend: (): Promise<BackendServiceStatus> =>
+      invoke(IpcChannels.HARDWARE_BACKEND_RESTART),
+    repairBackend: (): Promise<BackendServiceStatus> => invoke(IpcChannels.HARDWARE_BACKEND_REPAIR),
+    openLogs: (): Promise<boolean> => invoke(IpcChannels.HARDWARE_OPEN_LOGS),
+    onScan: (listener: (event: ScanEvent) => void): (() => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, scan: ScanEvent): void => {
+        listener(scan)
+      }
+      ipcRenderer.on(IpcChannels.HARDWARE_SCAN_EVENT, handler)
+      return () => ipcRenderer.removeListener(IpcChannels.HARDWARE_SCAN_EVENT, handler)
     }
   }
 }

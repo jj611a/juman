@@ -14,7 +14,8 @@ vi.mock('@/services/apiClient', () => ({
       login: vi.fn()
     },
     app: {
-      getConfig: vi.fn().mockResolvedValue({ appName: 'Juman', appNameAr: 'جمان' })
+      getConfig: vi.fn().mockResolvedValue({ appName: 'Juman', appNameAr: 'جمان' }),
+      getVersion: vi.fn().mockResolvedValue('1.0.0')
     },
     system: {
       version: vi.fn().mockResolvedValue({ version: '1.0.0' })

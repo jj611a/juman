@@ -4,6 +4,113 @@ Focused companion changelog for roadmap-facing work. Root [`CHANGELOG.md`](../CH
 
 ---
 
+## 2026-07-30 — Phase 10 Production Release Preparation
+
+### Added
+
+- `LICENSE`, About dialog, desktop `app.getVersion()` IPC, Windows `icon.ico`.
+- Release pack: `RELEASE_NOTES_v1.0.0.md`, Operator/Admin manuals, VERSION/DEVELOPER/BUILD manifests, `PRODUCTION_RELEASE_CHECKLIST.md`, `PRODUCTION_PREPARATION_REPORT.md`.
+- `deployment/scripts/validate-release.ps1`; built `Juman-Setup-1.0.0.exe` + SHA-256.
+
+### Fixed (packaging blockers)
+
+- Backend freeze via `uv run` PyInstaller; package-installer fails on `dist:win` failure.
+- NSIS `$` escape in PG silent PowerShell; installer languages `ar`/`en_US`; valid ICO.
+
+### Position
+
+- Prep artifacts complete; operator VM/hardware cert still open.
+- Conclusion: **NOT READY FOR PRODUCTION RELEASE**.
+- **YOU ARE HERE → Notifications** (deferred).
+
+---
+
+## 2026-07-30 — Release Candidate Certification (v1.0)
+
+### Added
+
+- Certification matrix + operator VM runbook under `docs/certification/`.
+- `certify-smoke.ps1` (post-install) and `certify-packaging-gate.ps1`.
+- `docs/RELEASE_CANDIDATE_REPORT.md` with evidence and single release recommendation.
+
+### Fixed
+
+- DEF-RC-01: ProtectedRoute unit test redirect target `/login` (stale `/unauthenticated`).
+
+### Position
+
+- Automated gates PASS; operator Win10/Win11/hardware **NOT EXECUTED**.
+- Conclusion: **NOT READY FOR RELEASE**.
+- **YOU ARE HERE → Notifications** (deferred).
+
+---
+
+## 2026-07-30 — Phase 7.0 Unified Windows Installer
+
+### Added
+
+- Production NSIS path: PG verify, DB bootstrap, Alembic migrate, WinSW, health gate.
+- Packaging scripts (`fetch-winsw`, `build-backend`, `package-installer`, post-install/repair/drop).
+- First-run persistence (settings + env patch + password change).
+- Service stop/restart/repair IPC; `juman-api.exe migrate`.
+- Guides: INSTALLATION / UPGRADE / RECOVERY / UNINSTALL + `INSTALLER_COMPLETION_REPORT.md`.
+
+### Position
+
+- Installer **Phase 7.0 code-complete**; VM certification operator-owned.
+- **YOU ARE HERE → Notifications** (deferred).
+
+---
+
+## 2026-07-30 — Hardware network print + diagnostics
+
+### Added
+
+- Production TCP/IP ESC/POS network printing (timeout, probe, test print, saved targets).
+- `PrintService` Main router (USB / network).
+- Hardware Diagnostics page (`/hardware/diagnostics`) with pass/fail checklist.
+- Paper width + windows-1256 encoding options; last print/probe diagnostics fields.
+
+### Fixed
+
+- Removed `NETWORK_PRINT_NOT_IMPLEMENTED` stub and HardwarePage network coming-soon copy.
+- Wired `cameraDeviceId` into `CameraCapture`.
+
+### Position
+
+- Hardware Integration **100%** (cloud updates residual elsewhere).
+
+---
+
+## 2026-07-30 — Ops Dashboard (shell home)
+
+### Added
+
+- Production Operations Dashboard as `/` after login (`OpsDashboardPage`).
+- Sections: header, KPIs, today’s work, quick actions, recent audit activity, system status — existing APIs only.
+
+### Position
+
+- Business Modules **100%** (Notifications deferred)
+- **YOU ARE HERE → Notifications** (backend absent)
+
+---
+
+## 2026-07-30 — Phase 6.1 Hardware + Phase 6.2 Installer
+
+### Added
+
+- Desktop hardware: HID barcode wedge, ESC/POS USB receipt/label/drawer, camera capture, `/hardware` settings.
+- Windows deployment: PyInstaller `juman-api.exe`, WinSW `JumanApi`, electron-builder NSIS + official PG silent install hooks, first-run wizard, offline diagnose gate, update stub.
+- Docs: `frontend/docs/hardware.md`, `frontend/docs/installer.md`, `deployment/INSTALLATION_GUIDE.md`.
+
+### Position
+
+- Hardware **100%**; Installer **100%** (cloud updates residual)
+- **YOU ARE HERE → Dashboard**
+
+---
+
 ## 2026-07-30 — Phase 5.13 Frontend Visual QA & UX Polish
 
 ### Fixed / polished

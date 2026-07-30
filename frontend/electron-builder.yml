@@ -1,0 +1,49 @@
+appId: com.juman.desktop
+productName: Juman
+copyright: Copyright Juman
+directories:
+  output: release
+  buildResources: build
+files:
+  - out/**/*
+  - package.json
+extraResources:
+  - from: ../deployment/services
+    to: services
+    filter:
+      - "**/*"
+  - from: ../deployment/runtime
+    to: runtime
+  - from: ../deployment/vendor
+    to: vendor
+    filter:
+      - "**/*"
+  - from: ../deployment/dist/backend
+    to: backend
+    filter:
+      - "**/*"
+  - from: ../deployment/scripts
+    to: scripts
+    filter:
+      - "*.ps1"
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  artifactName: Juman-Setup-${version}.${ext}
+  requestedExecutionLevel: requireAdministrator
+  icon: build/icon.ico
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Juman
+  include: ../deployment/nsis/juman-installer.nsh
+  installerLanguages:
+    - ar
+    - en_US
+  displayLanguageSelector: true
+  deleteAppDataOnUninstall: false
+publish: null

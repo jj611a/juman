@@ -112,6 +112,13 @@ export const DEFAULT_SHELL_SECTIONS: ShellNavSection[] = [
         permission: 'settings.view'
       },
       {
+        id: 'hardware',
+        label: 'الأجهزة',
+        href: '/hardware',
+        icon: 'Cpu',
+        permission: 'settings.view'
+      },
+      {
         id: 'audit',
         label: 'التدقيق',
         href: '/audit',

@@ -4,6 +4,7 @@ import { createHttpClient } from './http/client'
 import { SafeStorageCredentialStore } from './security/credentialStore'
 import { SessionManager } from './auth/sessionManager'
 import { createDesktopHandlers } from './desktop/stubs'
+import { createHardwareController, registerHardwareIpc } from './hardware/register'
 import { registerIpcHandlers } from './ipc/register'
 import { createMainWindow, loadMainWindow } from './window'
 
@@ -18,8 +19,11 @@ app.whenReady().then(async () => {
   const credentials = new SafeStorageCredentialStore()
   const session = new SessionManager(http.getInstance(), credentials, () => mainWindow)
   const desktop = createDesktopHandlers(() => mainWindow)
+  const hardware = createHardwareController(() => mainWindow)
+  hardware.attachToWindow(mainWindow)
 
   registerIpcHandlers(session, desktop, http.getInstance())
+  registerHardwareIpc(hardware)
 
   await session.bootstrap()
   await loadMainWindow(mainWindow)
@@ -27,6 +31,7 @@ app.whenReady().then(async () => {
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       mainWindow = createMainWindow()
+      hardware.attachToWindow(mainWindow)
       void loadMainWindow(mainWindow)
     }
   })

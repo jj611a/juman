@@ -101,6 +101,21 @@ Companion to [`JUMAN_MASTER_ROADMAP.md`](./JUMAN_MASTER_ROADMAP.md) and the live
 | 2026-07-30 | UI UX Pro Max checklist only; Juman DS wins | No palette/font/theme takeover |
 | 2026-07-30 | UI UX Pro Max at `.cursor/skills/ui-ux-pro-max/` (+ `.cursor/commands/ui-ux-pro-max.md`) | Cursor skills layout; not ~/.cursor/skills-cursor |
 | 2026-07-30 | Visual QA Phase 5.13; no screenshot CI | Tooling not present |
+| 2026-07-30 | Hardware adapters in Electron Main; station config in userData | Per-PC devices; backend barcode/media only |
+| 2026-07-30 | No vendor printer SDKs; ESC/POS RAW via Windows spool | Long-term maintainability |
+| 2026-07-30 | Network ESC/POS interface stubbed (not live send) | Future-ready without fake success |
+| 2026-07-30 | Installer bundles official PostgreSQL (1A) | One installer; standard Windows PG service |
+| 2026-07-30 | Backend shipped as juman-api.exe + WinSW (2A) | No Python runtime on store PCs |
+| 2026-07-30 | Electron never starts PostgreSQL; diagnose JumanApi only | Correct Windows service boot order |
+| 2026-07-30 | Cloud auto-update stub only (`implemented: false`) | Prepare infra; no CDN yet |
+| 2026-07-30 | Ops home `/` uses DashboardReportDto KPIs only | No invented financial/returns KPIs |
+| 2026-07-30 | Today work = counts + route links | No row lists on dashboard API |
+| 2026-07-30 | TCP ESC/POS network print in Electron Main | Close hardware residual; no renderer sockets |
+| 2026-07-30 | Saved network targets + active id (not full profile CRUD) | Additive to flat station config |
+| 2026-07-30 | PrintService thin USB/network router | Single send path for receipt/label/drawer |
+| 2026-07-30 | Phase 7.0 fetch/build binaries at package time | Do not commit PG/WinSW/juman-api.exe |
+| 2026-07-30 | Install-time random secrets + migrate CLI | Production installer security + schema |
+| 2026-07-30 | First-run persists before firstrun.done | Durable company/admin/storage/timezone |
 
 ## Related
 

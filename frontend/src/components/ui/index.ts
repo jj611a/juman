@@ -41,6 +41,7 @@ export { Calendar, type CalendarProps } from './calendar'
 export { DatePicker, CalendarInput, type DatePickerProps } from './date-picker'
 export { FilePicker, type FilePickerProps } from './file-picker'
 export { ImagePicker, type ImagePickerProps } from './image-picker'
+export { CameraCapture, type CameraCaptureProps } from './camera-capture'
 export { ColorPicker, type ColorPickerProps } from './color-picker'
 export {
   Form,

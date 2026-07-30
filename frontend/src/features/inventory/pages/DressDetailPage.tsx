@@ -15,6 +15,7 @@ import {
   EntityHeader,
   ErrorState,
   ImagePicker,
+  CameraCapture,
   InlineMessage,
   MediaGallery,
   MediaThumbnail,
@@ -216,7 +217,12 @@ export default function DressDetailPage(): React.ReactElement {
             <div className="space-y-8">
               <section className="space-y-3">
                 <h3 className="text-title text-foreground">الباركود</h3>
-                <BarcodeDisplay value={dress.barcode} label="باركود الفستان" />
+                <BarcodeDisplay
+                  value={dress.barcode}
+                  label="باركود الفستان"
+                  title={dress.name_ar}
+                  printable
+                />
                 {canEditBarcode ? (
                   <Button
                     type="button"
@@ -244,16 +250,22 @@ export default function DressDetailPage(): React.ReactElement {
                 <section className="space-y-3">
                   <h3 className="text-title text-foreground">الصور</h3>
                   {canUpdate && canMediaUpload ? (
-                    <ImagePicker
-                      value={galleryFiles}
-                      onChange={(files) => {
-                        setGalleryFiles(files)
-                        const file = files?.item(0)
-                        if (file) void uploadPhoto.mutateAsync(file)
-                      }}
-                      label="رفع صورة"
-                      disabled={uploadPhoto.isPending}
-                    />
+                    <div className="space-y-4">
+                      <ImagePicker
+                        value={galleryFiles}
+                        onChange={(files) => {
+                          setGalleryFiles(files)
+                          const file = files?.item(0)
+                          if (file) void uploadPhoto.mutateAsync(file)
+                        }}
+                        label="رفع صورة"
+                        disabled={uploadPhoto.isPending}
+                      />
+                      <CameraCapture
+                        disabled={uploadPhoto.isPending}
+                        onCapture={(file) => void uploadPhoto.mutateAsync(file)}
+                      />
+                    </div>
                   ) : null}
                   {galleryMeta.length > 0 ? (
                     <>

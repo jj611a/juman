@@ -17,11 +17,12 @@ import { reportsRoutes } from '@/features/reports/routes'
 import { usersRoutes } from '@/features/users/routes'
 import { rolesRoutes } from '@/features/roles/routes'
 import { settingsRoutes } from '@/features/settings/routes'
+import { hardwareRoutes } from '@/features/hardware/routes'
 import { auditRoutes } from '@/features/audit/routes'
 import { systemRoutes } from '@/features/system/routes'
 import { ProtectedRoute } from './ProtectedRoute'
 
-const FoundationHomePage = lazy(() => import('@/routes/FoundationHomePage'))
+const OpsDashboardPage = lazy(() => import('@/features/dashboard/pages/OpsDashboardPage'))
 const LoginPage = lazy(() => import('@/routes/LoginPage'))
 const ForcePasswordChangePage = lazy(() => import('@/routes/ForcePasswordChangePage'))
 const ErrorPage = lazy(() => import('@/routes/ErrorPage'))
@@ -64,9 +65,9 @@ const routes: RouteObject[] = [
         children: [
           {
             index: true,
-            element: page(<FoundationHomePage />),
+            element: page(<OpsDashboardPage />),
             handle: {
-              title: 'الرئيسية',
+              title: 'لوحة التشغيل',
               breadcrumb: { id: 'home', label: 'الرئيسية' }
             }
           },
@@ -84,6 +85,7 @@ const routes: RouteObject[] = [
           ...withPage(usersRoutes),
           ...withPage(rolesRoutes),
           ...withPage(settingsRoutes),
+          ...withPage(hardwareRoutes),
           ...withPage(auditRoutes),
           ...withPage(systemRoutes),
           {

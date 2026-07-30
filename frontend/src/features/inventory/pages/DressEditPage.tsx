@@ -3,9 +3,9 @@ import { Navigate, useNavigate, useParams } from 'react-router'
 import { BusyIndicator, ErrorState, Page, PageHeader } from '@/components/ui'
 import { usePermission } from '@/hooks/usePermission'
 import { useUnsavedChangesGuard } from '@/hooks/useUnsavedChangesGuard'
-import { DressForm, dateToIso } from '../components/DressForm'
+import { DressForm } from '../components/DressForm'
 import { useDress, useUpdateDress } from '../hooks'
-import { emptyToNull, type DressFormValues } from '../schemas'
+import { dateToIso, emptyToNull, type DressFormValues } from '../schemas'
 
 export default function DressEditPage(): React.ReactElement {
   const { id } = useParams<{ id: string }>()

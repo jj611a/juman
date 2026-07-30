@@ -1,4 +1,4 @@
-import { ipcMain } from 'electron'
+import { app, ipcMain } from 'electron'
 import type { AxiosInstance } from 'axios'
 import { IpcChannels } from '../../shared/channels'
 import type { ApiResult } from '../../shared/api'
@@ -103,6 +103,10 @@ export function registerIpcHandlers(
     })
   })
 
+  ipcMain.handle(IpcChannels.APP_GET_VERSION, async () => {
+    return ok(app.getVersion())
+  })
+
   ipcMain.handle(IpcChannels.DESKTOP_DIALOG_MESSAGE, async (_e, options) => {
     return ok(await desktop.messageBox(options))
   })
@@ -132,6 +136,4 @@ export function registerIpcHandlers(
   })
 
   ipcMain.handle(IpcChannels.DESKTOP_FS_STUB, async () => ok(desktop.fsStub()))
-  ipcMain.handle(IpcChannels.DESKTOP_PRINT_STUB, async () => ok(desktop.printStub()))
-  ipcMain.handle(IpcChannels.DESKTOP_BARCODE_STUB, async () => ok(desktop.barcodeStub()))
 }

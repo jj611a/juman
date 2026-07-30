@@ -2,7 +2,7 @@
   "name": "juman",
   "private": true,
   "version": "1.0.0",
-  "description": "Juman (\u062c\u0645\u0627\u0646) \u2014 Dress Rental & Sales Management System",
+  "description": "Juman (جمان) — Dress Rental & Sales Management System",
   "scripts": {
     "dev": "pnpm --filter @juman/frontend dev",
     "build": "pnpm --filter @juman/frontend build",
@@ -19,5 +19,8 @@
       "esbuild",
       "electron-winstaller"
     ]
+  },
+  "devDependencies": {
+    "png-to-ico": "^3.0.2"
   }
 }

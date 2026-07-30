@@ -51,10 +51,10 @@ export default function LoginPage(): React.ReactElement {
     let cancelled = false
     void (async () => {
       try {
-        const config = await apiClient.app.getConfig()
-        if (!cancelled) setAppVersion(config.appNameAr || config.appName || 'جمان')
+        const v = await apiClient.app.getVersion()
+        if (!cancelled) setAppVersion(v || '1.0.0')
       } catch {
-        /* ignore */
+        if (!cancelled) setAppVersion('1.0.0')
       }
       try {
         const version = await apiClient.system.version()

@@ -291,5 +291,3 @@ export function DressForm({
     </Form>
   )
 }
-
-export { dateToIso }

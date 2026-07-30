@@ -16,7 +16,7 @@ describe('ProtectedRoute', () => {
           <Route element={<ProtectedRoute />}>
             <Route path="/app" element={<div>سري</div>} />
           </Route>
-          <Route path="/unauthenticated" element={<div>غير مصادق</div>} />
+          <Route path="/login" element={<div>غير مصادق</div>} />
         </Routes>
       </MemoryRouter>
     )

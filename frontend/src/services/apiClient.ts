@@ -3,6 +3,19 @@ import type { AppRuntimeConfig } from '@shared/api'
 import type { ApiBinaryResult, ApiInvokeRequest } from '@shared/apiInvoke'
 import type { StubResult } from '@shared/desktop'
 import type {
+  BackendServiceStatus,
+  CameraCapabilities,
+  FirstRunState,
+  HardwareDiagnosticsSnapshot,
+  HardwareStationConfig,
+  LabelPreview,
+  PrintStatus,
+  PrinterInfo,
+  PrinterProbeResult,
+  ScanEvent,
+  UpdateCheckResult
+} from '@shared/hardware'
+import type {
   AuditLogDto,
   AuditLogListParams,
   CalendarAvailabilityDto,
@@ -205,7 +218,8 @@ export const apiClient = {
       bridge().api.invoke({ method: 'GET', path: `/system/restore/history/${id}` })
   },
   app: {
-    getConfig: (): Promise<AppRuntimeConfig> => bridge().app.getConfig()
+    getConfig: (): Promise<AppRuntimeConfig> => bridge().app.getConfig(),
+    getVersion: (): Promise<string> => bridge().app.getVersion()
   },
 
   users: {
@@ -572,8 +586,36 @@ export const apiClient = {
       isMaximized: (): Promise<boolean> => bridge().desktop.window.isMaximized(),
       setTitle: (title: string): Promise<boolean> => bridge().desktop.window.setTitle(title)
     },
-    fs: { stub: (): Promise<StubResult> => bridge().desktop.fs.stub() },
-    print: { stub: (): Promise<StubResult> => bridge().desktop.print.stub() },
-    barcode: { stub: (): Promise<StubResult> => bridge().desktop.barcode.stub() }
+    fs: { stub: (): Promise<StubResult> => bridge().desktop.fs.stub() }
+  },
+  hardware: {
+    getConfig: (): Promise<HardwareStationConfig> => bridge().hardware.getConfig(),
+    setConfig: (patch: Partial<HardwareStationConfig>): Promise<HardwareStationConfig> =>
+      bridge().hardware.setConfig(patch),
+    listPrinters: (): Promise<PrinterInfo[]> => bridge().hardware.listPrinters(),
+    probePrinter: (): Promise<PrinterProbeResult> => bridge().hardware.probePrinter(),
+    diagnostics: (): Promise<HardwareDiagnosticsSnapshot> => bridge().hardware.diagnostics(),
+    testReceipt: (): Promise<PrintStatus> => bridge().hardware.testReceipt(),
+    previewLabel: (payload: { barcode: string; title?: string | null }): Promise<LabelPreview> =>
+      bridge().hardware.previewLabel(payload),
+    printLabel: (payload: { barcode: string; title?: string | null }): Promise<PrintStatus> =>
+      bridge().hardware.printLabel(payload),
+    openDrawer: (): Promise<PrintStatus> => bridge().hardware.openDrawer(),
+    cameraCapabilities: (): Promise<CameraCapabilities> => bridge().hardware.cameraCapabilities(),
+    backendStatus: (): Promise<BackendServiceStatus> => bridge().hardware.backendStatus(),
+    startBackend: (): Promise<BackendServiceStatus> => bridge().hardware.startBackend(),
+    stopBackend: (): Promise<BackendServiceStatus> => bridge().hardware.stopBackend(),
+    restartBackend: (): Promise<BackendServiceStatus> => bridge().hardware.restartBackend(),
+    repairBackend: (): Promise<BackendServiceStatus> => bridge().hardware.repairBackend(),
+    openLogs: (): Promise<boolean> => bridge().hardware.openLogs(),
+    onScan: (listener: (event: ScanEvent) => void): (() => void) => bridge().hardware.onScan(listener)
+  },
+  appExtras: {
+    getFirstRunState: (): Promise<FirstRunState> => bridge().app.getFirstRunState(),
+    completeFirstRun: (): Promise<FirstRunState> => bridge().app.completeFirstRun(),
+    checkUpdates: (): Promise<UpdateCheckResult> => bridge().app.checkUpdates(),
+    readEnv: (): Promise<Record<string, string>> => bridge().app.readEnv(),
+    patchEnv: (updates: Record<string, string>): Promise<Record<string, string>> =>
+      bridge().app.patchEnv(updates)
   }
 }

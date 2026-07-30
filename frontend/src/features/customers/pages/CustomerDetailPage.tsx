@@ -14,6 +14,7 @@ import {
   EntityHeader,
   ErrorState,
   ImagePicker,
+  CameraCapture,
   InlineMessage,
   MediaGallery,
   MediaThumbnail,
@@ -229,6 +230,12 @@ export default function CustomerDetailPage(): React.ReactElement {
                           previewUrl={profileMeta?.src}
                           label="رفع صورة شخصية"
                           disabled={profileUpload.isPending}
+                        />
+                        <CameraCapture
+                          facingMode="user"
+                          disabled={profileUpload.isPending}
+                          onCapture={(file) => void profileUpload.mutateAsync(file)}
+                          startLabel="كاميرا الملف الشخصي"
                         />
                       </div>
                       <div className="space-y-2">

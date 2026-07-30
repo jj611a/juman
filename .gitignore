@@ -16,6 +16,10 @@ frontend/dist/
 frontend/release/
 **/dist/
 **/build/
+!frontend/build/
+frontend/build/**
+!frontend/build/icon.ico
+!frontend/build/icon-1024.png
 *.egg-info/
 .venv/
 venv/
@@ -27,12 +31,6 @@ __pycache__/
 .coverage
 htmlcov/
 
-# Agent / local scratch
-.tmp_*
-*.log
-audit_*.log
-audit_*.txt
-full_pytest_*.txt
 
 # OS / editor
 .DS_Store
@@ -48,12 +46,3 @@ frontend/out/
 
 # Design-system Pro Max persist (if generated at root)
 design-system/
-
-# Local scratch / pytest dumps
-sales_pytest.txt
-**/_dbg_restore_tmp/
-backend/.mypy_cache/
-backend/.pytest_cache/
-backend/.ruff_cache/
-backend/.venv/
-backend/.phase6/

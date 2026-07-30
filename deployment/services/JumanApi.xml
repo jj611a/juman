@@ -1,0 +1,22 @@
+<!-- WinSW service definition for Juman FastAPI (juman-api.exe).
+     Install: winsw.exe install
+     Docs: https://github.com/winsw/winsw
+     PostgreSQL remains a separate Windows service; Electron never starts it. -->
+<service>
+  <id>JumanApi</id>
+  <name>Juman API</name>
+  <description>Juman (جمان) FastAPI backend — waits for PostgreSQL then serves HTTP</description>
+  <executable>%BASE%\juman-api.exe</executable>
+  <workingdirectory>%BASE%</workingdirectory>
+  <log mode="roll-by-size">
+    <sizeThreshold>10240</sizeThreshold>
+    <keepFiles>8</keepFiles>
+  </log>
+  <onfailure action="restart" delay="10 sec"/>
+  <onfailure action="restart" delay="30 sec"/>
+  <resetfailure>1 hour</resetfailure>
+  <stoptimeout>30 sec</stoptimeout>
+  <!-- Depend on PostgreSQL Windows service when known; installer may patch this. -->
+  <depend>postgresql-x64-16</depend>
+  <env name="JUMAN_INSTALL_DIR" value="%BASE%\.."/>
+</service>

@@ -1,0 +1,165 @@
+import { execFile } from 'node:child_process'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { promisify } from 'node:util'
+import { app } from 'electron'
+import type { BackendServiceStatus } from '../../shared/hardware'
+
+const execFileAsync = promisify(execFile)
+
+export const JUMAN_API_SERVICE_NAME = 'JumanApi'
+
+export function installRoot(): string {
+  if (process.env.JUMAN_INSTALL_DIR) return process.env.JUMAN_INSTALL_DIR
+  if (process.platform === 'win32') {
+    return join(process.env['ProgramFiles'] || 'C:\\Program Files', 'Juman')
+  }
+  return join(app.getPath('userData'), 'install')
+}
+
+export function installLogsHint(): string {
+  return join(installRoot(), 'logs')
+}
+
+export function jumanEnvPath(): string {
+  return join(installRoot(), 'config', 'juman.env')
+}
+
+export function readJumanEnv(): Record<string, string> {
+  const path = jumanEnvPath()
+  const out: Record<string, string> = {}
+  if (!existsSync(path)) return out
+  for (const line of readFileSync(path, 'utf8').split(/\r?\n/)) {
+    const raw = line.trim()
+    if (!raw || raw.startsWith('#') || !raw.includes('=')) continue
+    const i = raw.indexOf('=')
+    out[raw.slice(0, i).trim()] = raw.slice(i + 1).trim()
+  }
+  return out
+}
+
+export function patchJumanEnv(updates: Record<string, string>): Record<string, string> {
+  const path = jumanEnvPath()
+  const current = readJumanEnv()
+  const next = { ...current, ...updates }
+  const dir = join(installRoot(), 'config')
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
+  const body = Object.entries(next)
+    .map(([k, v]) => `${k}=${v}`)
+    .join('\n')
+  writeFileSync(path, `${body}\n`, 'utf8')
+  return next
+}
+
+function winswPath(): string {
+  return join(installRoot(), 'backend', 'JumanApi.exe')
+}
+
+export async function getBackendServiceStatus(): Promise<BackendServiceStatus> {
+  const logsHint = installLogsHint()
+  if (process.platform !== 'win32') {
+    return {
+      platform: process.platform,
+      serviceName: JUMAN_API_SERVICE_NAME,
+      state: 'unsupported',
+      raw: 'Windows services are only managed on win32',
+      canStart: false,
+      logsHint
+    }
+  }
+  try {
+    const { stdout } = await execFileAsync('sc.exe', ['query', JUMAN_API_SERVICE_NAME], {
+      windowsHide: true
+    })
+    const raw = stdout.toString()
+    const running = /STATE\s*:\s*\d+\s+RUNNING/i.test(raw)
+    const stopped = /STATE\s*:\s*\d+\s+STOPPED/i.test(raw)
+    return {
+      platform: 'win32',
+      serviceName: JUMAN_API_SERVICE_NAME,
+      state: running ? 'running' : stopped ? 'stopped' : 'unknown',
+      raw,
+      canStart: !running,
+      logsHint
+    }
+  } catch (error) {
+    return {
+      platform: 'win32',
+      serviceName: JUMAN_API_SERVICE_NAME,
+      state: 'unknown',
+      raw: error instanceof Error ? error.message : String(error),
+      canStart: true,
+      logsHint
+    }
+  }
+}
+
+async function winsw(cmd: string): Promise<void> {
+  const exe = winswPath()
+  if (!existsSync(exe)) {
+    throw new Error(`WinSW wrapper missing: ${exe}`)
+  }
+  await execFileAsync(exe, [cmd], { windowsHide: true })
+}
+
+export async function startBackendService(): Promise<BackendServiceStatus> {
+  if (process.platform !== 'win32') return getBackendServiceStatus()
+  try {
+    await execFileAsync('sc.exe', ['start', JUMAN_API_SERVICE_NAME], { windowsHide: true })
+  } catch {
+    try {
+      await winsw('start')
+    } catch {
+      /* ignore */
+    }
+  }
+  return getBackendServiceStatus()
+}
+
+export async function stopBackendService(): Promise<BackendServiceStatus> {
+  if (process.platform !== 'win32') return getBackendServiceStatus()
+  try {
+    await winsw('stop')
+  } catch {
+    try {
+      await execFileAsync('sc.exe', ['stop', JUMAN_API_SERVICE_NAME], { windowsHide: true })
+    } catch {
+      /* ignore */
+    }
+  }
+  return getBackendServiceStatus()
+}
+
+export async function restartBackendService(): Promise<BackendServiceStatus> {
+  await stopBackendService()
+  await new Promise((r) => setTimeout(r, 1500))
+  return startBackendService()
+}
+
+export async function repairBackendService(): Promise<BackendServiceStatus> {
+  if (process.platform !== 'win32') return getBackendServiceStatus()
+  try {
+    await winsw('stop')
+  } catch {
+    /* ignore */
+  }
+  try {
+    await winsw('uninstall')
+  } catch {
+    /* ignore */
+  }
+  await winsw('install')
+  await winsw('start')
+  return getBackendServiceStatus()
+}
+
+export function ensureInstallDirs(root: string): void {
+  for (const name of ['config', 'data', 'logs', 'storage', 'runtime']) {
+    const p = join(root, name)
+    if (!existsSync(p)) mkdirSync(p, { recursive: true })
+  }
+}
+
+export function firstRunFlagPath(): string {
+  return join(app.getPath('userData'), 'firstrun.done')
+}

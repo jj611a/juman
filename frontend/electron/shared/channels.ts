@@ -12,6 +12,10 @@ export const IpcChannels = {
   SYSTEM_HEALTH: 'juman:system:health',
   SYSTEM_VERSION: 'juman:system:version',
   APP_GET_CONFIG: 'juman:app:getConfig',
+  APP_GET_VERSION: 'juman:app:getVersion',
+  APP_FIRST_RUN_STATE: 'juman:app:firstRun:state',
+  APP_FIRST_RUN_COMPLETE: 'juman:app:firstRun:complete',
+  APP_UPDATES_CHECK: 'juman:app:updates:check',
   DESKTOP_DIALOG_MESSAGE: 'juman:desktop:dialog:message',
   DESKTOP_WINDOW_MINIMIZE: 'juman:desktop:window:minimize',
   DESKTOP_WINDOW_MAXIMIZE: 'juman:desktop:window:maximize',
@@ -19,8 +23,25 @@ export const IpcChannels = {
   DESKTOP_WINDOW_IS_MAXIMIZED: 'juman:desktop:window:isMaximized',
   DESKTOP_WINDOW_SET_TITLE: 'juman:desktop:window:setTitle',
   DESKTOP_FS_STUB: 'juman:desktop:fs:stub',
-  DESKTOP_PRINT_STUB: 'juman:desktop:print:stub',
-  DESKTOP_BARCODE_STUB: 'juman:desktop:barcode:stub'
+  HARDWARE_GET_CONFIG: 'juman:hardware:config:get',
+  HARDWARE_SET_CONFIG: 'juman:hardware:config:set',
+  HARDWARE_PRINTERS_LIST: 'juman:hardware:printers:list',
+  HARDWARE_RECEIPT_TEST: 'juman:hardware:receipt:test',
+  HARDWARE_LABEL_PREVIEW: 'juman:hardware:label:preview',
+  HARDWARE_LABEL_PRINT: 'juman:hardware:label:print',
+  HARDWARE_DRAWER_OPEN: 'juman:hardware:drawer:open',
+  HARDWARE_CAMERA_CAPABILITIES: 'juman:hardware:camera:capabilities',
+  HARDWARE_SCAN_EVENT: 'juman:hardware:scan:event',
+  HARDWARE_BACKEND_STATUS: 'juman:hardware:backend:status',
+  HARDWARE_BACKEND_START: 'juman:hardware:backend:start',
+  HARDWARE_BACKEND_STOP: 'juman:hardware:backend:stop',
+  HARDWARE_BACKEND_RESTART: 'juman:hardware:backend:restart',
+  HARDWARE_BACKEND_REPAIR: 'juman:hardware:backend:repair',
+  HARDWARE_OPEN_LOGS: 'juman:hardware:logs:open',
+  HARDWARE_PRINTER_PROBE: 'juman:hardware:printers:probe',
+  HARDWARE_DIAGNOSTICS: 'juman:hardware:diagnostics',
+  APP_READ_ENV: 'juman:app:env:read',
+  APP_PATCH_ENV: 'juman:app:env:patch'
 } as const
 
 export type IpcChannel = (typeof IpcChannels)[keyof typeof IpcChannels]

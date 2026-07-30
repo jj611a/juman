@@ -1,0 +1,13 @@
+﻿{
+    "applicationVersion":  "1.0.0",
+    "backendVersion":  "1.0.0",
+    "schemaVersion":  "20260802_0033_system_backups_duration",
+    "migrationVersion":  "20260802_0033_system_backups_duration",
+    "electronVersion":  "^35.1.5",
+    "buildTimestamp":  "2026-07-30T12:10:48.6349808Z",
+    "gitCommit":  "e7c234b828b4064daf9942eb1930c1d7e6c9e592",
+    "artifactName":  "Juman-Setup-1.0.0.exe",
+    "artifactSha256":  "24180c3925ff623c842623cd77c59de39889b260a40bf44908b417a4879ce65b",
+    "productName":  "Juman",
+    "appId":  "com.juman.desktop"
+}

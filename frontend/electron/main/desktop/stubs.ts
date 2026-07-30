@@ -50,14 +50,6 @@ export function createDesktopHandlers(getMainWindow: () => BrowserWindow | null)
 
     fsStub(): StubResult {
       return notImplemented('نظام الملفات')
-    },
-
-    printStub(): StubResult {
-      return notImplemented('الطباعة')
-    },
-
-    barcodeStub(): StubResult {
-      return notImplemented('قارئ الباركود')
     }
   }
 }

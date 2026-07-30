@@ -24,6 +24,7 @@ export function AppShell(): React.ReactElement {
     typeof navigator === 'undefined' ? true : navigator.onLine
   )
   const [appName, setAppName] = React.useState('جمان')
+  const [appVersion, setAppVersion] = React.useState<string | undefined>()
   const [backendVersion, setBackendVersion] = React.useState<string | undefined>()
 
   React.useEffect(() => {
@@ -39,6 +40,10 @@ export function AppShell(): React.ReactElement {
 
   React.useEffect(() => {
     void apiClient.app.getConfig().then((c) => setAppName(c.appNameAr || c.appName || 'جمان'))
+    void apiClient.app
+      .getVersion()
+      .then((v) => setAppVersion(v || '1.0.0'))
+      .catch(() => setAppVersion('1.0.0'))
     void apiClient.system
       .version()
       .then((v) => {
@@ -96,7 +101,7 @@ export function AppShell(): React.ReactElement {
       onSidebarCollapsedChange={setCollapsed}
       onSignOut={() => void onSignOut()}
       online={online}
-      appVersion={appName}
+      appVersion={appVersion}
       backendVersion={backendVersion}
     >
       {/* Single page gutter — Page components must not add horizontal padding */}

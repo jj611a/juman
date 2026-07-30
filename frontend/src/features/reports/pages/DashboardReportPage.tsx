@@ -37,19 +37,19 @@ export default function DashboardReportPage(): React.ReactElement {
           <ErrorState title="تعذر تحميل لوحة التشغيل" onRetry={() => void query.refetch()} />
         ) : data ? (
           <Grid cols={3} gap={4}>
-            <KPICard title="dresses_total" value={data.dresses_total} icon="Package" />
-            <KPICard title="dresses_active" value={data.dresses_active} icon="Package" />
-            <KPICard title="rentals_active" value={data.rentals_active} icon="Key" />
-            <KPICard title="rentals_due_today" value={data.rentals_due_today} icon="Clock" />
-            <KPICard title="rentals_overdue" value={data.rentals_overdue} icon="AlertTriangle" />
-            <KPICard title="reservations_today" value={data.reservations_today} icon="Calendar" />
-            <KPICard title="reservations_upcoming" value={data.reservations_upcoming} icon="Calendar" />
+            <KPICard title="إجمالي الفساتين" value={data.dresses_total} icon="Package" />
+            <KPICard title="فساتين نشطة" value={data.dresses_active} icon="Package" />
+            <KPICard title="تأجيرات نشطة" value={data.rentals_active} icon="Key" />
+            <KPICard title="مستحق الإرجاع اليوم" value={data.rentals_due_today} icon="Clock" />
+            <KPICard title="متأخرة" value={data.rentals_overdue} icon="AlertTriangle" />
+            <KPICard title="حجوزات اليوم" value={data.reservations_today} icon="Calendar" />
+            <KPICard title="حجوزات قادمة" value={data.reservations_upcoming} icon="Calendar" />
             <KPICard
-              title="processing_batches_in_process"
+              title="دفعات معالجة جارية"
               value={data.processing_batches_in_process}
               icon="RefreshCw"
             />
-            <KPICard title="dresses_in_processing" value={data.dresses_in_processing} icon="RefreshCw" />
+            <KPICard title="فساتين قيد المعالجة" value={data.dresses_in_processing} icon="RefreshCw" />
           </Grid>
         ) : null}
       </ReportChrome>

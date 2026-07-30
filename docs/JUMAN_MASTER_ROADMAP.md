@@ -3,10 +3,10 @@
 **Product:** جمان (Juman) — Arabic RTL dress rental & sales desktop system  
 **Version:** Roadmap doc `1.0.0` · Backend `1.0.0` · Frontend workspace `@juman/frontend@1.0.0`  
 **Last updated:** 2026-07-30  
-**Overall progress:** **~88%** (backend certified + FE foundation + DS + Shell + Auth + Categories through Admin/Audit/System UI)  
-**Current phase:** Frontend — **Phase 5 Business Modules UI** (partial)  
-**Current step:** Next module: Dashboard  
-**Next step:** Ops Dashboard UI on shell + IPC — still no hardware/installer / Notifications
+**Overall progress:** **~98%** (v1.0.0 release prep docs + Setup artifact built; store ship blocked on operator RC VM/hardware matrix)  
+**Current phase:** Frontend — residual / deferred  
+**Current step:** Notifications (deferred; backend absent)  
+**Next step:** Operator Win10/Win11 + hardware RC matrix → then production release approval; Notifications when backend exists
 
 > **Maintenance rule:** After every approved phase completes, update this file **and** the live canvas **before** marking the phase done. Append history — never erase past entries. Markdown + canvas stay in sync.
 
@@ -35,13 +35,13 @@ Authentication UI
 ████████████████████████████████████████ 100%   (Phase 4.0)
 
 Business Modules (frontend)
-██████████████████████████████████████░░  ~95%
+████████████████████████████████████████ 100%   (Dashboard complete; Notifications deferred)
 
 Hardware
-░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░   0%
+████████████████████████████████████████ 100%   (Phase 6 / 6.1)
 
 Installer / Distribution
-░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░   0%
+████████████████████████████████████████ 100%   (Phase 7 / 6.2; cloud updates stub only)
 ```
 
 | Track | Status | Notes |
@@ -51,9 +51,9 @@ Installer / Distribution
 | Design System | 2.1–2.7 complete | Shared business kit shipped |
 | Application Shell | Complete (3.0–3.1) | Chrome, hosts, shortcuts, status bar |
 | Authentication UI | Complete (4.0) | Login / force-password / session via IPC |
-| Business Modules UI | ◐ ~95% | Through Admin + Audit/System; Dashboard next |
-| Hardware | Not started | Scanner / printer / cash drawer later |
-| Installer | Not started | Packaged desktop distribution |
+| Business Modules UI | Complete | Ops Dashboard home; Notifications deferred |
+| Hardware | Complete (6.1) | HID scan, USB+network ESC/POS, PrintService, diagnostics, camera |
+| Installer | Complete (7.0) + Phase 10 prep | `Juman-Setup-1.0.0.exe` built locally; **NOT READY FOR PRODUCTION RELEASE** until Win10+Win11 RC evidence |
 
 ---
 
@@ -77,7 +77,7 @@ Frontend
 
     Application Shell          ✔ complete (3.0–3.1)
     Authentication UI          ✔ complete (4.0)
-    Business Modules UI        ◐ (~95%)
+    Business Modules UI        ✔ (~100% product modules; Notifications deferred)
         ✔ Categories (5.1)
         ✔ Customers (5.2)
         ✔ Inventory / Dresses (5.3)
@@ -90,10 +90,11 @@ Frontend
         ✔ Administration (5.11 Users/Roles/Settings)
         ✔ Audit + System Administration (5.12)
         ✔ Visual QA (5.13)
-        ☐ Dashboard
-            ◄ YOU ARE HERE — next module
-    Hardware                   ☐
-    Installer                  ☐
+        ✔ Dashboard (Ops home)
+        ☐ Notifications (deferred — backend absent)
+            ◄ YOU ARE HERE — next when backend exists
+    Hardware                   ✔ (6.1)
+    Installer                  ✔ (6.2; cloud updates stub; ship artifacts residual)
 ```
 
 ---
@@ -247,7 +248,7 @@ Frontend
 
 ---
 
-### Phase 5 — Business modules (frontend) — ◐ (~95%)
+### Phase 5 — Business modules (frontend) — ☑ (~100%; Notifications deferred)
 
 Backend APIs largely ready; ship module-by-module on IPC + DS:
 
@@ -263,29 +264,133 @@ Backend APIs largely ready; ship module-by-module on IPC + DS:
 - ☑ Administration (5.11 Users/Roles/Settings)
 - ☑ Audit + System Administration (5.12)
 - ☑ Visual QA / UX Polish (5.13)
-- ☐ Dashboard
+- ☑ Dashboard (Ops home on shell)
 - ☐ Notifications UI (depends on backend Notifications)
 
 ---
 
-### Phase 6 — Hardware — ☐
+### Phase 6 — Hardware — ☑ (6.1)
 
-- ☐ Barcode scanner integration
-- ☐ Receipt / label printing
-- ☐ Cash drawer (if required)
-- ☐ Device permission & failure UX
+- ☑ Barcode scanner integration (USB HID wedge + focus + manual fallback)
+- ☑ Network ESC/POS TCP send + probe + saved targets
+- ☑ PrintService (USB / network)
+- ☑ Hardware diagnostics page (pass/fail)
+- ☑ Receipt / label printing (ESC/POS USB; network transport stub)
+- ☑ Cash drawer via receipt printer kick
+- ☑ Camera capture (dress + customer) + device failure UX
+- ☑ Station-local hardware settings (`/hardware`)
 
----
+### Phase 7 — Installer & distribution — ☑ (6.2)
 
-### Phase 7 — Installer & distribution — ☐
-
-- ☐ Packaged Electron builds
-- ☐ Auto-update strategy (if required)
-- ☐ Ops install docs
+- ☑ Packaged Electron builds (electron-builder NSIS)
+- ☑ Official PostgreSQL silent install + Windows service (1A)
+- ☑ Frozen `juman-api.exe` + WinSW service (2A); wait-for-DB
+- ☑ Phase 7.0: DB bootstrap + Alembic migrate + health gate + repair/uninstall policies
+- ☑ First-run persistence (company/admin/storage/timezone/language)
+- ☑ First-run wizard, repair, uninstall + DB retention prompt
+- ☑ Update infrastructure stub only (no cloud fetch)
+- ☑ Ops install docs (`deployment/INSTALLATION_GUIDE.md`)
 
 ---
 
 ## Completed this phase (append-only log)
+
+### 2026-07-30 — Phase 10 Production Release Preparation
+
+**Completed work**
+
+- Version lock 1.0.0; About dialog; status/login semver; LICENSE; win.icon.
+- Release notes, Operator/Admin manuals, VERSION/DEVELOPER/BUILD manifests, production checklist.
+- `validate-release.ps1`; packaged `Juman-Setup-1.0.0.exe` + SHA-256; packaging script/NSIS/ICO fixes.
+- Consistency audit: no TODO/FIXME; deferred NOT_IMPLEMENTED documented.
+- `docs/PRODUCTION_PREPARATION_REPORT.md`.
+
+**Position**
+
+- Conclusion: **NOT READY FOR PRODUCTION RELEASE** (operator RC matrix still NOT EXECUTED).
+- **YOU ARE HERE → Notifications** (deferred).
+
+---
+
+### 2026-07-30 — Release Candidate Certification (v1.0) — agent phase
+
+**Completed work**
+
+- `docs/certification/RC_TEST_MATRIX.md` + `OPERATOR_VM_RUNBOOK.md`.
+- `deployment/scripts/certify-smoke.ps1` + `certify-packaging-gate.ps1`.
+- Automated gates: FE (post DEF-RC-01), BE smoke (34), installer units (7+5), security static PASS, packaging scripts/gitignore PASS.
+- Defect DEF-RC-01: ProtectedRoute unit expected `/login`.
+- `docs/RELEASE_CANDIDATE_REPORT.md`.
+
+**Position**
+
+- RC conclusion: **NOT READY FOR RELEASE** (Win10/Win11 install/reboot/repair/uninstall/hardware NOT EXECUTED).
+- **YOU ARE HERE → Notifications** (deferred) remains; operator VM matrix is the blocker for store READY.
+
+---
+
+### 2026-07-30 — Phase 7.0 Unified Windows Installer
+
+**Completed work**
+
+- Packaging scripts: fetch WinSW/PG, build `juman-api.exe`, `package-installer.ps1`.
+- NSIS: fail if binaries missing; secrets; PG silent; DB bootstrap; migrate; WinSW; health; repair/uninstall preserve policies.
+- `juman-api.exe migrate` CLI; first-run persists company/admin/storage/timezone/language.
+- Service IPC stop/restart/repair; env read/patch.
+- Guides + `docs/INSTALLER_COMPLETION_REPORT.md`.
+
+**Position**
+
+- Installer **Phase 7.0 code-complete** (operator VM certification remaining); **YOU ARE HERE → Notifications** (deferred) / residuals.
+
+---
+
+### 2026-07-30 — Hardware network print + diagnostics
+
+**Completed work**
+
+- Implemented TCP ESC/POS send/probe in Electron Main (`network.ts`); removed `NETWORK_PRINT_NOT_IMPLEMENTED`.
+- PrintService routes USB vs network; saved network targets + timeout/paper/encoding.
+- Hardware diagnostics page `/hardware/diagnostics`; cameraDeviceId wired into CameraCapture.
+- Unit tests: network mocks, PrintService, config migration, HardwarePage/Diagnostics UI.
+- Docs: `frontend/docs/hardware.md`, `docs/HARDWARE_COMPLETION_REPORT.md`.
+
+**Position**
+
+- Hardware **100%** (network residual closed); cloud updates remain out of scope.
+
+---
+
+### 2026-07-30 — Ops Dashboard (shell home)
+
+**Completed work**
+
+- Replaced `FoundationHomePage` index with `OpsDashboardPage` (RTL three-column).
+- KPIs / Today work from `GET /reports/dashboard` only (Arabic labels; hide AVAILABLE if absent).
+- Header: welcome, company_name, server `as_of`, health connection.
+- Quick actions permission-gated; recent activity via audit list; system status via health/version/backups.
+- Lazy section load; unit tests `ops-dashboard.test.tsx`; `frontend/docs/modules/dashboard.md`.
+
+**Position**
+
+- Business Modules **100%** (Notifications deferred); **YOU ARE HERE → Notifications** (when backend exists).
+
+---
+
+### 2026-07-30 — Phase 6.1 Hardware + Phase 6.2 Installer
+
+**Completed work**
+
+- Electron Main hardware adapters: HID scan, ESC/POS USB + TCP network, PrintService, label preview/print, drawer, camera, diagnostics.
+- UI: `/hardware`, BarcodeScannerField/Display upgrades, CameraCapture on dress/customer media.
+- Deployment: PyInstaller entry + wait-for-DB, WinSW XML, env generator, NSIS hooks, electron-builder, first-run + offline diagnose gate.
+- Docs: `frontend/docs/hardware.md`, `frontend/docs/installer.md`, `deployment/INSTALLATION_GUIDE.md`.
+
+**Position**
+
+- Hardware **100%**; Installer **100%** (cloud updates residual); **YOU ARE HERE → Dashboard**.
+
+---
 
 ### 2026-07-30 — Phase 5.13 Frontend Visual QA & UX Polish
 
@@ -533,15 +638,56 @@ eturns.md / processing.md.
 
 | Field | Value |
 |---|---|
-| **Name** | **Phase 5 — Dashboard** (next within Business Modules) |
-| **Goal** | Ops Dashboard home on shell + IPC (Reports dashboard already exists) |
-| **Estimated work** | Medium |
-| **Dependencies** | DS ☑; Shell ☑; Auth ☑; API_INVOKE ☑; Admin/System ☑ |
-| **After Phase 5** | Notifications → Hardware (6) → Installer (7) |
+| **Name** | **Notifications UI** (deferred) |
+| **Goal** | In-app notifications when backend Notifications module exists |
+| **Estimated work** | Large (backend + FE) |
+| **Dependencies** | Backend Notifications module (absent) |
+| **After** | Installer ship hardening / residual placeholders as needed |
 
 ---
 
 ## Decision log (append-only)
+
+### 2026-07-30 — Phase 7.0 Installer
+
+| Decision | Reason |
+|---|---|
+| Fetch/build binaries at package time (not git) | PG/WinSW/`juman-api.exe` too large / generated |
+| Install-time random secrets + credentials file | No hardcoded Admin123! in production path |
+| `juman-api.exe migrate` CLI | Alembic without shipping Python |
+| First-run persists then `firstrun.done` | Prior wizard only set a flag |
+| Repair never drops DB/storage | Data safety |
+
+### 2026-07-30 — Hardware network print
+
+| Decision | Reason |
+|---|---|
+| TCP raw ESC/POS in Main (`net.Socket`) | Renderer never opens sockets |
+| Named saved network targets (not full profile CRUD) | Additive; no architecture redesign |
+| PrintService thin router | Unify USB/network without rewriting adapters |
+| Cloud updates stay NOT_IMPLEMENTED | Explicitly out of hardware scope |
+
+### 2026-07-30 — Ops Dashboard
+
+| Decision | Reason |
+|---|---|
+| Home `/` = OpsDashboardPage | Replace FoundationHomePage |
+| KPIs only from DashboardReportDto | No fake/client-calculated KPIs; omit settlements/revenue/returns-due |
+| Today work = counts + nav links | Dashboard API has no row lists |
+| Keep `/reports/dashboard` report page | Separate reports entry |
+
+### 2026-07-30 — Hardware 6.1 + Installer 6.2
+
+| Decision | Reason |
+|---|---|
+| Hardware I/O in Electron Main; config in `userData` | Station-local devices; backend stays barcode/media only |
+| No vendor SDKs; ESC/POS RAW + Windows spool | Maintainable across printers |
+| Network ESC/POS typed but send stubbed | Future-ready without fake success |
+| Camera via renderer getUserMedia + Main media grant | Sandbox-safe capture |
+| Installer 1A official PostgreSQL | One installer; standard PG service/upgrades |
+| Backend 2A PyInstaller + WinSW | No Python on store PCs |
+| Electron never starts PostgreSQL | Service boot order; diagnose API only |
+| Cloud updates stub only | Prepare channel; no CDN yet |
 
 ### 2026-07-30 — Visual QA 5.13
 
