@@ -1,0 +1,59 @@
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+!**/.env.example
+backend/.env
+frontend/.env
+
+# Build outputs
+frontend/out/
+frontend/dist/
+frontend/release/
+**/dist/
+**/build/
+*.egg-info/
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Agent / local scratch
+.tmp_*
+*.log
+audit_*.log
+audit_*.txt
+full_pytest_*.txt
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# Electron
+frontend/out/
+*.asar
+
+# Design-system Pro Max persist (if generated at root)
+design-system/
+
+# Local scratch / pytest dumps
+sales_pytest.txt
+**/_dbg_restore_tmp/
+backend/.mypy_cache/
+backend/.pytest_cache/
+backend/.ruff_cache/
+backend/.venv/
+backend/.phase6/

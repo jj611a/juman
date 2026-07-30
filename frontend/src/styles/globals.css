@@ -1,0 +1,66 @@
+@import "tailwindcss";
+@import "@fontsource/ibm-plex-sans-arabic/400.css";
+@import "@fontsource/ibm-plex-sans-arabic/500.css";
+@import "@fontsource/ibm-plex-sans-arabic/600.css";
+@import "@fontsource/ibm-plex-sans-arabic/700.css";
+@import "./tokens.css";
+
+* {
+  border-color: var(--border);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background:
+    radial-gradient(1100px 520px at 100% 0%, rgba(198, 167, 94, 0.06), transparent 55%),
+    radial-gradient(900px 480px at 0% 100%, rgba(255, 255, 255, 0.03), transparent 50%),
+    var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  font-size: var(--text-body-size);
+  line-height: var(--text-body-line);
+  font-weight: var(--text-body-weight);
+  direction: rtl;
+}
+
+[data-scale="comfortable"] {
+  font-size: 16px;
+}
+
+[data-scale="compact"] {
+  font-size: 14px;
+}
+
+[data-scale="large"] {
+  font-size: 18px;
+}
+
+::selection {
+  background: var(--selection);
+  color: var(--foreground);
+}
+
+
+@keyframes accordion-down {
+  from { height: 0; }
+  to { height: var(--radix-accordion-content-height); }
+}
+
+@keyframes accordion-up {
+  from { height: var(--radix-accordion-content-height); }
+  to { height: 0; }
+}
+
+@utility animate-accordion-down {
+  animation: accordion-down var(--duration-normal) var(--ease-standard);
+}
+
+@utility animate-accordion-up {
+  animation: accordion-up var(--duration-normal) var(--ease-standard);
+}

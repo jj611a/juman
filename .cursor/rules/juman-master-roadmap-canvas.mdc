@@ -1,0 +1,38 @@
+---
+description: Keep Juman Master Roadmap canvas and markdown in sync after every phase/prompt that advances project position
+alwaysApply: true
+---
+
+# Juman Master Roadmap - living canvas
+
+Project position is tracked in **two places that must stay identical**:
+
+1. Markdown: `docs/JUMAN_MASTER_ROADMAP.md`
+2. Canvas: `C:\Users\moham\.cursor\projects\c-Users-moham-Desktop-juman\canvases\juman-master-roadmap.canvas.tsx`
+
+## When to update (required)
+
+Update **both** files at the end of any turn that:
+
+- Completes an approved phase or sub-phase
+- Changes overall % / track % / YOU ARE HERE / next step
+- Adds a locked decision or append-only history entry
+- The user asks to update the roadmap or canvas
+
+Do **not** wait for the user to remind you. Prefer a short canvas refresh over leaving stale position data.
+
+## What to bump
+
+- `Last updated` / canvas `META.lastUpdated`
+- Overall progress and track percentages (`TRACKS`, UsageBars, BarChart)
+- YOU ARE HERE callout (`META.currentPhase`, `currentStep`, `nextStep`)
+- Todo statuses (DS phases, backend residuals)
+- Append completed-work + decision rows - **never erase** past history
+
+## Encoding (Windows)
+
+When writing `.canvas.tsx` on this machine, prefer UTF-8 via Python (`path.write_text(..., encoding="utf-8")`) if the editor Write tool produces UTF-16 (binary / invalid character diagnostics).
+
+## Chat
+
+When the canvas changes, link it: [Juman Master Roadmap](C:\Users\moham\.cursor\projects\c-Users-moham-Desktop-juman\canvases\juman-master-roadmap.canvas.tsx)
