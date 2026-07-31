@@ -1,6 +1,6 @@
-import { execFile } from 'node:child_process'
+import { execFile, spawn, type ChildProcess } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { promisify } from 'node:util'
 import { app } from 'electron'
 import type { BackendServiceStatus } from '../../shared/hardware'
@@ -9,12 +9,53 @@ const execFileAsync = promisify(execFile)
 
 export const JUMAN_API_SERVICE_NAME = 'JumanApi'
 
+let portableApiChild: ChildProcess | null = null
+
+function packagedAppDir(): string {
+  return dirname(app.getPath('exe'))
+}
+
+/** True when running from a portable folder (marker / env), not Program Files install. */
+export function isPortableInstall(): boolean {
+  if (process.env.JUMAN_PORTABLE === '1' || process.env.JUMAN_PORTABLE === 'true') return true
+  const fromEnv = process.env.JUMAN_INSTALL_DIR?.trim()
+  if (fromEnv) {
+    return existsSync(join(fromEnv, 'portable.marker'))
+  }
+  try {
+    return existsSync(join(packagedAppDir(), 'portable.marker'))
+  } catch {
+    return false
+  }
+}
+
 export function installRoot(): string {
   if (process.env.JUMAN_INSTALL_DIR) return process.env.JUMAN_INSTALL_DIR
+  try {
+    const appDir = packagedAppDir()
+    if (
+      existsSync(join(appDir, 'portable.marker')) ||
+      existsSync(join(appDir, 'config', 'juman.env'))
+    ) {
+      // Prefer folder beside Juman.exe when portable layout / local config is present.
+      if (
+        existsSync(join(appDir, 'backend', 'juman-api.exe')) ||
+        existsSync(join(appDir, 'portable.marker'))
+      ) {
+        return appDir
+      }
+    }
+  } catch {
+    /* fall through */
+  }
   if (process.platform === 'win32') {
     return join(process.env['ProgramFiles'] || 'C:\\Program Files', 'Juman')
   }
   return join(app.getPath('userData'), 'install')
+}
+
+export function apiExePath(): string {
+  return join(installRoot(), 'backend', 'juman-api.exe')
 }
 
 export function installLogsHint(): string {
@@ -55,6 +96,20 @@ function winswPath(): string {
   return join(installRoot(), 'backend', 'JumanApi.exe')
 }
 
+async function probeApiHealth(): Promise<boolean> {
+  try {
+    const base = (process.env.JUMAN_API_BASE_URL || 'http://127.0.0.1:8000/api/v1').replace(
+      /\/$/,
+      ''
+    )
+    const url = `${base}/health`
+    const res = await fetch(url, { signal: AbortSignal.timeout(2500) })
+    return res.ok || (res.status >= 200 && res.status < 500)
+  } catch {
+    return false
+  }
+}
+
 export async function getBackendServiceStatus(): Promise<BackendServiceStatus> {
   const logsHint = installLogsHint()
   if (process.platform !== 'win32') {
@@ -67,6 +122,25 @@ export async function getBackendServiceStatus(): Promise<BackendServiceStatus> {
       logsHint
     }
   }
+
+  if (isPortableInstall()) {
+    const healthy = await probeApiHealth()
+    const childAlive = Boolean(
+      portableApiChild && !portableApiChild.killed && portableApiChild.exitCode == null
+    )
+    const running = healthy || childAlive
+    return {
+      platform: 'win32',
+      serviceName: 'juman-api.exe (portable)',
+      state: running ? 'running' : 'stopped',
+      raw: running
+        ? `portable API ${healthy ? 'healthy' : 'starting'}; child=${childAlive}`
+        : 'portable API not running (use Start Juman Portable.cmd or Start Backend)',
+      canStart: !running,
+      logsHint
+    }
+  }
+
   try {
     const { stdout } = await execFileAsync('sc.exe', ['query', JUMAN_API_SERVICE_NAME], {
       windowsHide: true
@@ -107,14 +181,7 @@ async function runElevatedPowerShell(scriptPath: string, args: string[]): Promis
   if (!existsSync(scriptPath)) {
     throw new Error(`Script missing: ${scriptPath}`)
   }
-  const argList = [
-    '-NoProfile',
-    '-ExecutionPolicy',
-    'Bypass',
-    '-File',
-    scriptPath,
-    ...args
-  ]
+  const argList = ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', scriptPath, ...args]
     .map((a) => `'${a.replace(/'/g, "''")}'`)
     .join(',')
   const ps = `Start-Process -FilePath 'powershell.exe' -Verb RunAs -Wait -ArgumentList @(${argList})`
@@ -125,8 +192,66 @@ async function runElevatedPowerShell(scriptPath: string, args: string[]): Promis
   )
 }
 
+function spawnPortableApi(): void {
+  const exe = apiExePath()
+  if (!existsSync(exe)) {
+    throw new Error(`juman-api.exe missing: ${exe}`)
+  }
+  if (portableApiChild && !portableApiChild.killed && portableApiChild.exitCode == null) {
+    return
+  }
+  ensureInstallDirs(installRoot())
+  const child = spawn(exe, [], {
+    cwd: dirname(exe),
+    windowsHide: true,
+    env: {
+      ...process.env,
+      JUMAN_INSTALL_DIR: installRoot(),
+      JUMAN_PORTABLE: '1'
+    },
+    stdio: 'ignore'
+  })
+  portableApiChild = child
+  child.on('exit', () => {
+    if (portableApiChild === child) portableApiChild = null
+  })
+}
+
+/** Start console juman-api.exe when running portable (no WinSW). */
+export async function ensurePortableApiRunning(): Promise<boolean> {
+  if (!isPortableInstall()) return false
+  if (await probeApiHealth()) return true
+  spawnPortableApi()
+  const deadline = Date.now() + 60_000
+  while (Date.now() < deadline) {
+    if (await probeApiHealth()) return true
+    await new Promise((r) => setTimeout(r, 1000))
+  }
+  return false
+}
+
+export function stopPortableApiChild(): void {
+  if (portableApiChild && !portableApiChild.killed) {
+    try {
+      portableApiChild.kill()
+    } catch {
+      /* ignore */
+    }
+  }
+  portableApiChild = null
+}
+
 export async function startBackendService(): Promise<BackendServiceStatus> {
   if (process.platform !== 'win32') return getBackendServiceStatus()
+  if (isPortableInstall()) {
+    try {
+      spawnPortableApi()
+    } catch {
+      /* status below */
+    }
+    await new Promise((r) => setTimeout(r, 1500))
+    return getBackendServiceStatus()
+  }
   const elevated = join(installRoot(), 'scripts', 'start-services-elevated.ps1')
   try {
     // Prefer elevated start so non-admin Electron can recover after install.
@@ -152,6 +277,10 @@ export async function startBackendService(): Promise<BackendServiceStatus> {
 
 export async function stopBackendService(): Promise<BackendServiceStatus> {
   if (process.platform !== 'win32') return getBackendServiceStatus()
+  if (isPortableInstall()) {
+    stopPortableApiChild()
+    return getBackendServiceStatus()
+  }
   try {
     await winsw('stop')
   } catch {
@@ -172,6 +301,13 @@ export async function restartBackendService(): Promise<BackendServiceStatus> {
 
 export async function repairBackendService(): Promise<BackendServiceStatus> {
   if (process.platform !== 'win32') return getBackendServiceStatus()
+  if (isPortableInstall()) {
+    stopPortableApiChild()
+    await new Promise((r) => setTimeout(r, 500))
+    spawnPortableApi()
+    await new Promise((r) => setTimeout(r, 1500))
+    return getBackendServiceStatus()
+  }
   const repair = join(installRoot(), 'scripts', 'repair-install.ps1')
   try {
     await runElevatedPowerShell(repair, ['-InstallDir', installRoot()])

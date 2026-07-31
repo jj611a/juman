@@ -46,15 +46,14 @@ def _prepare_env(root: Path) -> None:
     (root / "logs").mkdir(parents=True, exist_ok=True)
 
 
+def _asyncpg_dsn(dsn: str) -> str:
+    """SQLAlchemy async URL -> libpq/asyncpg URL."""
+    return dsn.replace("postgresql+asyncpg://", "postgresql://", 1)
+
+
 def _alembic_url(dsn: str) -> str:
-    if "+asyncpg" in dsn:
-        return dsn.replace("postgresql+asyncpg://", "postgresql+psycopg://", 1)
+    # alembic/env.py overrides sqlalchemy.url from settings (asyncpg); keep for callers.
     return dsn
-
-
-def _sync_dsn(dsn: str) -> str:
-    url = _alembic_url(dsn)
-    return url.replace("postgresql+psycopg://", "postgresql://", 1)
 
 
 def _alembic_heads(bundle: Path) -> list[str]:
@@ -70,6 +69,10 @@ def _alembic_heads(bundle: Path) -> list[str]:
 
 def run_diagnose(root: Path | None = None) -> int:
     """Read-only machine diagnostics as a single JSON object on stdout."""
+    import asyncio
+
+    import asyncpg
+
     root = root or _resolve_install_root()
     _prepare_env(root)
     bundle = _bundle_root()
@@ -114,52 +117,58 @@ def run_diagnose(root: Path | None = None) -> int:
         result["error"] = f"alembic heads failed: {exc}"
         result["exception"] = traceback.format_exc()
 
-    try:
-        import psycopg
-
-        sync = _sync_dsn(dsn)
-        parsed = urlparse(sync.replace("postgresql://", "http://", 1))
+    async def _probe() -> None:
+        url = _asyncpg_dsn(dsn)
+        parsed = urlparse(url.replace("postgresql://", "http://", 1))
         db_name = (parsed.path or "").lstrip("/") or None
         user = parsed.username
 
         t0 = time.perf_counter()
-        with psycopg.connect(sync, connect_timeout=8) as conn:
-            with conn.cursor() as cur:
-                cur.execute("SELECT 1")
-                cur.fetchone()
-                latency_ms = round((time.perf_counter() - t0) * 1000, 2)
-                result["latencyMs"] = latency_ms
-                result["connectionOk"] = True
-                result["databaseExists"] = True
-                result["userExists"] = bool(user)
+        conn = await asyncpg.connect(url, timeout=8)
+        try:
+            await conn.fetchval("SELECT 1")
+            result["latencyMs"] = round((time.perf_counter() - t0) * 1000, 2)
+            result["connectionOk"] = True
+            result["databaseExists"] = True
+            result["userExists"] = bool(user)
 
-                try:
-                    cur.execute(
+            try:
+                rows = [
+                    r["version_num"]
+                    for r in await conn.fetch(
                         "SELECT version_num FROM alembic_version ORDER BY version_num"
                     )
-                    rows = [r[0] for r in cur.fetchall()]
-                    result["migrationHistory"] = rows
-                    result["schemaVersion"] = rows[-1] if rows else None
-                except Exception as exc:  # noqa: BLE001
-                    result["migrationStatus"] = f"alembic_version unread: {exc}"
-                    result["exception"] = traceback.format_exc()
+                ]
+                result["migrationHistory"] = rows
+                result["schemaVersion"] = rows[-1] if rows else None
+            except Exception as exc:  # noqa: BLE001
+                result["migrationStatus"] = f"alembic_version unread: {exc}"
+                result["exception"] = traceback.format_exc()
 
-                if result.get("schemaVersion") and result.get("alembicHead"):
-                    head = result["alembicHead"]
-                    head_s = head[0] if isinstance(head, list) else head
-                    pending = result["schemaVersion"] != head_s
-                    result["pendingMigrations"] = pending
-                    result["migrationStatus"] = "pending" if pending else "up_to_date"
-                elif result.get("connectionOk"):
-                    result["migrationStatus"] = result.get("migrationStatus") or "unknown"
+            if result.get("schemaVersion") and result.get("alembicHead"):
+                head = result["alembicHead"]
+                head_s = head[0] if isinstance(head, list) else head
+                pending = result["schemaVersion"] != head_s
+                result["pendingMigrations"] = pending
+                result["migrationStatus"] = "pending" if pending else "up_to_date"
+            elif result.get("connectionOk"):
+                result["migrationStatus"] = result.get("migrationStatus") or "unknown"
 
-                if db_name:
-                    cur.execute("SELECT 1 FROM pg_database WHERE datname = %s", (db_name,))
-                    result["databaseExists"] = cur.fetchone() is not None
-                if user:
-                    cur.execute("SELECT 1 FROM pg_roles WHERE rolname = %s", (user,))
-                    result["userExists"] = cur.fetchone() is not None
+            if db_name:
+                row = await conn.fetchrow(
+                    "SELECT 1 AS ok FROM pg_database WHERE datname = $1", db_name
+                )
+                result["databaseExists"] = row is not None
+            if user:
+                row = await conn.fetchrow(
+                    "SELECT 1 AS ok FROM pg_roles WHERE rolname = $1", user
+                )
+                result["userExists"] = row is not None
+        finally:
+            await conn.close()
 
+    try:
+        asyncio.run(_probe())
         result["ok"] = True
     except Exception as exc:  # noqa: BLE001
         result["connectionOk"] = False

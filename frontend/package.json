@@ -12,6 +12,7 @@
     "preview": "electron-vite preview",
     "pack": "pnpm build && electron-builder --dir",
     "dist:win": "pnpm build && electron-builder --win nsis",
+    "dist:dir": "pnpm build && electron-builder --dir",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "tsc --noEmit -p tsconfig.web.json && tsc --noEmit -p tsconfig.node.json",

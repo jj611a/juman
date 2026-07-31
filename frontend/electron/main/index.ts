@@ -15,6 +15,11 @@ import {
   loadMainWindow,
   loadDiagnosticsWindow
 } from './window'
+import {
+  ensurePortableApiRunning,
+  isPortableInstall,
+  stopPortableApiChild
+} from './hardware/serviceStatus'
 
 let mainWindow: BrowserWindow | null = null
 
@@ -23,7 +28,12 @@ const config = loadMainConfig()
 const http = createHttpClient(config.apiBaseUrl)
 
 app.whenReady().then(async () => {
-  appendMainLog(`app ready diagnosticsOnly=${diagnosticsOnly}`)
+  appendMainLog(`app ready diagnosticsOnly=${diagnosticsOnly} portable=${isPortableInstall()}`)
+
+  if (isPortableInstall()) {
+    const ok = await ensurePortableApiRunning()
+    appendMainLog(`portable API ready=${ok}`)
+  }
 
   installApplicationMenu(() => mainWindow)
   registerDiagnosticsIpc(() => mainWindow)
@@ -67,8 +77,13 @@ app.whenReady().then(async () => {
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
+    if (isPortableInstall()) stopPortableApiChild()
     app.quit()
   }
+})
+
+app.on('before-quit', () => {
+  if (isPortableInstall()) stopPortableApiChild()
 })
 
 process.on('uncaughtException', (err) => {

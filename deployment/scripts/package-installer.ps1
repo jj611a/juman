@@ -2,13 +2,14 @@
 param(
   [string]$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path,
   [switch]$SkipBuildBackend,
-  [switch]$BuildReleaseZip
+  [switch]$BuildReleaseZip,
+  [switch]$SkipExeSmoke
 )
 $ErrorActionPreference = "Stop"
 $scripts = Join-Path $RepoRoot "deployment\scripts"
 
 & (Join-Path $scripts "fetch-winsw.ps1")
-# PostgreSQL is NOT bundled in Install Juman.exe — use build-release-zip.ps1 for the release kit.
+# PostgreSQL is NOT bundled in Install Juman.exe - use build-release-zip.ps1 for the release kit.
 if (-not $SkipBuildBackend) {
   & (Join-Path $scripts "build-backend.ps1") -RepoRoot $RepoRoot
 }
@@ -24,8 +25,23 @@ foreach ($p in $required) {
 
 Push-Location (Join-Path $RepoRoot "frontend")
 try {
-  pnpm dist:win
-  if ($LASTEXITCODE -ne 0) { throw "pnpm dist:win failed with exit=$LASTEXITCODE" }
+  # Build unpacked app first so we can smoke-test Juman.exe before NSIS.
+  pnpm run dist:dir
+  if ($LASTEXITCODE -ne 0) { throw "pnpm run dist:dir failed with exit=$LASTEXITCODE" }
+}
+finally {
+  Pop-Location
+}
+
+if (-not $SkipExeSmoke) {
+  & (Join-Path $scripts "test-packaged-exes.ps1") -RepoRoot $RepoRoot -SkipRebuildBackend
+}
+
+Push-Location (Join-Path $RepoRoot "frontend")
+try {
+  # Package NSIS from already-built win-unpacked (avoids a second full Electron rebuild).
+  pnpm exec electron-builder --win nsis --prepackaged release/win-unpacked
+  if ($LASTEXITCODE -ne 0) { throw "electron-builder nsis failed with exit=$LASTEXITCODE" }
 }
 finally {
   Pop-Location

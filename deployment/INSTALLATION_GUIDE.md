@@ -43,6 +43,17 @@ Output:
 
 Packaging **fails** if `juman-api.exe`, `WinSW-x64.exe`, or `installer-wizard\JumanSetupWizard.ps1` is missing.
 
+### Portable ZIP (lab / demo)
+
+No NSIS installer and no WinSW service. Requires existing PostgreSQL 16.
+
+```powershell
+powershell -File deployment\scripts\build-portable.ps1
+```
+
+Output: `frontend\release\Juman-Portable-v*\` and `.zip` (see `README-PORTABLE.txt` inside).
+Not a substitute for the per-machine Setup on production store PCs.
+
 ## Clean PC install flow
 
 1. Read **README FIRST.txt**.

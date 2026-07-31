@@ -33,7 +33,9 @@ win:
       arch:
         - x64
   artifactName: Juman-Setup-${version}.${ext}
-  requestedExecutionLevel: requireAdministrator
+  # App runs asInvoker; NSIS still elevates install. Service repair uses elevated scripts.
+  # requireAdministrator blocks portable / non-admin smoke launches.
+  requestedExecutionLevel: asInvoker
   icon: build/icon.ico
 nsis:
   oneClick: false
