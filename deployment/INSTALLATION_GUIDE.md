@@ -66,3 +66,20 @@ Electron never starts PostgreSQL.
 - [ ] Repair from Start Menu
 - [ ] Upgrade over existing install (preserve DB/storage)
 - [ ] Uninstall retain DB + storage
+
+## Installer step diagnostics
+
+Every custom-install step is recorded in:
+
+`%ProgramFiles%\Juman\logs\installer.json`
+
+Each entry includes: step, startTime, endTime, duration (ms), success, exitCode, stdout, stderr, exception, failureReason.
+
+### PostgreSQL packaging notes
+
+- The EDB installer is **bundled** at build time via `deployment\scripts\fetch-postgresql.ps1` into `deployment\vendor\postgresql\`.
+- electron-builder copies it to `resources\vendor\postgresql\` inside the Setup.
+- Runtime install does **not** download PostgreSQL; if the EXE is missing, NSIS **Aborts**.
+- `install-postgresql.ps1` launches the EDB EXE with `Start-Process -Wait` and records the real exit code.
+- After install, `verify-postgresql.ps1` checks: folder, `postgres.exe`, service exists, service RUNNING.
+- On verification failure the installer **stops** and does **not** run backend bootstrap or write `juman.env`.

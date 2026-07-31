@@ -1,4 +1,6 @@
 ; Phase 7.0 NSIS helpers for Juman (electron-builder include).
+; Installer step diagnostics: scripts\run-custom-install.ps1 -> logs\installer.json
+; PostgreSQL failure MUST Abort (never continue to backend / fake config).
 
 !include LogicLib.nsh
 !include FileFunc.nsh
@@ -59,41 +61,24 @@ Var RetainStorage
     Abort
   after_scripts:
 
-  DetailPrint "Generating install secrets..."
-  nsExec::ExecToLog 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$INSTDIR\scripts\gen-secrets.ps1" -OutFile "$INSTDIR\config\.install-secrets.env"'
-  Pop $0
-  IfFileExists "$INSTDIR\config\.install-secrets.env" 0 secrets_fail
-    Goto secrets_ok
-  secrets_fail:
-    MessageBox MB_ICONSTOP "Failed to generate install secrets."
+  ; Require bundled PostgreSQL vendor EXE before any backend config is written.
+  IfFileExists "$INSTDIR\resources\vendor\postgresql\*.exe" 0 missing_pg_vendor
+    Goto have_pg_vendor
+  missing_pg_vendor:
+    MessageBox MB_ICONSTOP "PostgreSQL installer EXE is not bundled under resources\vendor\postgresql\.$\r$\nRebuild with deployment\scripts\fetch-postgresql.ps1 then package-installer.ps1.$\r$\nInstall aborted (will not continue to backend)."
     Abort
-  secrets_ok:
+  have_pg_vendor:
 
-  ; Silent PostgreSQL via dedicated script (logs to $INSTDIR\logs\postgresql-install.log)
-  IfFileExists "$INSTDIR\resources\vendor\postgresql\*.exe" 0 skip_pg
-    DetailPrint "Installing PostgreSQL 16 (silent, logged)..."
-    nsExec::ExecToLog 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$INSTDIR\scripts\install-postgresql.ps1" -InstallDir "$INSTDIR"'
-    Pop $0
-    IntCmp $0 0 pg_ok pg_warn pg_warn
-    pg_warn:
-      MessageBox MB_ICONEXCLAMATION "PostgreSQL silent install returned $0. See $INSTDIR\logs\postgresql-install.log. If PG is already installed, post-install may still succeed."
-    pg_ok:
-  skip_pg:
-
-  DetailPrint "DB bootstrap + migrate + JumanApi service + health..."
-  nsExec::ExecToLog 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$INSTDIR\scripts\run-post-install.ps1" -InstallDir "$INSTDIR"'
+  DetailPrint "Running instrumented install (logs\installer.json)..."
+  nsExec::ExecToLog 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$INSTDIR\scripts\run-custom-install.ps1" -InstallDir "$INSTDIR"'
   Pop $0
-  IntCmp $0 0 post_ok post_fail post_fail
-  post_fail:
-    MessageBox MB_ICONSTOP "Post-install failed (exit $0). Use Start Menu > Repair Juman Services after fixing errors. See $INSTDIR\logs"
-    Goto after_post
-  post_ok:
-    DetailPrint "Post-install succeeded."
-  after_post:
-
-  FileOpen $3 "$INSTDIR\runtime\update-channel.json" w
-  FileWrite $3 '{"channel":"stable","implemented":false,"feedUrl":null}$\r$\n'
-  FileClose $3
+  IntCmp $0 0 custom_ok custom_fail custom_fail
+  custom_fail:
+    DetailPrint "Custom install FAILED exit=$0 - see $INSTDIR\logs\installer.json"
+    MessageBox MB_ICONSTOP "Juman install failed (exit $0).$\r$\n$\r$\nPostgreSQL must be installed and verified before backend setup.$\r$\nSee:$\r$\n  $INSTDIR\logs\installer.json$\r$\n  $INSTDIR\logs\postgresql-install.log$\r$\n$\r$\nInstall aborted. No fake config will be generated."
+    Abort
+  custom_ok:
+    DetailPrint "Custom install succeeded (see logs\installer.json)."
 
   CreateDirectory "$SMPROGRAMS\Juman"
   CreateShortCut "$SMPROGRAMS\Juman\Juman.lnk" "$INSTDIR\Juman.exe"

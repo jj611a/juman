@@ -54,6 +54,11 @@ Use the in-app **مركز التشخيص والاستعادة** before manual re
 
 Full check/repair catalog: [`docs/STARTUP_DIAGNOSTICS.md`](../docs/STARTUP_DIAGNOSTICS.md).
 
+
+## Installer step log
+
+Read `%ProgramFiles%\Juman\logs\installer.json` for every install step (exit codes, stderr, exceptions).
+If PostgreSQL failed, the installer aborts before backend/config generation - look for step `Install PostgreSQL` or `Verify PostgreSQL`.
 ## PostgreSQL silent install failed
 
 1. Read `%ProgramFiles%\Juman\logs\postgresql-install.log` (written by `scripts\install-postgresql.ps1`).
