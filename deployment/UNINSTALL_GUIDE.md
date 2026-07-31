@@ -1,4 +1,4 @@
-# Juman Uninstall Guide (Phase 7.0)
+# Juman Uninstall Guide
 
 ## Default (safe)
 
@@ -8,15 +8,15 @@ Uninstaller:
 2. Removes application files / shortcuts.
 3. **Asks** whether to keep the `juman` database (default: keep).
 4. **Asks** whether to keep `storage\` uploads (default: keep).
-5. **Asks** whether to uninstall PostgreSQL 16 product (default: no).
+5. Does **not** uninstall PostgreSQL — it is operator-owned (installed via **Install PostgreSQL.exe**).
 
 ## Drop database only
 
-Choose No on “Keep database” and confirm. Uses `scripts\drop-database.ps1` with the install-time PG super password from `.install-secrets.env`.
+Choose No on “Keep database” and confirm. Uses `scripts\drop-database.ps1` with credentials from the install environment / app config as applicable.
 
 ## Remove PostgreSQL product
 
-Optional prompt launches EDB `uninstall-postgresql.exe` when present. Prefer backup first.
+Not performed by Juman Setup. Use Windows Apps & Features / EDB uninstall for the PostgreSQL 16 product if you intentionally want to remove it. Prefer backup first.
 
 ## Preserve uploads
 

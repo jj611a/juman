@@ -1,8 +1,10 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-  Silent install (or reuse) of PostgreSQL 16 for Juman.
+  OPTIONAL ops tool: silent install (or reuse) of PostgreSQL 16 for Juman.
 .NOTES
+  NOT invoked by Install Juman.exe / Setup Wizard. Supported path is external
+  Install PostgreSQL.exe from the release ZIP, then the WinForms wizard.
   Always target 64-bit Program Files via ProgramW6432 (NSIS is 32-bit / Wow64).
   Copies the EDB EXE to a short TEMP path before launch (EDB path-length issues).
 #>

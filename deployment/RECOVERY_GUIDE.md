@@ -1,4 +1,4 @@
-# Juman Recovery Guide (Phase 7.0)
+# Juman Recovery Guide
 
 ## Backend service down
 
@@ -23,6 +23,8 @@ Run elevated. Ensures LocalSystem can read `config\juman.env` and write `storage
 "%ProgramFiles%\Juman\backend\juman-api.exe" migrate
 "%ProgramFiles%\Juman\backend\JumanApi.exe" restart
 ```
+
+Or Start Menu → **Setup Wizard** → recovery **Re-run migrations**.
 
 ## Lost bootstrap password
 
@@ -54,24 +56,25 @@ Use the in-app **مركز التشخيص والاستعادة** before manual re
 
 Full check/repair catalog: [`docs/STARTUP_DIAGNOSTICS.md`](../docs/STARTUP_DIAGNOSTICS.md).
 
+## Installer step log / configuration report
 
-## Installer step log
+- `%ProgramFiles%\Juman\logs\installer.json` — every wizard/install step
+- `%ProgramFiles%\Juman\logs\INSTALLER_CONFIGURATION_REPORT.md` — human-readable summary (success or failure)
 
-Read `%ProgramFiles%\Juman\logs\installer.json` for every install step (exit codes, stderr, exceptions).
-If PostgreSQL failed, the installer aborts before backend/config generation - look for step `Install PostgreSQL` or `Verify PostgreSQL`.
-## PostgreSQL silent install failed
+If PostgreSQL was missing or wrong major version, the wizard stops at **Verify PostgreSQL** (fail-closed). Install PostgreSQL 16 with **Install PostgreSQL.exe** from the release ZIP, then re-run Setup Wizard.
 
-1. Read `%ProgramFiles%\Juman\logs\postgresql-install.log` (written by `scripts\install-postgresql.ps1`).
-2. Also check `%ProgramFiles%\Juman\logs\postgresql-edb-debugtrace.log` and `%TEMP%\installbuilder_installer_*.log` (EDB installer).
-3. Confirm no leftover broken service: `sc query postgresql-x64-16`
-4. Re-run elevated:
+## PostgreSQL not installed or not running
 
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File "%ProgramFiles%\Juman\scripts\install-postgresql.ps1" `
-  -InstallDir "%ProgramFiles%\Juman"
-```
+Juman Setup does **not** silently install PostgreSQL.
 
-Requires `config\.install-secrets.env` with `PG_SUPER_PASSWORD` (created at install). Installer EXE must exist under `resources\vendor\postgresql\` or `vendor\postgresql\`.
+1. Run **Install PostgreSQL.exe** from the release package (EDB UI).
+2. Confirm service: `sc query postgresql-x64-16` → RUNNING.
+3. Re-run Start Menu → Juman → **Setup Wizard** (or reinstall Install Juman.exe).
+4. Use wizard recovery: **Restart PostgreSQL**, **Re-test connection**, **Retry step**.
 
-5. Data directory is `%ProgramData%\Juman\PostgreSQL\16\data` (not under Program Files) to avoid ACL/initcluster failures.
-6. If init still fails: uninstall broken EDB PostgreSQL from Apps & Features, delete `%ProgramData%\Juman\PostgreSQL` if empty/corrupt, reboot, Repair from Start Menu.
+Optional ops-only script `scripts\install-postgresql.ps1` may exist for advanced operators; it is **not** the supported primary path and is not invoked by the installer.
+
+## Regenerate configuration
+
+Start Menu → Setup Wizard → recovery **Regenerate config**, or re-run the wizard.
+`config\juman.env` stores the **application** DB user only — never the postgres superuser password.

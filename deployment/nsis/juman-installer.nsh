@@ -1,7 +1,5 @@
-; Phase 7.0 NSIS helpers for Juman (electron-builder include).
-; Installer step diagnostics: scripts\run-custom-install.ps1 -> logs\installer.json
-; PostgreSQL failure MUST Abort (never continue to backend / fake config).
-; Always invoke 64-bit PowerShell via Sysnative (NSIS stub is 32-bit / Wow64).
+; Juman NSIS helpers — external PostgreSQL required (wizard configures DB).
+; No automatic PostgreSQL install.
 
 !include LogicLib.nsh
 !include FileFunc.nsh
@@ -40,6 +38,7 @@ Var Ps64
   CreateDirectory "$INSTDIR\runtime"
   CreateDirectory "$INSTDIR\backend"
   CreateDirectory "$INSTDIR\scripts"
+  CreateDirectory "$INSTDIR\installer-wizard"
 
   IfFileExists "$INSTDIR\resources\backend\juman-api.exe" 0 missing_api
     CopyFiles /SILENT "$INSTDIR\resources\backend\*.*" "$INSTDIR\backend"
@@ -74,32 +73,24 @@ Var Ps64
     Abort
   after_scripts:
 
-  IfFileExists "$INSTDIR\resources\vendor\postgresql\*.exe" 0 missing_pg_vendor
-    Goto have_pg_vendor
-  missing_pg_vendor:
-    MessageBox MB_ICONSTOP "PostgreSQL installer EXE is not bundled under resources\vendor\postgresql\.$\r$\nRebuild with deployment\scripts\fetch-postgresql.ps1 then package-installer.ps1.$\r$\nInstall aborted (will not continue to backend)."
+  IfFileExists "$INSTDIR\resources\installer-wizard\JumanSetupWizard.ps1" 0 missing_wizard
+    CopyFiles /SILENT "$INSTDIR\resources\installer-wizard\*.*" "$INSTDIR\installer-wizard"
+    Goto after_wizard
+  missing_wizard:
+    MessageBox MB_ICONSTOP "Installer wizard missing (resources\installer-wizard). Rebuild package."
     Abort
-  have_pg_vendor:
+  after_wizard:
 
-  DetailPrint "Running instrumented install via 64-bit PowerShell..."
-  nsExec::ExecToLog '"$Ps64" -NoProfile -ExecutionPolicy Bypass -File "$INSTDIR\scripts\run-custom-install.ps1" -InstallDir "$INSTDIR"'
+  DetailPrint "Launching Juman Setup Wizard (PostgreSQL must already be installed)..."
+  nsExec::ExecToLog '"$Ps64" -NoProfile -ExecutionPolicy Bypass -File "$INSTDIR\installer-wizard\JumanSetupWizard.ps1" -InstallDir "$INSTDIR"'
   Pop $0
-  IntCmp $0 0 custom_ok custom_fail custom_fail
-  custom_fail:
-    DetailPrint "Custom install FAILED exit=$0"
-    nsExec::ExecToLog '"$Ps64" -NoProfile -ExecutionPolicy Bypass -File "$INSTDIR\scripts\show-install-failure.ps1" -InstallDir "$INSTDIR"'
-    Pop $1
-    IfFileExists "$INSTDIR\logs\installer-last-failure.txt" 0 fail_generic
-      FileOpen $3 "$INSTDIR\logs\installer-last-failure.txt" r
-      FileRead $3 $4
-      FileClose $3
-      MessageBox MB_ICONSTOP "Juman install failed (exit $0).$\r$\n$\r$\n$4$\r$\n$\r$\nSee:$\r$\n  $INSTDIR\logs\installer.json$\r$\n  $INSTDIR\logs\postgresql-install.log$\r$\n$\r$\nInstall aborted. No fake config will be generated.$\r$\nPrefer install to C:\Program Files\Juman (per-machine)."
-      Abort
-    fail_generic:
-      MessageBox MB_ICONSTOP "Juman install failed (exit $0).$\r$\n$\r$\nPostgreSQL must be installed and verified before backend setup.$\r$\nSee:$\r$\n  $INSTDIR\logs\installer.json$\r$\n  $INSTDIR\logs\postgresql-install.log$\r$\n$\r$\nInstall aborted. No fake config will be generated."
-      Abort
-  custom_ok:
-    DetailPrint "Custom install succeeded (see logs\installer.json)."
+  IntCmp $0 0 wizard_ok wizard_fail wizard_fail
+  wizard_fail:
+    DetailPrint "Setup wizard FAILED exit=$0"
+    MessageBox MB_ICONSTOP "Juman setup failed (exit $0).$\r$\n$\r$\nPostgreSQL must be installed and running BEFORE Install Juman.$\r$\nSee:$\r$\n  $INSTDIR\logs\installer.json$\r$\n  $INSTDIR\logs\INSTALLER_CONFIGURATION_REPORT.md$\r$\n$\r$\nInstall aborted. No fake config will be generated."
+    Abort
+  wizard_ok:
+    DetailPrint "Setup wizard completed."
 
   CreateDirectory "$SMPROGRAMS\Juman"
   CreateShortCut "$SMPROGRAMS\Juman\Juman.lnk" "$INSTDIR\Juman.exe"
@@ -107,6 +98,7 @@ Var Ps64
   CreateShortCut "$SMPROGRAMS\Juman\Repair Juman Services.lnk" "$INSTDIR\scripts\elevate-repair.cmd"
   CreateShortCut "$SMPROGRAMS\Juman\Start Juman Services.lnk" "$INSTDIR\scripts\elevate-start-services.cmd"
   CreateShortCut "$SMPROGRAMS\Juman\Diagnostics.lnk" "$INSTDIR\Juman.exe" "--diagnostics"
+  CreateShortCut "$SMPROGRAMS\Juman\Setup Wizard.lnk" "$Ps64" '-NoProfile -ExecutionPolicy Bypass -File "$INSTDIR\installer-wizard\JumanSetupWizard.ps1" -InstallDir "$INSTDIR"'
 !macroend
 
 !macro customUnInstall
@@ -129,11 +121,7 @@ Var Ps64
     RMDir /r "$INSTDIR\storage"
   after_st:
 
-  MessageBox MB_YESNO|MB_ICONQUESTION "Uninstall PostgreSQL 16 product too?" IDYES rem_pg IDNO skip_pg
-  rem_pg:
-    nsExec::ExecToLog '"$Ps64" -NoProfile -ExecutionPolicy Bypass -Command "$$u=Join-Path $$env:ProgramW6432 ''PostgreSQL\16\uninstall-postgresql.exe''; if(-not (Test-Path $$u)){ $$u=Join-Path $$env:ProgramFiles ''PostgreSQL\16\uninstall-postgresql.exe'' }; if(Test-Path $$u){ Start-Process $$u -Wait }"'
-    Pop $0
-  skip_pg:
+  ; PostgreSQL is operator-owned — Juman does not uninstall it automatically.
 
   IfFileExists "$INSTDIR\backend\JumanApi.exe" 0 skip_svc
     nsExec::ExecToLog '"$INSTDIR\backend\JumanApi.exe" stop'
@@ -159,6 +147,8 @@ Var Ps64
     CopyFiles /SILENT "$INSTDIR\resources\scripts\*.ps1" "$INSTDIR\scripts"
   IfFileExists "$INSTDIR\resources\scripts\*.cmd" 0 +2
     CopyFiles /SILENT "$INSTDIR\resources\scripts\*.cmd" "$INSTDIR\scripts"
+  IfFileExists "$INSTDIR\resources\installer-wizard\*.ps1" 0 +2
+    CopyFiles /SILENT "$INSTDIR\resources\installer-wizard\*.*" "$INSTDIR\installer-wizard"
   nsExec::ExecToLog '"$Ps64" -NoProfile -ExecutionPolicy Bypass -File "$INSTDIR\scripts\repair-install.ps1" -InstallDir "$INSTDIR"'
   Pop $0
   IntCmp $0 0 +2 +1 +1

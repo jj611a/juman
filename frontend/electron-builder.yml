@@ -14,10 +14,6 @@ extraResources:
       - "**/*"
   - from: ../deployment/runtime
     to: runtime
-  - from: ../deployment/vendor
-    to: vendor
-    filter:
-      - "**/*"
   - from: ../deployment/dist/backend
     to: backend
     filter:
@@ -27,6 +23,10 @@ extraResources:
     filter:
       - "*.ps1"
       - "*.cmd"
+  - from: ../deployment/installer-wizard
+    to: installer-wizard
+    filter:
+      - "**/*"
 win:
   target:
     - target: nsis

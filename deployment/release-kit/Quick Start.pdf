@@ -1,0 +1,113 @@
+%PDF-1.4
+1 0 obj<< /Type /Catalog /Pages 2 0 R >>endobj
+2 0 obj<< /Type /Pages /Kids [4 0 R] /Count 1 >>endobj
+3 0 obj<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>endobj
+4 0 obj<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 5 0 R /Resources << /Font << /F1 3 0 R >> >> >>endobj
+5 0 obj<< /Length 1914 >>stream
+BT
+/F1 11 Tf
+50 750 Td
+(Quick Start - Juman) Tj
+0 -14 Td
+( ) Tj
+0 -14 Td
+( ) Tj
+0 -14 Td
+(1. Install PostgreSQL first) Tj
+0 -14 Td
+( ) Tj
+0 -14 Td
+( ) Tj
+0 -14 Td
+(1. Open the release folder.) Tj
+0 -14 Td
+(2. Run Install PostgreSQL.exe.) Tj
+0 -14 Td
+(3. Remember the postgres password.) Tj
+0 -14 Td
+(4. Confirm service postgresql-x64-16 is Running.) Tj
+0 -14 Td
+( ) Tj
+0 -14 Td
+(Details: PostgreSQL Installation Guide.pdf) Tj
+0 -14 Td
+( ) Tj
+0 -14 Td
+(2. Install Juman) Tj
+0 -14 Td
+( ) Tj
+0 -14 Td
+( ) Tj
+0 -14 Td
+(1. Run Install Juman.exe as Administrator.) Tj
+0 -14 Td
+(2. Follow the Setup Wizard:) Tj
+0 -14 Td
+(   - Verify PostgreSQL) Tj
+0 -14 Td
+(   - Enter host/port \\(defaults: localhost / 5432\\)) Tj
+0 -14 Td
+(   - Enter the postgres password \\(not saved to disk\\)) Tj
+0 -14 Td
+(   - Accept defaults for database juman and user juman_app \\(or customize\\)) Tj
+0 -14 Td
+(   - Allow secure app password generation) Tj
+0 -14 Td
+(3. Wait until Validation succeeds and Finish shows SUCCESS.) Tj
+0 -14 Td
+( ) Tj
+0 -14 Td
+(3. First launch) Tj
+0 -14 Td
+( ) Tj
+0 -14 Td
+( ) Tj
+0 -14 Td
+(1. Start Juman from the Start Menu or Desktop.) Tj
+0 -14 Td
+(2. Use bootstrap credentials from:) Tj
+0 -14 Td
+( ) Tj
+0 -14 Td
+(%ProgramFiles%\Juman\config\install-credentials.txt) Tj
+0 -14 Td
+( ) Tj
+0 -14 Td
+(3. Complete the in-app first-run company/admin flow.) Tj
+0 -14 Td
+( ) Tj
+0 -14 Td
+(If something fails) Tj
+0 -14 Td
+( ) Tj
+0 -14 Td
+( ) Tj
+0 -14 Td
+(- Report: %ProgramFiles%\Juman\logs\INSTALLER_CONFIGURATION_REPORT.md) Tj
+0 -14 Td
+(- Steps: %ProgramFiles%\Juman\logs\installer.json) Tj
+0 -14 Td
+(- Re-open Setup Wizard from Start Menu -> Juman -> Setup Wizard) Tj
+0 -14 Td
+(- Use recovery actions: Retry, Re-test connection, Restart PostgreSQL, Regenerate config, ) Tj
+0 -14 Td
+(Re-run migrations) Tj
+0 -14 Td
+( ) Tj
+0 -14 Td
+(Juman never silently installs PostgreSQL. Always use Install PostgreSQL.exe first.) Tj
+ET
+endstream
+endobj
+xref
+0 6
+0000000000 65535 f 
+0000000009 00000 n 
+0000000056 00000 n 
+0000000111 00000 n 
+0000000179 00000 n 
+0000000303 00000 n 
+trailer<< /Size 6 /Root 1 0 R >>
+startxref
+2267
+%%EOF
