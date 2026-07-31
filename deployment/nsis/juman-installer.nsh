@@ -1,5 +1,5 @@
-; Juman NSIS helpers — external PostgreSQL required (wizard configures DB).
-; No automatic PostgreSQL install.
+; Juman NSIS helpers - external PostgreSQL required (wizard configures DB).
+; Backend deps install on first desktop launch (live PyPI + WinSW).
 
 !include LogicLib.nsh
 !include FileFunc.nsh
@@ -40,13 +40,23 @@ Var Ps64
   CreateDirectory "$INSTDIR\scripts"
   CreateDirectory "$INSTDIR\installer-wizard"
 
-  IfFileExists "$INSTDIR\resources\backend\juman-api.exe" 0 missing_api
-    CopyFiles /SILENT "$INSTDIR\resources\backend\*.*" "$INSTDIR\backend"
+  IfFileExists "$INSTDIR\resources\backend\run_api.py" 0 missing_api
+    nsExec::ExecToLog 'cmd /c xcopy /E /I /Y "$INSTDIR\resources\backend\*" "$INSTDIR\backend\"'
+    Pop $0
     Goto after_api
   missing_api:
-    MessageBox MB_ICONSTOP "juman-api.exe missing. Rebuild with deployment\scripts\package-installer.ps1."
+    MessageBox MB_ICONSTOP "Backend runtime missing (run_api.py). Rebuild with deployment\scripts\package-installer.ps1."
     Abort
   after_api:
+
+  IfFileExists "$INSTDIR\resources\runtime\python\python.exe" 0 missing_py
+    nsExec::ExecToLog 'cmd /c xcopy /E /I /Y "$INSTDIR\resources\runtime\*" "$INSTDIR\runtime\"'
+    Pop $0
+    Goto after_py
+  missing_py:
+    MessageBox MB_ICONSTOP "Embeddable Python missing under resources\runtime\python. Run fetch-python-embed.ps1."
+    Abort
+  after_py:
 
   IfFileExists "$INSTDIR\resources\services\JumanApi.xml" 0 missing_xml
     CopyFiles /SILENT "$INSTDIR\resources\services\JumanApi.xml" "$INSTDIR\backend\JumanApi.xml"
@@ -90,13 +100,14 @@ Var Ps64
     MessageBox MB_ICONSTOP "Juman setup failed (exit $0).$\r$\n$\r$\nPostgreSQL must be installed and running BEFORE Install Juman.$\r$\nSee:$\r$\n  $INSTDIR\logs\installer.json$\r$\n  $INSTDIR\logs\INSTALLER_CONFIGURATION_REPORT.md$\r$\n$\r$\nInstall aborted. No fake config will be generated."
     Abort
   wizard_ok:
-    DetailPrint "Setup wizard completed."
+    DetailPrint "Setup wizard completed. Backend Python packages install on first Juman launch."
 
   CreateDirectory "$SMPROGRAMS\Juman"
   CreateShortCut "$SMPROGRAMS\Juman\Juman.lnk" "$INSTDIR\Juman.exe"
   CreateShortCut "$DESKTOP\Juman.lnk" "$INSTDIR\Juman.exe"
   CreateShortCut "$SMPROGRAMS\Juman\Repair Juman Services.lnk" "$INSTDIR\scripts\elevate-repair.cmd"
   CreateShortCut "$SMPROGRAMS\Juman\Start Juman Services.lnk" "$INSTDIR\scripts\elevate-start-services.cmd"
+  CreateShortCut "$SMPROGRAMS\Juman\Bootstrap Backend.lnk" "$INSTDIR\scripts\elevate-bootstrap.cmd"
   CreateShortCut "$SMPROGRAMS\Juman\Diagnostics.lnk" "$INSTDIR\Juman.exe" "--diagnostics"
   CreateShortCut "$SMPROGRAMS\Juman\Setup Wizard.lnk" "$Ps64" '-NoProfile -ExecutionPolicy Bypass -File "$INSTDIR\installer-wizard\JumanSetupWizard.ps1" -InstallDir "$INSTDIR"'
 !macroend
@@ -121,7 +132,7 @@ Var Ps64
     RMDir /r "$INSTDIR\storage"
   after_st:
 
-  ; PostgreSQL is operator-owned — Juman does not uninstall it automatically.
+  ; PostgreSQL is operator-owned - Juman does not uninstall it automatically.
 
   IfFileExists "$INSTDIR\backend\JumanApi.exe" 0 skip_svc
     nsExec::ExecToLog '"$INSTDIR\backend\JumanApi.exe" stop'
@@ -137,8 +148,12 @@ Var Ps64
 !macro customInstallMode
   !insertmacro ResolvePowerShell64
   DetailPrint "Repairing Juman (preserve DB + storage)..."
-  IfFileExists "$INSTDIR\resources\backend\juman-api.exe" 0 +2
-    CopyFiles /SILENT "$INSTDIR\resources\backend\*.*" "$INSTDIR\backend"
+  IfFileExists "$INSTDIR\resources\backend\run_api.py" 0 +2
+    nsExec::ExecToLog 'cmd /c xcopy /E /I /Y "$INSTDIR\resources\backend\*" "$INSTDIR\backend\"'
+    Pop $0
+  IfFileExists "$INSTDIR\resources\runtime\python\python.exe" 0 +2
+    nsExec::ExecToLog 'cmd /c xcopy /E /I /Y "$INSTDIR\resources\runtime\*" "$INSTDIR\runtime\"'
+    Pop $0
   IfFileExists "$INSTDIR\resources\services\WinSW-x64.exe" 0 +2
     CopyFiles /SILENT "$INSTDIR\resources\services\WinSW-x64.exe" "$INSTDIR\backend\JumanApi.exe"
   IfFileExists "$INSTDIR\resources\services\JumanApi.xml" 0 +2
@@ -149,8 +164,8 @@ Var Ps64
     CopyFiles /SILENT "$INSTDIR\resources\scripts\*.cmd" "$INSTDIR\scripts"
   IfFileExists "$INSTDIR\resources\installer-wizard\*.ps1" 0 +2
     CopyFiles /SILENT "$INSTDIR\resources\installer-wizard\*.*" "$INSTDIR\installer-wizard"
-  nsExec::ExecToLog '"$Ps64" -NoProfile -ExecutionPolicy Bypass -File "$INSTDIR\scripts\repair-install.ps1" -InstallDir "$INSTDIR"'
+  nsExec::ExecToLog '"$Ps64" -NoProfile -ExecutionPolicy Bypass -File "$INSTDIR\scripts\bootstrap-backend-venv.ps1" -InstallDir "$INSTDIR" -Force'
   Pop $0
   IntCmp $0 0 +2 +1 +1
-    MessageBox MB_ICONEXCLAMATION "Repair finished with exit code $0"
+    MessageBox MB_ICONEXCLAMATION "Backend bootstrap finished with exit code $0"
 !macroend

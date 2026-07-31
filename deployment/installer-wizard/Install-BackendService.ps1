@@ -3,10 +3,12 @@ function Install-JumanBackendService {
   param([Parameter(Mandatory)][string]$InstallDir)
   $winsw = Join-Path $InstallDir "backend\JumanApi.exe"
   $xml = Join-Path $InstallDir "backend\JumanApi.xml"
-  $api = Join-Path $InstallDir "backend\juman-api.exe"
+  $venvPy = Join-Path $InstallDir "backend\.venv\Scripts\python.exe"
+  $runApi = Join-Path $InstallDir "backend\run_api.py"
   if (-not (Test-Path $winsw)) { throw "WinSW wrapper missing: $winsw" }
   if (-not (Test-Path $xml)) { throw "JumanApi.xml missing: $xml" }
-  if (-not (Test-Path $api)) { throw "juman-api.exe missing: $api" }
+  if (-not (Test-Path $venvPy)) { throw "Backend venv missing: $venvPy (run bootstrap-backend-venv.ps1 first)" }
+  if (-not (Test-Path $runApi)) { throw "run_api.py missing: $runApi" }
 
   Push-Location (Join-Path $InstallDir "backend")
   try {

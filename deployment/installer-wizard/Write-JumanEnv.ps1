@@ -23,7 +23,7 @@ function Write-JumanEnvFile {
   $configDir = Join-Path $InstallDir "config"
   $storage = Join-Path $InstallDir "storage"
   $logs = Join-Path $InstallDir "logs"
-  New-Item -ItemType Directory -Force -Path $configDir, $storage, $logs, (Join-Path $InstallDir "data"), (Join-Path $InstallDir "runtime") | Out-Null
+  New-Item -ItemType Directory -Force -Path $configDir, $storage, $logs, (Join-Path $InstallDir "data"), (Join-Path $InstallDir "runtime"), (Join-Path $storage "media"), (Join-Path $storage "backups") | Out-Null
 
   $dbUrlUser = [uri]::EscapeDataString($AppUser)
   $dbUrlPass = [uri]::EscapeDataString($AppPassword)

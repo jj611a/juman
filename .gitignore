@@ -46,3 +46,10 @@ frontend/out/
 
 # Design-system Pro Max persist (if generated at root)
 design-system/
+
+# Live-PyPI hybrid packaging caches
+deployment/runtime/python/
+deployment/vendor/python/
+deployment/vendor/postgresql/
+deployment/dist/
+deployment/services/WinSW-x64.exe

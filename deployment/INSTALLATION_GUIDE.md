@@ -16,13 +16,14 @@ Juman-vX.Y.Z/
 - Windows 10/11 x64, Administrator
 - **PostgreSQL 16** installed and service `postgresql-x64-16` Running **before** Install Juman
 - Remember the postgres superuser password (used once in the wizard; never stored)
+- **Outbound HTTPS to PyPI** on first desktop launch (backend packages install once into `backend\.venv`)
 
 ## Prerequisites (build machine)
 
 - Windows 10/11 x64, Administrator
 - Node.js + pnpm (frontend)
-- Python 3.11+ / `uv` (backend freeze)
-- Network to fetch WinSW + (for release ZIP) EDB PostgreSQL installer
+- Python 3.13+ / `uv` (export locked requirements; no PyInstaller on release path)
+- Network to fetch WinSW, embeddable CPython, and (for release ZIP) EDB PostgreSQL installer
 
 ## Build & package
 
@@ -32,8 +33,6 @@ powershell -File deployment\scripts\package-installer.ps1
 
 # Assemble release ZIP (fetches EDB as Install PostgreSQL.exe + guides)
 powershell -File deployment\scripts\package-installer.ps1 -BuildReleaseZip
-# or:
-powershell -File deployment\scripts\build-release-zip.ps1
 ```
 
 Output:
@@ -41,18 +40,24 @@ Output:
 - Setup: `frontend\release\Juman-Setup-*.exe` (renamed in ZIP to `Install Juman.exe`)
 - Kit: `frontend\release\Juman-v*\` and `.zip`
 
-Packaging **fails** if `juman-api.exe`, `WinSW-x64.exe`, or `installer-wizard\JumanSetupWizard.ps1` is missing.
+Packaging **fails** if embeddable Python, staged `run_api.py` / `requirements.txt`, `WinSW-x64.exe`, or the Setup Wizard is missing.
+
+### Backend model (live PyPI + WinSW hybrid)
+
+1. Installer ships embeddable Python under `runtime\python` and backend source under `backend\` (no frozen `juman-api.exe`).
+2. Setup Wizard creates DB/role and `config\juman.env` only (migrate + WinSW deferred).
+3. First launch of **Juman** (elevated bootstrap) creates `backend\.venv`, `pip install -r requirements.txt` from PyPI (versions locked from `uv.lock` at package time), runs migrate, registers WinSW `JumanApi`.
+4. Later launches only ensure the Windows service is RUNNING.
+
+Air-gapped PCs will fail closed at first launch without PyPI access.
 
 ### Portable ZIP (lab / demo)
 
-No NSIS installer and no WinSW service. Requires existing PostgreSQL 16.
+May still use a frozen backend for labs; production store PCs should use Install Juman.exe.
 
 ```powershell
 powershell -File deployment\scripts\build-portable.ps1
 ```
-
-Output: `frontend\release\Juman-Portable-v*\` and `.zip` (see `README-PORTABLE.txt` inside).
-Not a substitute for the per-machine Setup on production store PCs.
 
 ## Clean PC install flow
 
@@ -62,42 +67,27 @@ Not a substitute for the per-machine Setup on production store PCs.
 4. Run **Install Juman.exe** as Administrator.
 5. Setup Wizard (elevated WinForms):
    - Requirements → Verify PostgreSQL (fail-closed if missing/wrong major)
-   - Database Configuration (defaults: localhost, 5432, postgres, db `juman`, user `juman_app`, generate app password ON)
-   - Connection Test → Database Init (create role/DB/grants + `juman-api.exe migrate`)
-   - Write `config\juman.env` (**app user only**; no postgres password on disk)
-   - Install/start WinSW `JumanApi` → Validation (health, folders, service RUNNING)
-6. Launch Electron → first-run company/admin wizard.
+   - Database Configuration → Connection Test → Database Init (create role/DB/grants; **no migrate yet**)
+   - Confirm staged backend + embed Python files
+   - Write `config\juman.env` (**app user only**)
+   - Service/API validation deferred to first desktop launch
+6. Launch **Juman** from Desktop (UAC bootstrap once; needs internet).
+7. Electron first-run company/admin wizard.
 
-## First-run wizard (desktop)
+## Boot order (after first bootstrap)
 
-Persists company name, timezone/language, storage path, admin password change, then `firstrun.done`.
+Windows → `postgresql-x64-16` → `JumanApi` (venv `python run_api.py`, wait-for-DB) → Electron (HTTP only).
 
-Bootstrap password is in `config\install-credentials.txt` (protect this file).
+## Manual QA
 
-## Boot order
-
-Windows → `postgresql-x64-16` → `JumanApi` (wait-for-DB) → Electron (HTTP only).
-
-Electron never starts PostgreSQL. Juman Setup never silently installs PostgreSQL.
-
-## Manual QA (operator VM)
-
-- [ ] Without PG: Install Juman stops at Verify with instructions
-- [ ] With PG 16: wizard completes; health OK; `juman.env` has `juman_app` only
-- [ ] Release ZIP has the five required top-level entries
-- [ ] `installer.json` + `INSTALLER_CONFIGURATION_REPORT.md` under `%ProgramFiles%\Juman\logs\`
-- [ ] First-run completes and login works
-- [ ] Upgrade over existing install (preserve DB/storage)
-- [ ] Uninstall retain DB + storage (PostgreSQL product left for operator)
+- [ ] Without PG: Install Juman stops at Verify
+- [ ] With PG 16: wizard completes; `juman.env` has `juman_app` only; API not required RUNNING yet
+- [ ] First Juman launch: bootstrap + health OK; `config\backend.bootstrap.ok` present
+- [ ] Second launch: no pip; service start only
+- [ ] Offline first launch: fail-closed with bootstrap log under `logs\bootstrap-*.log`
 
 ## Installer diagnostics
 
 - Step log: `%ProgramFiles%\Juman\logs\installer.json`
+- Bootstrap: `%ProgramFiles%\Juman\logs\bootstrap-*.log`
 - Configuration report: `%ProgramFiles%\Juman\logs\INSTALLER_CONFIGURATION_REPORT.md`
-
-Template: [`docs/release/INSTALLER_CONFIGURATION_REPORT.md`](../docs/release/INSTALLER_CONFIGURATION_REPORT.md)
-
-### Notes
-
-- `install-postgresql.ps1` remains as an optional ops tool; it is **not** invoked by Setup.
-- WinSW `<depend>postgresql-x64-16</depend>` — service name must match a supported PG 16 install.

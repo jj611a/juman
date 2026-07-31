@@ -37,7 +37,7 @@ const REPAIR_ACTIONS: Array<{
   {
     id: 'rerun_migrations',
     label: 'إعادة الترحيلات',
-    confirm: 'تشغيل juman-api.exe migrate؟'
+    confirm: 'تشغيل run_api.py migrate عبر .venv؟'
   },
   {
     id: 'repair_acls',

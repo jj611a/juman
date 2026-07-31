@@ -3,9 +3,9 @@
 .SYNOPSIS
   Post-install smoke checks for an already-installed Juman tree.
 .DESCRIPTION
-  Verifies services, health HTTP, env/storage presence, and migrate dry status.
+  Verifies services, health HTTP, env/storage presence, and backend diagnose.
   Exit 0 on success; non-zero on any failure. Does not install or mutate data beyond read-only checks
-  (migrate --help / status if supported; otherwise verifies migrate binary responds).
+  (run_api.py diagnose --json via .venv).
 #>
 param(
   [string]$InstallDir = "$env:ProgramFiles\Juman",
@@ -50,9 +50,15 @@ Write-Check "logs folder" (Test-Path $logs) $logs
 if (-not (Test-Path $data)) { Write-Host "[INFO] data folder absent (optional): $data" }
 if (-not (Test-Path $runtime)) { Write-Host "[INFO] runtime folder absent (optional): $runtime" }
 
-$apiExe = Join-Path $InstallDir "backend\juman-api.exe"
+$runApi = Join-Path $InstallDir "backend\run_api.py"
+$venvPy = Join-Path $InstallDir "backend\.venv\Scripts\python.exe"
+$embedPy = Join-Path $InstallDir "runtime\python\python.exe"
 $winsw = Join-Path $InstallDir "backend\JumanApi.exe"
-Write-Check "juman-api.exe present" (Test-Path $apiExe) $apiExe
+$marker = Join-Path $InstallDir "config\backend.bootstrap.ok"
+Write-Check "run_api.py present" (Test-Path $runApi) $runApi
+Write-Check "embed python present" (Test-Path $embedPy) $embedPy
+Write-Check "venv python present" (Test-Path $venvPy) $venvPy
+Write-Check "bootstrap marker present" (Test-Path $marker) $marker
 Write-Check "JumanApi.exe (WinSW) present" (Test-Path $winsw) $winsw
 
 Write-Check "PostgreSQL service RUNNING" (Test-ServiceRunning $PgService) $PgService
@@ -72,30 +78,26 @@ while ($sw.Elapsed.TotalSeconds -lt $HealthTimeoutSec) {
 }
 Write-Check "Health HTTP" $healthOk $HealthUrl
 
-# Migrate status: prefer "migrate status" / "alembic current" style; fall back to help
-$migrateOk = $false
-$migrateDetail = ""
-if (Test-Path $apiExe) {
+# Backend diagnose (read-only) via venv python + run_api.py
+$diagOk = $false
+$diagDetail = ""
+if ((Test-Path $venvPy) -and (Test-Path $runApi)) {
   try {
-    $out = & $apiExe migrate --help 2>&1 | Out-String
-    if ($LASTEXITCODE -eq 0 -or $out -match "migrate") {
-      $migrateOk = $true
-      $migrateDetail = "migrate CLI reachable"
-    }
-    # Attempt non-mutating status if supported
-    $statusOut = & $apiExe migrate status 2>&1 | Out-String
-    if ($LASTEXITCODE -eq 0) {
-      $migrateDetail = "migrate status OK"
-      $migrateOk = $true
-    } elseif ($statusOut -match "current|head|alembic|revision") {
-      $migrateDetail = "migrate status responded"
-      $migrateOk = $true
+    $env:JUMAN_INSTALL_DIR = $InstallDir
+    $out = & $venvPy $runApi diagnose --json 2>&1 | Out-String
+    if ($LASTEXITCODE -eq 0 -or $out -match '"ok"\s*:') {
+      $diagOk = $true
+      $diagDetail = "diagnose JSON reachable"
+    } else {
+      $diagDetail = "diagnose exit=$LASTEXITCODE"
     }
   } catch {
-    $migrateDetail = $_.Exception.Message
+    $diagDetail = $_.Exception.Message
   }
+} else {
+  $diagDetail = "venv/run_api missing (bootstrap not done?)"
 }
-Write-Check "Migrate CLI / status" $migrateOk $migrateDetail
+Write-Check "Backend diagnose CLI" $diagOk $diagDetail
 
 # Env must not be empty and should contain SECRET_KEY / DATABASE_URL
 if (Test-Path $envPath) {

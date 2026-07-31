@@ -103,30 +103,13 @@ Invoke-InstallerStep -InstallDir $InstallDir -Name "Write juman.env and install-
   Write-Output "Wrote $envPath"
 }
 
-Invoke-InstallerStep -InstallDir $InstallDir -Name "Run database migrations" -Action {
+Invoke-InstallerStep -InstallDir $InstallDir -Name "Bootstrap backend venv + migrate + WinSW" -Action {
   $global:LASTEXITCODE = 0
-  $api = Join-Path $InstallDir "backend\juman-api.exe"
-  if (-not (Test-Path $api)) { throw "Missing juman-api.exe" }
-  & $api migrate
-  if ($LASTEXITCODE -ne 0) { throw "Migration failed exit=$LASTEXITCODE" }
-  Write-Output "migrate ok"
-}
-
-Invoke-InstallerStep -InstallDir $InstallDir -Name "Install and start JumanApi service" -Action {
-  $global:LASTEXITCODE = 0
-  $winsw = Join-Path $InstallDir "backend\JumanApi.exe"
-  if (-not (Test-Path $winsw)) { throw "Missing WinSW wrapper JumanApi.exe" }
-  & $winsw install
-  if ($LASTEXITCODE -ne 0) { throw "WinSW install failed exit=$LASTEXITCODE" }
-  $global:LASTEXITCODE = 0
-  & $winsw start
-  if ($LASTEXITCODE -ne 0) {
-    Start-Sleep -Seconds 5
-    $global:LASTEXITCODE = 0
-    & $winsw start
-    if ($LASTEXITCODE -ne 0) { throw "WinSW start failed exit=$LASTEXITCODE" }
-  }
-  Write-Output "JumanApi service started"
+  $boot = Join-Path $scripts "bootstrap-backend-venv.ps1"
+  if (-not (Test-Path $boot)) { throw "Missing bootstrap-backend-venv.ps1" }
+  & $boot -InstallDir $InstallDir
+  if ($LASTEXITCODE -ne 0) { throw "bootstrap-backend-venv failed exit=$LASTEXITCODE" }
+  Write-Output "bootstrap + migrate + JumanApi ok"
 }
 
 Invoke-InstallerStep -InstallDir $InstallDir -Name "Apply install ACLs (post-install)" -Action {

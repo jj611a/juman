@@ -29,6 +29,9 @@ Write-Host "RepoRoot=$RepoRoot"
 $scripts = @(
   "deployment\scripts\package-installer.ps1",
   "deployment\scripts\build-backend.ps1",
+  "deployment\scripts\fetch-python-embed.ps1",
+  "deployment\scripts\stage-backend-runtime.ps1",
+  "deployment\scripts\bootstrap-backend-venv.ps1",
   "deployment\scripts\fetch-winsw.ps1",
   "deployment\scripts\fetch-postgresql.ps1",
   "deployment\scripts\post-install.ps1",
@@ -50,7 +53,9 @@ Write-Check ".gitignore excludes vendor/postgresql" ($gi -match "vendor/postgres
 
 $artifacts = @(
   @{ Rel = "deployment\services\WinSW-x64.exe"; Name = "WinSW binary" },
-  @{ Rel = "deployment\dist\backend\juman-api.exe"; Name = "juman-api.exe" }
+  @{ Rel = "deployment\dist\backend\run_api.py"; Name = "run_api.py" },
+  @{ Rel = "deployment\runtime\python\python.exe"; Name = "embed python" },
+  @{ Rel = "deployment\scripts\bootstrap-backend-venv.ps1"; Name = "bootstrap script" }
 )
 $setup = Get-ChildItem -Path (Join-Path $RepoRoot "frontend\release") -Filter "Juman-Setup-*.exe" -ErrorAction SilentlyContinue |
   Sort-Object LastWriteTime -Descending | Select-Object -First 1

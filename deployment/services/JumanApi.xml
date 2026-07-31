@@ -1,11 +1,12 @@
-<!-- WinSW service definition for Juman FastAPI (juman-api.exe).
-     Install: JumanApi.exe install (elevated)
+<!-- WinSW service definition for Juman FastAPI (venv python + run_api.py).
+     Install after first-launch bootstrap creates backend\.venv
      Runs as LocalSystem so it can bind 127.0.0.1:8000 and read Program Files config. -->
 <service>
   <id>JumanApi</id>
   <name>Juman API</name>
-  <description>Juman (جمان) FastAPI backend — waits for PostgreSQL then serves HTTP</description>
-  <executable>%BASE%\juman-api.exe</executable>
+  <description>Juman FastAPI backend - waits for PostgreSQL then serves HTTP</description>
+  <executable>%BASE%\.venv\Scripts\python.exe</executable>
+  <arguments>run_api.py</arguments>
   <workingdirectory>%BASE%</workingdirectory>
   <startmode>Automatic</startmode>
   <delayedAutoStart>true</delayedAutoStart>

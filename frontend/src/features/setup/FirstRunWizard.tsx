@@ -6,6 +6,7 @@ import { PasswordInput } from '@/components/ui/password-input'
 import { InlineMessage } from '@/components/ui/inline-message'
 import { apiClient } from '@/services/apiClient'
 import { settingsApi } from '@/features/settings/api'
+import { toAppError } from '@/lib/errors/appError'
 
 type Step = 'company' | 'database' | 'admin' | 'storage' | 'app' | 'done'
 
@@ -68,8 +69,20 @@ export function FirstRunWizard({ onCompleted }: FirstRunWizardProps): React.Reac
       if (!bootstrapPass.trim()) {
         throw new Error('أدخل كلمة مرور المثبت الحالية (IDENTITY_BOOTSTRAP)')
       }
-      if (!adminPass.trim() || adminPass.trim().length < 8) {
-        throw new Error('كلمة مرور المسؤول الجديدة يجب ألا تقل عن 8 أحرف')
+      const newPass = adminPass.trim()
+      if (newPass.length < 10) {
+        throw new Error('كلمة مرور المسؤول الجديدة يجب ألا تقل عن 10 أحرف')
+      }
+      const classes = [
+        /[a-z]/.test(newPass),
+        /[A-Z]/.test(newPass),
+        /\d/.test(newPass),
+        /[^A-Za-z0-9]/.test(newPass)
+      ].filter(Boolean).length
+      if (classes < 3) {
+        throw new Error(
+          'كلمة المرور يجب أن تحتوي على ثلاثة أنواع على الأقل من: أحرف كبيرة وصغيرة وأرقام ورموز'
+        )
       }
 
       await apiClient.auth.login({
@@ -80,14 +93,11 @@ export function FirstRunWizard({ onCompleted }: FirstRunWizardProps): React.Reac
       try {
         await apiClient.auth.changePassword({
           currentPassword: bootstrapPass.trim(),
-          newPassword: adminPass.trim()
+          newPassword: newPass
         })
       } catch (err) {
-        throw new Error(
-          err instanceof Error
-            ? `تعذر تغيير كلمة المرور: ${err.message}`
-            : 'تعذر تغيير كلمة المرور'
-        )
+        const appErr = toAppError(err)
+        throw new Error(`تعذر تغيير كلمة المرور: ${appErr.message}`)
       }
 
       try {
@@ -113,7 +123,7 @@ export function FirstRunWizard({ onCompleted }: FirstRunWizardProps): React.Reac
       await apiClient.appExtras.completeFirstRun()
       onCompleted()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'تعذر إكمال الإعداد')
+      setError(toAppError(err).message || 'تعذر إكمال الإعداد')
     } finally {
       setBusy(false)
     }
@@ -201,7 +211,8 @@ export function FirstRunWizard({ onCompleted }: FirstRunWizardProps): React.Reac
       {step === 'admin' ? (
         <section className="space-y-3">
           <p className="text-caption text-muted-foreground">
-            سجّل الدخول بكلمة مرور المثبت ثم عيّن كلمة مرور المسؤول الجديدة (تُحفظ عبر API).
+            استخدم كلمة مرور المثبت من config\install-credentials.txt ثم عيّن كلمة مرور جديدة
+            (10 أحرف على الأقل، وثلاثة أنواع من: كبيرة/صغيرة/أرقام/رموز).
           </p>
           <Label htmlFor="admin-user">اسم المستخدم</Label>
           <TextInput

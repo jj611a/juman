@@ -1,4 +1,4 @@
-import { app, BrowserWindow } from 'electron'
+import { app, BrowserWindow, dialog } from 'electron'
 import { loadMainConfig } from './config'
 import { createHttpClient } from './http/client'
 import { SafeStorageCredentialStore } from './security/credentialStore'
@@ -16,8 +16,10 @@ import {
   loadDiagnosticsWindow
 } from './window'
 import {
+  ensureBackendBootstrapped,
   ensurePortableApiRunning,
   isPortableInstall,
+  needsBackendBootstrap,
   stopPortableApiChild
 } from './hardware/serviceStatus'
 
@@ -33,6 +35,16 @@ app.whenReady().then(async () => {
   if (isPortableInstall()) {
     const ok = await ensurePortableApiRunning()
     appendMainLog(`portable API ready=${ok}`)
+  } else if (needsBackendBootstrap()) {
+    appendMainLog('backend bootstrap required (live PyPI + WinSW)')
+    const boot = await ensureBackendBootstrapped()
+    appendMainLog(`backend bootstrap ok=${boot.ok} ${boot.message}`)
+    if (!boot.ok) {
+      dialog.showErrorBox(
+        'Juman backend setup failed',
+        `${boot.message}\n\nFirst launch needs internet (PyPI).\nSee logs/INSTALL_PROGRESS.md and logs/bootstrap-*.log, or run Bootstrap Backend from the Start Menu.`
+      )
+    }
   }
 
   installApplicationMenu(() => mainWindow)

@@ -12,8 +12,9 @@ Quick start
      CREATE DATABASE juman OWNER juman_app;
 3. Copy config\juman.env.example -> config\juman.env
 4. Edit DATABASE_URL / SECRET_KEY / bootstrap password in juman.env
-5. (Optional first time) run:
-     backend\juman-api.exe migrate
+5. (Optional first time) run migrate with the shipped backend:
+     - Frozen layout:  backend\juman-api.exe migrate
+     - Venv layout:    backend\.venv\Scripts\python.exe backend\run_api.py migrate
 6. Double-click "Start Juman Portable.cmd"
 
 Notes

@@ -47,10 +47,15 @@ function Invoke-PgBootstrap {
 
 function Invoke-AlembicMigrate {
   param([Parameter(Mandatory)][string]$InstallDir)
-  $api = Join-Path $InstallDir "backend\juman-api.exe"
-  if (-not (Test-Path $api)) { throw "juman-api.exe missing: $api" }
-  $p = Start-Process -FilePath $api -ArgumentList @("migrate") -WorkingDirectory (Join-Path $InstallDir "backend") -Wait -PassThru -NoNewWindow
-  if ($p.ExitCode -ne 0) { throw "juman-api.exe migrate failed exit=$($p.ExitCode)" }
+  $venvPy = Join-Path $InstallDir "backend\.venv\Scripts\python.exe"
+  $runApi = Join-Path $InstallDir "backend\run_api.py"
+  if (-not (Test-Path $venvPy)) {
+    throw "Backend venv missing ($venvPy). Launch Juman once to bootstrap (needs PyPI), or run scripts\bootstrap-backend-venv.ps1"
+  }
+  if (-not (Test-Path $runApi)) { throw "run_api.py missing: $runApi" }
+  $env:JUMAN_INSTALL_DIR = $InstallDir
+  $p = Start-Process -FilePath $venvPy -ArgumentList @($runApi, "migrate") -WorkingDirectory (Join-Path $InstallDir "backend") -Wait -PassThru -NoNewWindow
+  if ($p.ExitCode -ne 0) { throw "run_api.py migrate failed exit=$($p.ExitCode)" }
   return [pscustomobject]@{ Ok = $true; ExitCode = $p.ExitCode; Message = "Migrations applied (upgrade head)" }
 }
 

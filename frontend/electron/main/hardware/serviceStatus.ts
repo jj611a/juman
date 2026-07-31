@@ -40,6 +40,7 @@ export function installRoot(): string {
       // Prefer folder beside Juman.exe when portable layout / local config is present.
       if (
         existsSync(join(appDir, 'backend', 'juman-api.exe')) ||
+        existsSync(join(appDir, 'backend', 'run_api.py')) ||
         existsSync(join(appDir, 'portable.marker'))
       ) {
         return appDir
@@ -54,8 +55,51 @@ export function installRoot(): string {
   return join(app.getPath('userData'), 'install')
 }
 
+export function apiPythonPath(): string {
+  return join(installRoot(), 'backend', '.venv', 'Scripts', 'python.exe')
+}
+
+export function runApiScriptPath(): string {
+  return join(installRoot(), 'backend', 'run_api.py')
+}
+
+export function bootstrapMarkerPath(): string {
+  return join(installRoot(), 'config', 'backend.bootstrap.ok')
+}
+
+export function embedPythonPath(): string {
+  return join(installRoot(), 'runtime', 'python', 'python.exe')
+}
+
+/** Prefer venv python; fall back to frozen juman-api.exe (portable legacy). */
 export function apiExePath(): string {
+  const py = apiPythonPath()
+  if (existsSync(py)) return py
   return join(installRoot(), 'backend', 'juman-api.exe')
+}
+
+export function needsBackendBootstrap(): boolean {
+  if (process.platform !== 'win32') return false
+  if (isPortableInstall()) {
+    if (!existsSync(runApiScriptPath()) || !existsSync(embedPythonPath())) return false
+  }
+  if (!existsSync(runApiScriptPath())) return false
+  if (!existsSync(embedPythonPath())) return false
+  if (!existsSync(jumanEnvPath())) return false
+  if (!existsSync(apiPythonPath())) return true
+  if (!existsSync(bootstrapMarkerPath())) return true
+  try {
+    const marker = readFileSync(bootstrapMarkerPath(), 'utf8')
+    const m = marker.match(/^requirements_sha256=(.+)$/m)
+    const hashFile = join(installRoot(), 'backend', 'requirements.sha256')
+    if (m && existsSync(hashFile)) {
+      const want = readFileSync(hashFile, 'utf8').trim().toLowerCase()
+      if (m[1].trim().toLowerCase() !== want) return true
+    }
+  } catch {
+    return true
+  }
+  return false
 }
 
 export function installLogsHint(): string {
@@ -193,24 +237,38 @@ async function runElevatedPowerShell(scriptPath: string, args: string[]): Promis
 }
 
 function spawnPortableApi(): void {
-  const exe = apiExePath()
-  if (!existsSync(exe)) {
-    throw new Error(`juman-api.exe missing: ${exe}`)
+  const py = apiPythonPath()
+  const script = runApiScriptPath()
+  const frozen = join(installRoot(), 'backend', 'juman-api.exe')
+  const useVenv = existsSync(py) && existsSync(script)
+  if (!useVenv && !existsSync(frozen)) {
+    throw new Error(`backend runtime missing (venv or juman-api.exe) under ${installRoot()}`)
   }
   if (portableApiChild && !portableApiChild.killed && portableApiChild.exitCode == null) {
     return
   }
   ensureInstallDirs(installRoot())
-  const child = spawn(exe, [], {
-    cwd: dirname(exe),
-    windowsHide: true,
-    env: {
-      ...process.env,
-      JUMAN_INSTALL_DIR: installRoot(),
-      JUMAN_PORTABLE: '1'
-    },
-    stdio: 'ignore'
-  })
+  const child = useVenv
+    ? spawn(py, [script], {
+        cwd: join(installRoot(), 'backend'),
+        windowsHide: true,
+        env: {
+          ...process.env,
+          JUMAN_INSTALL_DIR: installRoot(),
+          JUMAN_PORTABLE: '1'
+        },
+        stdio: 'ignore'
+      })
+    : spawn(frozen, [], {
+        cwd: dirname(frozen),
+        windowsHide: true,
+        env: {
+          ...process.env,
+          JUMAN_INSTALL_DIR: installRoot(),
+          JUMAN_PORTABLE: '1'
+        },
+        stdio: 'ignore'
+      })
   portableApiChild = child
   child.on('exit', () => {
     if (portableApiChild === child) portableApiChild = null
@@ -241,15 +299,72 @@ export function stopPortableApiChild(): void {
   portableApiChild = null
 }
 
+export async function ensureBackendBootstrapped(): Promise<{ ok: boolean; message: string }> {
+  if (process.platform !== 'win32') {
+    return { ok: true, message: 'bootstrap not required' }
+  }
+  if (!needsBackendBootstrap()) {
+    return { ok: true, message: 'bootstrap already current' }
+  }
+  const script = join(installRoot(), 'scripts', 'bootstrap-backend-venv.ps1')
+  if (!existsSync(script)) {
+    return { ok: false, message: `bootstrap script missing: ${script}` }
+  }
+  const progressPath = join(installRoot(), 'logs', 'install-progress.json')
+  const progressLog = join(installRoot(), 'logs', 'INSTALL_PROGRESS.md')
+  try {
+    await runElevatedPowerShell(script, ['-InstallDir', installRoot()])
+  } catch (err) {
+    let progressHint = ''
+    try {
+      if (existsSync(progressPath)) {
+        progressHint = ` | progress=${readFileSync(progressPath, 'utf8').trim()}`
+      } else if (existsSync(progressLog)) {
+        const lines = readFileSync(progressLog, 'utf8').trim().split(/\r?\n/)
+        progressHint = ` | last=${lines[lines.length - 1] || ''}`
+      }
+    } catch {
+      /* ignore */
+    }
+    return {
+      ok: false,
+      message: `${err instanceof Error ? err.message : String(err)}${progressHint}`
+    }
+  }
+  if (needsBackendBootstrap()) {
+    let hint = 'check logs/bootstrap-*.log and logs/INSTALL_PROGRESS.md; PyPI network required'
+    try {
+      if (existsSync(progressPath)) hint = readFileSync(progressPath, 'utf8').trim()
+    } catch {
+      /* ignore */
+    }
+    return { ok: false, message: `bootstrap did not complete (${hint})` }
+  }
+  const deadline = Date.now() + 120_000
+  while (Date.now() < deadline) {
+    if (await probeApiHealth()) return { ok: true, message: 'bootstrap ok; health ready' }
+    await new Promise((r) => setTimeout(r, 1500))
+  }
+  return { ok: false, message: 'bootstrap finished but health not ready within 120s' }
+}
+
 export async function startBackendService(): Promise<BackendServiceStatus> {
   if (process.platform !== 'win32') return getBackendServiceStatus()
   if (isPortableInstall()) {
-    try {
-      spawnPortableApi()
-    } catch {
-      /* status below */
+    if (needsBackendBootstrap()) {
+      await ensureBackendBootstrapped()
+    } else {
+      try {
+        spawnPortableApi()
+      } catch {
+        /* status below */
+      }
     }
     await new Promise((r) => setTimeout(r, 1500))
+    return getBackendServiceStatus()
+  }
+  if (needsBackendBootstrap()) {
+    await ensureBackendBootstrapped()
     return getBackendServiceStatus()
   }
   const elevated = join(installRoot(), 'scripts', 'start-services-elevated.ps1')
@@ -310,8 +425,14 @@ export async function repairBackendService(): Promise<BackendServiceStatus> {
   }
   const repair = join(installRoot(), 'scripts', 'repair-install.ps1')
   try {
-    await runElevatedPowerShell(repair, ['-InstallDir', installRoot()])
+    await runElevatedPowerShell(repair, ['-InstallDir', installRoot(), '-ForceBootstrap'])
     return getBackendServiceStatus()
+  } catch {
+    /* fall through */
+  }
+  try {
+    const boot = await ensureBackendBootstrapped()
+    if (boot.ok) return getBackendServiceStatus()
   } catch {
     /* fall through to in-process repair */
   }

@@ -5,7 +5,6 @@ import { loadHardwareConfig } from '../hardware/configStore'
 import { getBackendServiceStatus, installLogsHint } from '../hardware/serviceStatus'
 import {
   REQUIRED_ENV_KEYS,
-  apiExePath,
   app,
   getDiskFreeBytes,
   httpGetJson,
@@ -302,9 +301,14 @@ export async function checkAlembic(): Promise<DiagnosticCheckResult> {
 
 export async function checkBackend(): Promise<DiagnosticCheckResult> {
   return timed('backend', 'Backend', 'الخادم الخلفي', async () => {
-    const exe = apiExePath()
-    const exists = existsSync(exe)
-    const hash = exists ? sha256File(exe) : null
+    const root = installRoot()
+    const venvPy = join(root, 'backend', '.venv', 'Scripts', 'python.exe')
+    const runApi = join(root, 'backend', 'run_api.py')
+    const embedPy = join(root, 'runtime', 'python', 'python.exe')
+    const marker = join(root, 'config', 'backend.bootstrap.ok')
+    const frozen = join(root, 'backend', 'juman-api.exe')
+    const runtimeOk =
+      (existsSync(venvPy) && existsSync(runApi)) || existsSync(frozen)
     const svc = await getBackendServiceStatus()
     const env = parseEnvFileDetailed(jumanEnvPath()).map
     const healthUrl = resolveHealthUrl(env)
@@ -314,7 +318,7 @@ export async function checkBackend(): Promise<DiagnosticCheckResult> {
     const health = await httpGetJson(healthUrl, 5000)
 
     let status: DiagnosticStatus = 'PASS'
-    if (!exists) status = 'FAIL'
+    if (!runtimeOk) status = 'FAIL'
     if (svc.state !== 'running') status = worst(status, 'FAIL')
     if (!health.ok) status = worst(status, 'FAIL')
     if (diagnose.code !== 0 && diagnose.code !== 1) status = worst(status, 'WARNING')
@@ -322,16 +326,24 @@ export async function checkBackend(): Promise<DiagnosticCheckResult> {
     return {
       status,
       details: [
-        exists ? 'juman-api.exe present' : 'juman-api.exe missing',
+        existsSync(venvPy)
+          ? 'venv python present'
+          : existsSync(frozen)
+            ? 'juman-api.exe present'
+            : 'backend runtime missing',
+        existsSync(marker) ? 'bootstrap marker ok' : 'bootstrap marker missing',
         `service ${svc.state}`,
         health.ok ? 'health OK' : 'health FAIL',
         `diagnose exit=${diagnose.code}`
       ].join(' · '),
       error: !health.ok ? health.error : diagnose.stderr || undefined,
       evidence: {
-        executable: exe,
-        exists,
-        sha256: hash,
+        venvPython: venvPy,
+        runApi,
+        embedPython: embedPy,
+        bootstrapMarker: marker,
+        frozenExe: frozen,
+        runtimeOk,
         service: svc,
         diagnoseExitCode: diagnose.code,
         diagnoseStdout: diagnose.stdout.slice(0, 6000),

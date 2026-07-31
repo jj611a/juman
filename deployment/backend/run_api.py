@@ -1,4 +1,4 @@
-"""Frozen entrypoint for juman-api.exe — wait for DB, then serve FastAPI; also supports migrate/diagnose."""
+"""Backend entrypoint (venv or frozen) - wait for DB, then serve FastAPI; also migrate/diagnose."""
 
 from __future__ import annotations
 
@@ -26,24 +26,37 @@ def _load_env_file(path: Path) -> None:
 
 
 def _resolve_install_root() -> Path:
+    env = os.environ.get("JUMAN_INSTALL_DIR", "").strip()
+    if env:
+        return Path(env)
     if getattr(sys, "frozen", False):
         return Path(sys.executable).resolve().parent.parent
-    return Path(__file__).resolve().parents[2]
+    here = Path(__file__).resolve().parent
+    # Installed/staged: .../Juman/backend/run_api.py beside app/
+    if (here / "app").is_dir():
+        return here.parent
+    # Dev: deployment/backend/run_api.py -> repo root
+    return here.parents[2]
 
 
 def _bundle_root() -> Path:
     if getattr(sys, "frozen", False):
         return Path(sys._MEIPASS)  # type: ignore[attr-defined]
-    return Path(__file__).resolve().parents[2] / "backend"
+    here = Path(__file__).resolve().parent
+    if (here / "app").is_dir():
+        return here
+    return here.parents[2] / "backend"
 
 
 def _prepare_env(root: Path) -> None:
     os.environ.setdefault("JUMAN_INSTALL_DIR", str(root))
     _load_env_file(root / "config" / "juman.env")
     storage = root / "storage"
-    storage.mkdir(parents=True, exist_ok=True)
+    media = storage / "media"
+    backups = storage / "backups"
+    for path in (storage, media, backups, root / "logs", root / "data"):
+        path.mkdir(parents=True, exist_ok=True)
     os.environ.setdefault("MEDIA_STORAGE_ROOT", str(storage))
-    (root / "logs").mkdir(parents=True, exist_ok=True)
 
 
 def _asyncpg_dsn(dsn: str) -> str:

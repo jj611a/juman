@@ -14,6 +14,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
+from app.core.storage_layout import ensure_storage_directories, resolve_configured_path
 from app.database.redis import ping_redis
 from app.modules.settings.constants import SettingKey
 from app.modules.settings.services.setting import SettingService
@@ -181,7 +182,10 @@ class DiagnosticsService(BaseService):
     async def _check_media_exists(self) -> tuple[DiagnosticCheckResult, Path | None]:
         try:
             root = await self.settings_service.get_string(SettingKey.MEDIA_STORAGE_ROOT.value)
-            path = Path(root)
+            path = resolve_configured_path(root)
+            if not path.is_dir():
+                ensure_storage_directories()
+                path.mkdir(parents=True, exist_ok=True)
             if path.exists() and path.is_dir():
                 return (
                     DiagnosticCheckResult(
@@ -269,12 +273,15 @@ class DiagnosticsService(BaseService):
 
     async def _backup_root(self) -> Path:
         raw = await self.settings_service.get_string(SettingKey.BACKUP_STORAGE_ROOT.value)
-        return Path(raw).expanduser().resolve()
+        path = resolve_configured_path(raw)
+        if not path.is_dir():
+            ensure_storage_directories()
+            path.mkdir(parents=True, exist_ok=True)
+        return path
 
     async def _media_root_path(self) -> Path | None:
         raw = await self.settings_service.get_string(SettingKey.MEDIA_STORAGE_ROOT.value)
-        path = Path(raw).expanduser().resolve()
-        return path
+        return resolve_configured_path(raw)
 
     async def _check_backup_exists(self) -> tuple[DiagnosticCheckResult, Path | None]:
         try:
@@ -346,13 +353,14 @@ class DiagnosticsService(BaseService):
                 details={"dialect": dialect, "tool": "builtin"},
             )
         if dialect == "postgresql":
-            ok = shutil.which("psql") is not None
+            psql = self._find_psql()
+            ok = psql is not None
             if ok:
                 return DiagnosticCheckResult(
                     id=DiagnosticCheckId.RESTORE_READINESS.value,
                     status=DiagnosticStatus.PASS.value,
                     message="أداة psql متاحة لعمليات الاستعادة",
-                    details={"dialect": dialect, "psql": True},
+                    details={"dialect": dialect, "psql": True, "psql_path": psql},
                 )
             return DiagnosticCheckResult(
                 id=DiagnosticCheckId.RESTORE_READINESS.value,
@@ -382,6 +390,12 @@ class DiagnosticsService(BaseService):
         except Exception:  # noqa: BLE001
             pass
         if not roots:
+            try:
+                layout = ensure_storage_directories()
+                roots["storage"] = layout["storage"]
+            except Exception:  # noqa: BLE001
+                pass
+        if not roots:
             return DiagnosticCheckResult(
                 id=DiagnosticCheckId.DISK_USAGE.value,
                 status=DiagnosticStatus.SKIP.value,
@@ -405,6 +419,23 @@ class DiagnosticsService(BaseService):
             message="مساحة القرص منخفضة" if warn else "مساحة القرص كافية",
             details=details,
         )
+
+
+    @staticmethod
+    def _find_psql() -> str | None:
+        found = shutil.which("psql")
+        if found:
+            return found
+        import os
+
+        program_files = Path(os.environ.get("ProgramFiles", r"C:\\Program Files"))
+        program_files_x86 = Path(os.environ.get("ProgramFiles(x86)", r"C:\\Program Files (x86)"))
+        for major in ("16", "17", "15", "14"):
+            for base in (program_files, program_files_x86):
+                candidate = base / "PostgreSQL" / major / "bin" / "psql.exe"
+                if candidate.is_file():
+                    return str(candidate)
+        return None
 
     def _check_app_runtime(self, request: Request | None) -> DiagnosticCheckResult:
         settings = get_settings()

@@ -21,6 +21,9 @@ $script:WizardRoot = $PSScriptRoot
 . (Join-Path $script:WizardRoot "PgBootstrap.ps1")
 . (Join-Path $script:WizardRoot "Write-JumanEnv.ps1")
 . (Join-Path $script:WizardRoot "Install-BackendService.ps1")
+$progressScript = Join-Path $InstallDir "scripts\Install-Progress.ps1"
+if (-not (Test-Path $progressScript)) { $progressScript = Join-Path (Split-Path $script:WizardRoot -Parent) "scripts\Install-Progress.ps1" }
+if (Test-Path $progressScript) { . $progressScript }
 . (Join-Path $script:WizardRoot "Write-InstallerReport.ps1")
 
 $stepLog = Join-Path $InstallDir "scripts\InstallerStepLog.ps1"
@@ -145,6 +148,10 @@ function Hide-StepFailure {
 function Set-Status([string]$Text) {
   $script:lblStatus.Text = $Text
   [System.Windows.Forms.Application]::DoEvents()
+  if (Get-Command Write-JumanInstallProgress -ErrorAction SilentlyContinue) {
+    $pct = [int]((($script:State.PageIndex + 1) / [Math]::Max(1, $PageNames.Count)) * 100)
+    Write-JumanInstallProgress -InstallDir $InstallDir -Phase "wizard" -Step ("page_" + $script:State.PageIndex) -Percent $pct -Message $Text
+  }
 }
 
 $PageNames = @(
@@ -438,18 +445,22 @@ function Render-Page {
       Set-Status "Connection test"
     }
     5 {
-      $lblBody.Text = "Next will create the database/user, run migrations, and verify Alembic HEAD."
+      $lblBody.Text = "Next will create the database/user and write grants.`r`nMigrations run on first Juman desktop launch (needs internet for PyPI)."
       Set-Status "Database initialization"
     }
     6 {
-      $api = Test-Path (Join-Path $InstallDir "backend\juman-api.exe")
+      $runApi = Test-Path (Join-Path $InstallDir "backend\run_api.py")
+      $req = Test-Path (Join-Path $InstallDir "backend\requirements.txt")
+      $py = Test-Path (Join-Path $InstallDir "runtime\python\python.exe")
       $winsw = Test-Path (Join-Path $InstallDir "backend\JumanApi.exe")
       $xml = Test-Path (Join-Path $InstallDir "backend\JumanApi.xml")
-      $ok = $api -and $winsw -and $xml
-      $apiT = if ($api) { "OK" } else { "MISSING" }
+      $ok = $runApi -and $req -and $py -and $winsw -and $xml
+      $runT = if ($runApi) { "OK" } else { "MISSING" }
+      $reqT = if ($req) { "OK" } else { "MISSING" }
+      $pyT = if ($py) { "OK" } else { "MISSING" }
       $winswT = if ($winsw) { "OK" } else { "MISSING" }
       $xmlT = if ($xml) { "OK" } else { "MISSING" }
-      $lblBody.Text = "Backend files (copied by NSIS):`r`n`r`njuman-api.exe: $apiT`r`nJumanApi.exe (WinSW): $winswT`r`nJumanApi.xml: $xmlT"
+      $lblBody.Text = "Backend files (copied by NSIS):`r`n`r`nrun_api.py: $runT`r`nrequirements.txt: $reqT`r`nruntime\python: $pyT`r`nJumanApi.exe (WinSW): $winswT`r`nJumanApi.xml: $xmlT`r`n`r`nPython packages install on first desktop launch."
       if (-not $ok) {
         Show-StepFailure "Backend files missing" "NSIS copy incomplete" "Re-run Install Juman.exe" $lblBody.Text
         $btnNext.Enabled = $false
@@ -460,11 +471,11 @@ function Render-Page {
       Set-Status "Configuration generation"
     }
     8 {
-      $lblBody.Text = "Next installs and starts the JumanApi Windows service (WinSW)."
+      $lblBody.Text = "WinSW service registration is deferred to first Juman launch (after PyPI bootstrap).`r`nClick Next to acknowledge."
       Set-Status "Service installation"
     }
     9 {
-      $lblBody.Text = "Next validates app-user DB access, health endpoint, storage folders, and service RUNNING."
+      $lblBody.Text = "Next validates folders, juman.env, and staged backend/runtime files.`r`nAPI health and WinSW start after first desktop launch."
       Set-Status "Validation"
     }
     10 {
@@ -480,7 +491,7 @@ function Render-Page {
         "Health: $health",
         "Report: $($script:State.ReportPath)",
         "",
-        "Launch Juman from the Start Menu. Change the bootstrap admin password on first run.",
+        "Launch Juman from the Start Menu (first launch needs internet for PyPI bootstrap + WinSW).",
         "Credentials file: config\install-credentials.txt"
       )
       $lblBody.Text = ($summary -join "`r`n")
@@ -519,15 +530,9 @@ function Invoke-DbInit {
   $script:State.EnvReadable = $envResult.Readable
   Invoke-SetInstallAcls
 
-  Invoke-InstallerStep -InstallDir $InstallDir -Name "migrate" -Action {
-    $m = Invoke-AlembicMigrate -InstallDir $InstallDir
-    $script:State.MigrateOk = $true
-    [void]$script:State.Notes.Add($m.Message)
-  }
-  $head = Test-AlembicHead -PsqlExe $script:State.Probe.PsqlExe -DbHost $script:State.DbHost -Port $script:State.Port `
-    -AppUser $script:State.AppUser -AppPassword $script:State.AppPassword -DbName $script:State.DbName
-  $script:State.AlembicRevision = $head.Revision
-  [void]$script:State.Notes.Add($head.Message)
+  $script:State.MigrateOk = $false
+  $script:State.AlembicRevision = "(deferred to first desktop launch)"
+  [void]$script:State.Notes.Add("Alembic migrate deferred until bootstrap-backend-venv on first Juman launch")
 }
 
 function Invoke-SetInstallAcls {
@@ -548,31 +553,41 @@ function Invoke-WriteEnvOnly {
 }
 
 function Invoke-ServiceInstall {
-  Invoke-InstallerStep -InstallDir $InstallDir -Name "winsw_install" -Action {
-    $s = Install-JumanBackendService -InstallDir $InstallDir
-    $script:State.ServiceOk = $true
-    [void]$script:State.Notes.Add($s.Message)
-  }
+  # Deferred: WinSW needs backend\.venv from first-launch bootstrap (live PyPI).
+  $script:State.ServiceOk = $true
+  [void]$script:State.Notes.Add("WinSW install deferred to first desktop launch (bootstrap-backend-venv.ps1)")
 }
 
 function Invoke-Validation {
-  $head = Test-AlembicHead -PsqlExe $script:State.Probe.PsqlExe -DbHost $script:State.DbHost -Port $script:State.Port `
-    -AppUser $script:State.AppUser -AppPassword $script:State.AppPassword -DbName $script:State.DbName
-  $script:State.AlembicRevision = $head.Revision
-
   foreach ($d in @("storage","logs","config","data","runtime")) {
     $p = Join-Path $InstallDir $d
     if (-not (Test-Path $p)) { throw "Missing folder: $p" }
   }
-
-  $svc = Test-JumanApiServiceRunning
-  if (-not $svc.Ok) { throw $svc.Message }
-
-  $h = Wait-JumanHealth -TimeoutSec 120
-  $script:State.HealthOk = $true
+  foreach ($f in @(
+    "config\juman.env",
+    "backend\run_api.py",
+    "backend\requirements.txt",
+    "backend\JumanApi.exe",
+    "backend\JumanApi.xml",
+    "runtime\python\python.exe",
+    "scripts\bootstrap-backend-venv.ps1"
+  )) {
+    $p = Join-Path $InstallDir $f
+    if (-not (Test-Path $p)) { throw "Missing required file: $p" }
+  }
+  # App-user can connect (DB exists); Alembic tables come on first launch.
+  $env:PGPASSWORD = $script:State.AppPassword
+  try {
+    $ping = & $script:State.Probe.PsqlExe -h $script:State.DbHost -p $script:State.Port -U $script:State.AppUser -d $script:State.DbName -tAc "SELECT 1" 2>&1
+    if ($LASTEXITCODE -ne 0 -or ("$ping").Trim() -ne "1") {
+      throw ("App-user DB ping failed: " + ($ping | Out-String))
+    }
+  } finally {
+    Remove-Item Env:PGPASSWORD -ErrorAction SilentlyContinue
+  }
+  $script:State.HealthOk = $false
   $script:State.ValidationOk = $true
-  [void]$script:State.Notes.Add($h.Message)
-  [void]$script:State.Notes.Add($svc.Message)
+  [void]$script:State.Notes.Add("Folders/config/runtime OK; API bootstrap deferred to first Juman launch")
 }
 
 function Advance-FromPage {
@@ -594,7 +609,7 @@ function Advance-FromPage {
       5 {
         Set-Status "Initializing database..."
         Invoke-DbInit
-        Set-Status "Database ready; Alembic $($script:State.AlembicRevision)"
+        Set-Status "Database ready; migrations deferred to first launch"
       }
       7 {
         Set-Status "Writing juman.env..."
@@ -618,13 +633,13 @@ function Advance-FromPage {
           ConnectionTest = $script:State.ConnectionMessage
           DatabaseCreation = "ok"
           UserCreation = "ok"
-          MigrationStatus = "ok"
+          MigrationStatus = "deferred_first_launch"
           AlembicRevision = $script:State.AlembicRevision
           EnvPath = $script:State.EnvPath
           EnvReadable = $script:State.EnvReadable
-          ServiceInstall = "ok"
-          ServiceValidation = "ok"
-          Health = "ok"
+          ServiceInstall = "deferred_first_launch"
+          ServiceValidation = "deferred_first_launch"
+          Health = "deferred_first_launch"
           Notes = (($script:State.Notes | ForEach-Object { "- $_" }) -join "`n")
           Technical = "Wizard completed successfully"
         }
@@ -710,15 +725,19 @@ $btnRegen.Add_Click({
 $btnRemigrate.Add_Click({
   try {
     Hide-StepFailure
-    Invoke-AlembicMigrate -InstallDir $InstallDir | Out-Null
+    $boot = Join-Path $InstallDir "scripts\bootstrap-backend-venv.ps1"
+    if (-not (Test-Path $boot)) { throw "bootstrap-backend-venv.ps1 missing" }
+    & $boot -InstallDir $InstallDir
+    if ($LASTEXITCODE -ne 0) { throw "bootstrap failed exit=$LASTEXITCODE" }
     $head = Test-AlembicHead -PsqlExe $script:State.Probe.PsqlExe -DbHost $script:State.DbHost -Port $script:State.Port `
       -AppUser $script:State.AppUser -AppPassword $script:State.AppPassword -DbName $script:State.DbName
     $script:State.AlembicRevision = $head.Revision
     $script:State.MigrateOk = $true
+    $script:State.ServiceOk = $true
     Set-Status $head.Message
-    [System.Windows.Forms.MessageBox]::Show($head.Message, "Migrations", "OK", "Information") | Out-Null
+    [System.Windows.Forms.MessageBox]::Show($head.Message, "Bootstrap + Migrations", "OK", "Information") | Out-Null
   } catch {
-    Show-StepFailure "Re-run migrations" $_.Exception.Message "Ensure juman.env DATABASE_URL is correct; retry." $_.Exception.Message
+    Show-StepFailure "Bootstrap / migrations" $_.Exception.Message "Needs internet (PyPI). Or run elevate-bootstrap.cmd." $_.Exception.Message
   }
 })
 

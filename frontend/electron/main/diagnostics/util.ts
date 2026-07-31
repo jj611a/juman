@@ -279,7 +279,13 @@ try {
 }
 
 export function apiExePath(): string {
+  const py = join(installRoot(), 'backend', '.venv', 'Scripts', 'python.exe')
+  if (existsSync(py)) return py
   return join(installRoot(), 'backend', 'juman-api.exe')
+}
+
+export function runApiScriptPath(): string {
+  return join(installRoot(), 'backend', 'run_api.py')
 }
 
 let _diagnoseCache: {
@@ -300,12 +306,26 @@ export async function runApiDiagnose(): Promise<{
   json: Record<string, unknown> | null
 }> {
   if (_diagnoseCache) return _diagnoseCache
-  const exe = apiExePath()
-  if (!existsSync(exe)) {
-    _diagnoseCache = { code: 127, stdout: '', stderr: `Missing ${exe}`, json: null }
+  const py = join(installRoot(), 'backend', '.venv', 'Scripts', 'python.exe')
+  const script = runApiScriptPath()
+  const frozen = join(installRoot(), 'backend', 'juman-api.exe')
+  let r: { code: number; stdout: string; stderr: string }
+  if (existsSync(py) && existsSync(script)) {
+    r = await runCmd(py, [script, 'diagnose', '--json'], {
+      timeoutMs: 90_000,
+      cwd: join(installRoot(), 'backend')
+    })
+  } else if (existsSync(frozen)) {
+    r = await runCmd(frozen, ['diagnose', '--json'], { timeoutMs: 90_000 })
+  } else {
+    _diagnoseCache = {
+      code: 127,
+      stdout: '',
+      stderr: `Missing venv python or juman-api.exe under ${installRoot()}`,
+      json: null
+    }
     return _diagnoseCache
   }
-  const r = await runCmd(exe, ['diagnose', '--json'], { timeoutMs: 90_000 })
   let json: Record<string, unknown> | null = null
   const text = r.stdout.trim()
   if (text) {

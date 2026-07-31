@@ -10,7 +10,7 @@ import {
   startBackendService
 } from '../hardware/serviceStatus'
 import { runElevatedPowerShell } from './elevate'
-import { apiExePath, nowIso, runApiDiagnose, runCmd, PG_SERVICE } from './util'
+import { nowIso, runApiDiagnose, runCmd, PG_SERVICE } from './util'
 
 export async function runRepairAction(
   actionId: DiagnosticRepairActionId
@@ -88,22 +88,40 @@ export async function runRepairAction(
         return { actionId, ok: true, message: 'repair-install.ps1 / WinSW repair completed' }
       }
       case 'rerun_migrations': {
-        const exe = apiExePath()
-        if (!existsSync(exe)) {
-          return { actionId, ok: false, message: 'juman-api.exe missing', error: exe }
+        const py = join(root, 'backend', '.venv', 'Scripts', 'python.exe')
+        const script = join(root, 'backend', 'run_api.py')
+        const frozen = join(root, 'backend', 'juman-api.exe')
+        let r: { code: number; stdout: string; stderr: string }
+        if (existsSync(py) && existsSync(script)) {
+          r = await runCmd(py, [script, 'migrate'], {
+            timeoutMs: 180_000,
+            cwd: join(root, 'backend')
+          })
+        } else if (existsSync(frozen)) {
+          r = await runCmd(frozen, ['migrate'], { timeoutMs: 180_000 })
+        } else {
+          const boot = join(root, 'scripts', 'bootstrap-backend-venv.ps1')
+          if (existsSync(boot)) {
+            await runElevatedPowerShell(boot, ['-InstallDir', root])
+            return { actionId, ok: true, message: 'bootstrap + migrate via elevated script' }
+          }
+          return {
+            actionId,
+            ok: false,
+            message: 'backend runtime missing (venv or juman-api.exe)',
+            error: py
+          }
         }
-        // Prefer elevated repair path which also migrates; also run migrate directly
-        const r = await runCmd(exe, ['migrate'], { timeoutMs: 180_000 })
         if (r.code !== 0) {
           const repair = join(root, 'scripts', 'repair-install.ps1')
           if (existsSync(repair)) {
-            await runElevatedPowerShell(repair, ['-InstallDir', root])
+            await runElevatedPowerShell(repair, ['-InstallDir', root, '-ForceBootstrap'])
           }
         }
         return {
           actionId,
           ok: r.code === 0,
-          message: r.code === 0 ? 'migrate ok' : 'migrate failed — tried elevated repair',
+          message: r.code === 0 ? 'migrate ok' : 'migrate failed - tried elevated repair',
           stdout: r.stdout,
           stderr: r.stderr,
           error: r.code === 0 ? undefined : r.stderr || `exit ${r.code}`
