@@ -1,6 +1,7 @@
 ; Phase 7.0 NSIS helpers for Juman (electron-builder include).
 ; Installer step diagnostics: scripts\run-custom-install.ps1 -> logs\installer.json
 ; PostgreSQL failure MUST Abort (never continue to backend / fake config).
+; Always invoke 64-bit PowerShell via Sysnative (NSIS stub is 32-bit / Wow64).
 
 !include LogicLib.nsh
 !include FileFunc.nsh
@@ -8,6 +9,7 @@
 
 Var RetainDatabase
 Var RetainStorage
+Var Ps64
 
 !macro preInit
   SetRegView 64
@@ -18,7 +20,18 @@ Var RetainStorage
   StrCpy $RetainStorage "1"
 !macroend
 
+!macro ResolvePowerShell64
+  IfFileExists "$WINDIR\Sysnative\WindowsPowerShell\v1.0\powershell.exe" 0 ps_sys32
+    StrCpy $Ps64 "$WINDIR\Sysnative\WindowsPowerShell\v1.0\powershell.exe"
+    Goto ps_done
+  ps_sys32:
+    StrCpy $Ps64 "$WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe"
+  ps_done:
+!macroend
+
 !macro customInstall
+  !insertmacro ResolvePowerShell64
+
   DetailPrint "Creating Juman directories..."
   CreateDirectory "$INSTDIR\config"
   CreateDirectory "$INSTDIR\data"
@@ -61,7 +74,6 @@ Var RetainStorage
     Abort
   after_scripts:
 
-  ; Require bundled PostgreSQL vendor EXE before any backend config is written.
   IfFileExists "$INSTDIR\resources\vendor\postgresql\*.exe" 0 missing_pg_vendor
     Goto have_pg_vendor
   missing_pg_vendor:
@@ -69,14 +81,23 @@ Var RetainStorage
     Abort
   have_pg_vendor:
 
-  DetailPrint "Running instrumented install (logs\installer.json)..."
-  nsExec::ExecToLog 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$INSTDIR\scripts\run-custom-install.ps1" -InstallDir "$INSTDIR"'
+  DetailPrint "Running instrumented install via 64-bit PowerShell..."
+  nsExec::ExecToLog '"$Ps64" -NoProfile -ExecutionPolicy Bypass -File "$INSTDIR\scripts\run-custom-install.ps1" -InstallDir "$INSTDIR"'
   Pop $0
   IntCmp $0 0 custom_ok custom_fail custom_fail
   custom_fail:
-    DetailPrint "Custom install FAILED exit=$0 - see $INSTDIR\logs\installer.json"
-    MessageBox MB_ICONSTOP "Juman install failed (exit $0).$\r$\n$\r$\nPostgreSQL must be installed and verified before backend setup.$\r$\nSee:$\r$\n  $INSTDIR\logs\installer.json$\r$\n  $INSTDIR\logs\postgresql-install.log$\r$\n$\r$\nInstall aborted. No fake config will be generated."
-    Abort
+    DetailPrint "Custom install FAILED exit=$0"
+    nsExec::ExecToLog '"$Ps64" -NoProfile -ExecutionPolicy Bypass -File "$INSTDIR\scripts\show-install-failure.ps1" -InstallDir "$INSTDIR"'
+    Pop $1
+    IfFileExists "$INSTDIR\logs\installer-last-failure.txt" 0 fail_generic
+      FileOpen $3 "$INSTDIR\logs\installer-last-failure.txt" r
+      FileRead $3 $4
+      FileClose $3
+      MessageBox MB_ICONSTOP "Juman install failed (exit $0).$\r$\n$\r$\n$4$\r$\n$\r$\nSee:$\r$\n  $INSTDIR\logs\installer.json$\r$\n  $INSTDIR\logs\postgresql-install.log$\r$\n$\r$\nInstall aborted. No fake config will be generated.$\r$\nPrefer install to C:\Program Files\Juman (per-machine)."
+      Abort
+    fail_generic:
+      MessageBox MB_ICONSTOP "Juman install failed (exit $0).$\r$\n$\r$\nPostgreSQL must be installed and verified before backend setup.$\r$\nSee:$\r$\n  $INSTDIR\logs\installer.json$\r$\n  $INSTDIR\logs\postgresql-install.log$\r$\n$\r$\nInstall aborted. No fake config will be generated."
+      Abort
   custom_ok:
     DetailPrint "Custom install succeeded (see logs\installer.json)."
 
@@ -89,6 +110,7 @@ Var RetainStorage
 !macroend
 
 !macro customUnInstall
+  !insertmacro ResolvePowerShell64
   StrCpy $RetainDatabase "1"
   StrCpy $RetainStorage "1"
 
@@ -98,7 +120,7 @@ Var RetainStorage
   drop_db:
     MessageBox MB_YESNO|MB_ICONEXCLAMATION "Confirm DROP DATABASE juman?" IDYES do_drop IDNO after_db
     do_drop:
-      nsExec::ExecToLog 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$INSTDIR\scripts\drop-database.ps1" -InstallDir "$INSTDIR"'
+      nsExec::ExecToLog '"$Ps64" -NoProfile -ExecutionPolicy Bypass -File "$INSTDIR\scripts\drop-database.ps1" -InstallDir "$INSTDIR"'
       Pop $0
   after_db:
 
@@ -109,7 +131,7 @@ Var RetainStorage
 
   MessageBox MB_YESNO|MB_ICONQUESTION "Uninstall PostgreSQL 16 product too?" IDYES rem_pg IDNO skip_pg
   rem_pg:
-    nsExec::ExecToLog 'powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$$u=Join-Path $$env:ProgramFiles ''PostgreSQL\16\uninstall-postgresql.exe''; if(Test-Path $$u){ Start-Process $$u -Wait }"'
+    nsExec::ExecToLog '"$Ps64" -NoProfile -ExecutionPolicy Bypass -Command "$$u=Join-Path $$env:ProgramW6432 ''PostgreSQL\16\uninstall-postgresql.exe''; if(-not (Test-Path $$u)){ $$u=Join-Path $$env:ProgramFiles ''PostgreSQL\16\uninstall-postgresql.exe'' }; if(Test-Path $$u){ Start-Process $$u -Wait }"'
     Pop $0
   skip_pg:
 
@@ -125,6 +147,7 @@ Var RetainStorage
 !macroend
 
 !macro customInstallMode
+  !insertmacro ResolvePowerShell64
   DetailPrint "Repairing Juman (preserve DB + storage)..."
   IfFileExists "$INSTDIR\resources\backend\juman-api.exe" 0 +2
     CopyFiles /SILENT "$INSTDIR\resources\backend\*.*" "$INSTDIR\backend"
@@ -136,7 +159,7 @@ Var RetainStorage
     CopyFiles /SILENT "$INSTDIR\resources\scripts\*.ps1" "$INSTDIR\scripts"
   IfFileExists "$INSTDIR\resources\scripts\*.cmd" 0 +2
     CopyFiles /SILENT "$INSTDIR\resources\scripts\*.cmd" "$INSTDIR\scripts"
-  nsExec::ExecToLog 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$INSTDIR\scripts\repair-install.ps1" -InstallDir "$INSTDIR"'
+  nsExec::ExecToLog '"$Ps64" -NoProfile -ExecutionPolicy Bypass -File "$INSTDIR\scripts\repair-install.ps1" -InstallDir "$INSTDIR"'
   Pop $0
   IntCmp $0 0 +2 +1 +1
     MessageBox MB_ICONEXCLAMATION "Repair finished with exit code $0"

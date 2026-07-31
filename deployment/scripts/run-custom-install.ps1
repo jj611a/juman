@@ -83,8 +83,9 @@ try {
 
   Invoke-InstallerStep -InstallDir $InstallDir -Name "Install PostgreSQL" -Action {
     $script = Join-Path $scripts "install-postgresql.ps1"
-    # Isolated process so "exit N" inside install-postgresql.ps1 cannot abort the parent
-    $p = Start-Process -FilePath "powershell.exe" -ArgumentList @(
+    $ps64 = Join-Path $env:SystemRoot "Sysnative\WindowsPowerShell\v1.0\powershell.exe"
+    if (-not (Test-Path $ps64)) { $ps64 = Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe" }
+    $p = Start-Process -FilePath $ps64 -ArgumentList @(
       "-NoProfile","-ExecutionPolicy","Bypass","-File",$script,"-InstallDir",$InstallDir
     ) -Wait -PassThru -NoNewWindow
     $code = $p.ExitCode
@@ -97,7 +98,9 @@ try {
 
   Invoke-InstallerStep -InstallDir $InstallDir -Name "Verify PostgreSQL" -Action {
     $script = Join-Path $scripts "verify-postgresql.ps1"
-    $p = Start-Process -FilePath "powershell.exe" -ArgumentList @(
+    $ps64 = Join-Path $env:SystemRoot "Sysnative\WindowsPowerShell\v1.0\powershell.exe"
+    if (-not (Test-Path $ps64)) { $ps64 = Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe" }
+    $p = Start-Process -FilePath $ps64 -ArgumentList @(
       "-NoProfile","-ExecutionPolicy","Bypass","-File",$script
     ) -Wait -PassThru -NoNewWindow
     $code = $p.ExitCode
