@@ -4,6 +4,11 @@ import { dirname, join } from 'node:path'
 import { promisify } from 'node:util'
 import { app } from 'electron'
 import type { BackendServiceStatus } from '../../shared/hardware'
+import {
+  closeInstallProgressWindow,
+  startInstallProgressPolling,
+  stopInstallProgressPolling
+} from './bootstrapProgress'
 
 const execFileAsync = promisify(execFile)
 
@@ -312,9 +317,12 @@ export async function ensureBackendBootstrapped(): Promise<{ ok: boolean; messag
   }
   const progressPath = join(installRoot(), 'logs', 'install-progress.json')
   const progressLog = join(installRoot(), 'logs', 'INSTALL_PROGRESS.md')
+  startInstallProgressPolling(installRoot())
   try {
     await runElevatedPowerShell(script, ['-InstallDir', installRoot()])
   } catch (err) {
+    stopInstallProgressPolling()
+    closeInstallProgressWindow()
     let progressHint = ''
     try {
       if (existsSync(progressPath)) {
@@ -338,13 +346,24 @@ export async function ensureBackendBootstrapped(): Promise<{ ok: boolean; messag
     } catch {
       /* ignore */
     }
+    closeInstallProgressWindow()
     return { ok: false, message: `bootstrap did not complete (${hint})` }
   }
+  stopInstallProgressPolling({
+    state: 'ok',
+    phase: 'done',
+    percent: 100,
+    message: 'اكتملت تهيئة الخادم'
+  })
   const deadline = Date.now() + 120_000
   while (Date.now() < deadline) {
-    if (await probeApiHealth()) return { ok: true, message: 'bootstrap ok; health ready' }
+    if (await probeApiHealth()) {
+      closeInstallProgressWindow()
+      return { ok: true, message: 'bootstrap ok; health ready' }
+    }
     await new Promise((r) => setTimeout(r, 1500))
   }
+  closeInstallProgressWindow()
   return { ok: false, message: 'bootstrap finished but health not ready within 120s' }
 }
 
