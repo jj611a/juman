@@ -109,5 +109,5 @@ if ($LASTEXITCODE -ne 0) {
 
 & (Join-Path $scripts "set-install-acls.ps1") -InstallDir $InstallDir
 
-Wait-HttpOk -Url "http://127.0.0.1:8000/health"
+Wait-HttpOk -Url "http://127.0.0.1:8000/api/v1/health"
 Write-Host "Post-install complete"

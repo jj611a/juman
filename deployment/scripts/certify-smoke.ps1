@@ -11,7 +11,7 @@ param(
   [string]$InstallDir = "$env:ProgramFiles\Juman",
   [string]$PgService = "postgresql-x64-16",
   [string]$ApiService = "JumanApi",
-  [string]$HealthUrl = "http://127.0.0.1:8000/health",
+  [string]$HealthUrl = "http://127.0.0.1:8000/api/v1/health",
   [int]$HealthTimeoutSec = 30
 )
 $ErrorActionPreference = "Stop"

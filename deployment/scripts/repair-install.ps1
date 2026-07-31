@@ -21,7 +21,7 @@ if (-not (Test-Path (Join-Path $InstallDir "config\juman.env"))) {
 $sw = [Diagnostics.Stopwatch]::StartNew()
 while ($sw.Elapsed.TotalSeconds -lt 120) {
   try {
-    $r = Invoke-WebRequest -Uri "http://127.0.0.1:8000/health" -UseBasicParsing -TimeoutSec 5
+    $r = Invoke-WebRequest -Uri "http://127.0.0.1:8000/api/v1/health" -UseBasicParsing -TimeoutSec 5
     if ($r.StatusCode -lt 500) {
       & (Join-Path $PSScriptRoot "set-install-acls.ps1") -InstallDir $InstallDir
       Write-Host "Repair ok"

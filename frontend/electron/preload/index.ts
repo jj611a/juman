@@ -18,6 +18,13 @@ import type {
   ScanEvent,
   UpdateCheckResult
 } from '../shared/hardware'
+import type {
+  DiagnosticLogChunk,
+  DiagnosticRepairActionId,
+  DiagnosticRepairResult,
+  DiagnosticsReportResult,
+  DiagnosticsRunResult
+} from '../shared/diagnostics'
 
 async function invoke<T>(channel: string, ...args: unknown[]): Promise<T> {
   const result = (await ipcRenderer.invoke(channel, ...args)) as ApiResult<T>
@@ -119,6 +126,18 @@ const juman = {
       ipcRenderer.on(IpcChannels.HARDWARE_SCAN_EVENT, handler)
       return () => ipcRenderer.removeListener(IpcChannels.HARDWARE_SCAN_EVENT, handler)
     }
+  },
+  diagnostics: {
+    run: (): Promise<DiagnosticsRunResult> => invoke(IpcChannels.DIAGNOSTICS_RUN),
+    getLast: (): Promise<DiagnosticsRunResult | null> => invoke(IpcChannels.DIAGNOSTICS_GET_LAST),
+    logs: (): Promise<DiagnosticLogChunk[]> => invoke(IpcChannels.DIAGNOSTICS_LOGS),
+    repair: (actionId: DiagnosticRepairActionId): Promise<DiagnosticRepairResult> =>
+      invoke(IpcChannels.DIAGNOSTICS_REPAIR, actionId),
+    exportReport: (): Promise<DiagnosticsReportResult> =>
+      invoke(IpcChannels.DIAGNOSTICS_EXPORT_REPORT),
+    openWindow: (): Promise<boolean> => invoke(IpcChannels.DIAGNOSTICS_OPEN_WINDOW),
+    ping: (): Promise<{ pong: boolean; at: string; mainWindow: boolean }> =>
+      invoke(IpcChannels.DIAGNOSTICS_PING)
   }
 }
 

@@ -10,11 +10,19 @@ type GateState = 'loading' | 'first-run' | 'offline' | 'ready'
 /**
  * Gates the app on first-run completion and backend reachability.
  * Electron never starts PostgreSQL — only offers to start JumanApi service.
+ * On offline, opens Diagnostics Center once per session.
  */
 export function DesktopGate({ children }: { children: React.ReactNode }): React.ReactElement {
   const [state, setState] = React.useState<GateState>('loading')
   const [svc, setSvc] = React.useState<BackendServiceStatus | null>(null)
   const [error, setError] = React.useState<string | null>(null)
+  const diagnosticsOpened = React.useRef(false)
+
+  const openDiagnostics = React.useCallback(() => {
+    void window.juman?.diagnostics?.openWindow().catch(() => {
+      /* ignore */
+    })
+  }, [])
 
   const probe = React.useCallback(async () => {
     setError(null)
@@ -36,12 +44,16 @@ export function DesktopGate({ children }: { children: React.ReactNode }): React.
         setSvc(status)
         setError(err instanceof Error ? err.message : 'الخادم غير متاح')
         setState('offline')
+        if (!diagnosticsOpened.current) {
+          diagnosticsOpened.current = true
+          openDiagnostics()
+        }
       }
     } catch {
       // Browser/dev without full bridge
       setState('ready')
     }
-  }, [])
+  }, [openDiagnostics])
 
   React.useEffect(() => {
     void probe()
@@ -70,9 +82,13 @@ export function DesktopGate({ children }: { children: React.ReactNode }): React.
           </p>
         ) : null}
         <InlineMessage variant="info">
-          التطبيق لا يشغّل PostgreSQL. تأكد أن خدمة PostgreSQL تعمل، ثم شغّل خدمة JumanApi.
+          التطبيق لا يشغّل PostgreSQL. تأكد أن خدمة PostgreSQL تعمل، ثم شغّل خدمة JumanApi. تم فتح مركز
+          التشخيص تلقائياً عند الفشل.
         </InlineMessage>
         <div className="flex flex-wrap gap-2">
+          <Button type="button" onClick={() => openDiagnostics()}>
+            فتح مركز التشخيص
+          </Button>
           <Button
             type="button"
             onClick={() =>

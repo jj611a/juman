@@ -43,6 +43,17 @@ Or run `scripts\repair-install.ps1 -InstallDir "..."` (never drops DB/storage).
 
 Stop the conflicting process or change `PORT=` in `config\juman.env`, then restart `JumanApi`.
 
+## Startup Diagnostics & Recovery Center
+
+Use the in-app **مركز التشخيص والاستعادة** before manual recovery:
+
+- Help → التشخيص والاستعادة… (`Ctrl+Shift+D`)
+- `Juman.exe --diagnostics`
+- Start Menu → Juman → Diagnostics
+- Opens automatically when the desktop gate cannot reach the API
+
+Full check/repair catalog: [`docs/STARTUP_DIAGNOSTICS.md`](../docs/STARTUP_DIAGNOSTICS.md).
+
 ## PostgreSQL silent install failed
 
 1. Read `%ProgramFiles%\Juman\logs\postgresql-install.log` (written by `scripts\install-postgresql.ps1`).

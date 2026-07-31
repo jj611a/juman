@@ -39,7 +39,7 @@ if (Test-Path $acl) {
 $sw = [Diagnostics.Stopwatch]::StartNew()
 while ($sw.Elapsed.TotalSeconds -lt $HealthTimeoutSec) {
   try {
-    $r = Invoke-WebRequest -Uri "http://127.0.0.1:8000/health" -UseBasicParsing -TimeoutSec 5
+    $r = Invoke-WebRequest -Uri "http://127.0.0.1:8000/api/v1/health" -UseBasicParsing -TimeoutSec 5
     if ($r.StatusCode -ge 200 -and $r.StatusCode -lt 500) {
       Write-Host "OK health"
       exit 0

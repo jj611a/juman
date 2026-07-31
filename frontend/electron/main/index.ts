@@ -6,14 +6,42 @@ import { SessionManager } from './auth/sessionManager'
 import { createDesktopHandlers } from './desktop/stubs'
 import { createHardwareController, registerHardwareIpc } from './hardware/register'
 import { registerIpcHandlers } from './ipc/register'
-import { createMainWindow, loadMainWindow } from './window'
+import { registerDiagnosticsIpc } from './diagnostics/register'
+import { appendMainLog } from './diagnostics/logCollectors'
+import { installApplicationMenu, wantsDiagnosticsOnly } from './menu'
+import {
+  createMainWindow,
+  createDiagnosticsWindow,
+  loadMainWindow,
+  loadDiagnosticsWindow
+} from './window'
 
 let mainWindow: BrowserWindow | null = null
 
+const diagnosticsOnly = wantsDiagnosticsOnly()
 const config = loadMainConfig()
 const http = createHttpClient(config.apiBaseUrl)
 
 app.whenReady().then(async () => {
+  appendMainLog(`app ready diagnosticsOnly=${diagnosticsOnly}`)
+
+  installApplicationMenu(() => mainWindow)
+  registerDiagnosticsIpc(() => mainWindow)
+
+  if (diagnosticsOnly) {
+    const diag = createDiagnosticsWindow()
+    const credentials = new SafeStorageCredentialStore()
+    const session = new SessionManager(http.getInstance(), credentials, () => diag)
+    const desktop = createDesktopHandlers(() => diag)
+    const hardware = createHardwareController(() => diag)
+    hardware.attachToWindow(diag)
+    registerIpcHandlers(session, desktop, http.getInstance())
+    registerHardwareIpc(hardware)
+    await session.bootstrap()
+    await loadDiagnosticsWindow(diag)
+    return
+  }
+
   mainWindow = createMainWindow()
 
   const credentials = new SafeStorageCredentialStore()
@@ -43,8 +71,10 @@ app.on('window-all-closed', () => {
   }
 })
 
-app.on('web-contents-created', (_event, contents) => {
-  contents.on('will-attach-webview', (event) => {
-    event.preventDefault()
-  })
+process.on('uncaughtException', (err) => {
+  appendMainLog(`uncaughtException ${err.stack || err.message}`)
+})
+
+process.on('unhandledRejection', (reason) => {
+  appendMainLog(`unhandledRejection ${reason instanceof Error ? reason.stack || reason.message : String(reason)}`)
 })

@@ -41,7 +41,14 @@ export const IpcChannels = {
   HARDWARE_PRINTER_PROBE: 'juman:hardware:printers:probe',
   HARDWARE_DIAGNOSTICS: 'juman:hardware:diagnostics',
   APP_READ_ENV: 'juman:app:env:read',
-  APP_PATCH_ENV: 'juman:app:env:patch'
+  APP_PATCH_ENV: 'juman:app:env:patch',
+  DIAGNOSTICS_RUN: 'juman:diagnostics:run',
+  DIAGNOSTICS_GET_LAST: 'juman:diagnostics:getLast',
+  DIAGNOSTICS_LOGS: 'juman:diagnostics:logs',
+  DIAGNOSTICS_REPAIR: 'juman:diagnostics:repair',
+  DIAGNOSTICS_EXPORT_REPORT: 'juman:diagnostics:exportReport',
+  DIAGNOSTICS_OPEN_WINDOW: 'juman:diagnostics:openWindow',
+  DIAGNOSTICS_PING: 'juman:diagnostics:ping'
 } as const
 
 export type IpcChannel = (typeof IpcChannels)[keyof typeof IpcChannels]

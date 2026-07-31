@@ -100,6 +100,7 @@ Var RetainStorage
   CreateShortCut "$DESKTOP\Juman.lnk" "$INSTDIR\Juman.exe"
   CreateShortCut "$SMPROGRAMS\Juman\Repair Juman Services.lnk" "$INSTDIR\scripts\elevate-repair.cmd"
   CreateShortCut "$SMPROGRAMS\Juman\Start Juman Services.lnk" "$INSTDIR\scripts\elevate-start-services.cmd"
+  CreateShortCut "$SMPROGRAMS\Juman\Diagnostics.lnk" "$INSTDIR\Juman.exe" "--diagnostics"
 !macroend
 
 !macro customUnInstall

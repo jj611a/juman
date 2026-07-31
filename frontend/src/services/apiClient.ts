@@ -16,6 +16,13 @@ import type {
   UpdateCheckResult
 } from '@shared/hardware'
 import type {
+  DiagnosticLogChunk,
+  DiagnosticRepairActionId,
+  DiagnosticRepairResult,
+  DiagnosticsReportResult,
+  DiagnosticsRunResult
+} from '@shared/diagnostics'
+import type {
   AuditLogDto,
   AuditLogListParams,
   CalendarAvailabilityDto,
@@ -617,5 +624,16 @@ export const apiClient = {
     readEnv: (): Promise<Record<string, string>> => bridge().app.readEnv(),
     patchEnv: (updates: Record<string, string>): Promise<Record<string, string>> =>
       bridge().app.patchEnv(updates)
+  },
+  diagnostics: {
+    run: (): Promise<DiagnosticsRunResult> => bridge().diagnostics.run(),
+    getLast: (): Promise<DiagnosticsRunResult | null> => bridge().diagnostics.getLast(),
+    logs: (): Promise<DiagnosticLogChunk[]> => bridge().diagnostics.logs(),
+    repair: (actionId: DiagnosticRepairActionId): Promise<DiagnosticRepairResult> =>
+      bridge().diagnostics.repair(actionId),
+    exportReport: (): Promise<DiagnosticsReportResult> => bridge().diagnostics.exportReport(),
+    openWindow: (): Promise<boolean> => bridge().diagnostics.openWindow(),
+    ping: (): Promise<{ pong: boolean; at: string; mainWindow: boolean }> =>
+      bridge().diagnostics.ping()
   }
 }

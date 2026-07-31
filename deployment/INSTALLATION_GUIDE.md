@@ -36,7 +36,7 @@ Packaging **fails** if `juman-api.exe` or `WinSW-x64.exe` is missing.
 5. Write `config\juman.env` (includes `SECRET_KEY`).
 6. `juman-api.exe migrate` (Alembic).
 7. Install/start WinSW service `JumanApi` (depends on PostgreSQL).
-8. Poll `http://127.0.0.1:8000/health`.
+8. Poll `http://127.0.0.1:8000/api/v1/health`.
 9. Desktop + Start Menu shortcuts; optional **Repair Juman Services**.
 10. Launch Electron → first-run wizard.
 

@@ -17,5 +17,5 @@
 ## After upgrade
 
 1. Confirm `sc query JumanApi` is RUNNING.
-2. Hit `http://127.0.0.1:8000/health`.
+2. Hit `http://127.0.0.1:8000/api/v1/health`.
 3. Open the desktop app and smoke-test login.
