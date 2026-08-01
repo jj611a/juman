@@ -6,48 +6,31 @@
 juman/
   backend-python/     # READ ONLY — Python V1 specification
   backend-node/       # NestJS + Prisma + SQLite (V2)
-  frontend/           # Electron + React
-  docs/
-    backend-v2/       # This documentation set
+  frontend/
+  docs/backend-v2/
   installer/
-  deployment/         # Packaging for V1; V2 packaging evolves in Phase 8–10
-  shared/             # Optional cross-cutting TS types (future)
+  deployment/
 ```
 
-## `backend-node/` (Phase 1)
+## `backend-node/` (Phase 1.1)
 
 ```
 backend-node/
-  prisma/
-    schema.prisma
+  prisma/schema.prisma
   src/
     main.ts
     app.module.ts
-    config/
-      configuration.ts
-      env.validation.ts
-    bootstrap/
-      ensure-dirs.ts
-    database/
-      prisma.service.ts
-      prisma.module.ts
-    health/
-      health.controller.ts
-      health.module.ts
-      health.service.ts
-    common/
-      filters/http-exception.filter.ts
-      logger/app-logger.service.ts
+    config/           # paths, juman.env loader, configuration, validation
+    core/             # constants
+    database/         # Prisma module/service
+    health/           # GET /health only
+    logging/          # Winston rotating JSON logger
+    exceptions/       # global filter + process handlers
+    validation/       # global ValidationPipe factory
+    storage/          # ensure runtime directories
+    shared/           # shared types
   test/
-    health.e2e-spec.ts
   package.json
-  tsconfig.json
-  tsconfig.build.json
-  nest-cli.json
-  vitest.config.ts
-  eslint.config.mjs
-  .prettierrc
-  .env.example
 ```
 
 ## Runtime data (not committed)
@@ -55,9 +38,7 @@ backend-node/
 ```
 <data-root>/
   data/juman.db
-  logs/
+  logs/{application,errors,startup,requests}-YYYY-MM-DD.log
   storage/
-  config/
+  config/juman.env
 ```
-
-`JUMAN_DATA_DIR` selects `<data-root>`. Defaults to process cwd / install root during desktop integration.

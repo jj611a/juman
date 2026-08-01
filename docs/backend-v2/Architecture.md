@@ -1,6 +1,6 @@
 # Backend V2 Architecture
 
-**Status:** Foundation (Phase 0–1)  
+**Status:** Foundation (Phase 1.1)  
 **Branch:** `backend-v2`  
 **Spec source:** `backend-python/` (read-only Python FastAPI stack)
 
@@ -30,16 +30,25 @@ On first startup the Nest process ensures:
 | Directory | Purpose |
 |-----------|---------|
 | `data/` | SQLite file `juman.db` |
-| `logs/` | Application logs |
+| `logs/` | Application / error / startup / request logs |
 | `storage/` | Media and file storage |
-| `config/` | Runtime configuration |
+| `config/` | `juman.env` runtime configuration |
 
 Canonical env:
 
-- `JUMAN_DATA_DIR` — absolute or relative root for `data/`, `logs/`, `storage/`, `config/`
-- `DATABASE_URL` — Prisma SQLite URL, default `file:<JUMAN_DATA_DIR>/data/juman.db`
+- `JUMAN_DATA_DIR` — root for `data/`, `logs/`, `storage/`, `config/`
+- `DATABASE_URL` — Prisma SQLite URL (`file:…/data/juman.db`)
 - `PORT` — HTTP listen port (dev default **8787**)
-- `APP_VERSION` — reported by `/health`
+- `APP_VERSION` — reported by `/health` (default `2.0.0`)
+- `APP_ENV` — `development` | `production` | `test`
+
+## Configuration file
+
+Runtime config is loaded from `config/juman.env` under `JUMAN_DATA_DIR`. Missing files are generated with safe defaults on first startup.
+
+## Logging
+
+Centralized Winston logger writes console + daily rotating JSON files under `logs/` for channels: application, errors, startup, requests.
 
 ## API (Phase 1)
 
@@ -50,9 +59,10 @@ Only:
 ```json
 {
   "status": "ok",
-  "version": "2.0.0-foundation",
-  "database": "up",
-  "uptime": 12.34
+  "version": "2.0.0",
+  "database": "connected",
+  "uptime": 12.34,
+  "environment": "development"
 }
 ```
 
@@ -64,11 +74,15 @@ No `/api/v1` prefix in Phase 1. Electron still targets Python V1 until Phase 8.
 src/
   main.ts                 bootstrap + graceful shutdown
   app.module.ts
-  config/                 validated configuration
-  bootstrap/              ensure runtime dirs
+  config/                 juman.env + validated configuration
+  core/                   constants
   database/               PrismaService
   health/                 health module (presentation)
-  common/                 filters, pipes, logger
+  logging/                Winston logger
+  exceptions/             global filter + process handlers
+  validation/             ValidationPipe factory
+  storage/                ensure runtime dirs
+  shared/                 shared types
 ```
 
 Domain modules are added from Phase 2 onward. Persistence goes through Prisma only.
