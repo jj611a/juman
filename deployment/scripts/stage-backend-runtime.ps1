@@ -4,17 +4,17 @@ param(
 )
 $ErrorActionPreference = "Stop"
 
-$backendSrc = Join-Path $RepoRoot "backend"
+$backendSrc = Join-Path $RepoRoot "backend-python"
 $outDir = Join-Path $RepoRoot "deployment\dist\backend"
 $runApiSrc = Join-Path $RepoRoot "deployment\backend\run_api.py"
 $waitSrc = Join-Path $RepoRoot "deployment\backend\wait_for_db.py"
 
 if (-not (Test-Path $runApiSrc)) { throw "Missing $runApiSrc" }
 if (-not (Test-Path $waitSrc)) { throw "Missing $waitSrc" }
-if (-not (Test-Path (Join-Path $backendSrc "app"))) { throw "Missing backend\app" }
-if (-not (Test-Path (Join-Path $backendSrc "alembic"))) { throw "Missing backend\alembic" }
-if (-not (Test-Path (Join-Path $backendSrc "alembic.ini"))) { throw "Missing backend\alembic.ini" }
-if (-not (Test-Path (Join-Path $backendSrc "uv.lock"))) { throw "Missing backend\uv.lock" }
+if (-not (Test-Path (Join-Path $backendSrc "app"))) { throw "Missing backend-python\app" }
+if (-not (Test-Path (Join-Path $backendSrc "alembic"))) { throw "Missing backend-python\alembic" }
+if (-not (Test-Path (Join-Path $backendSrc "alembic.ini"))) { throw "Missing backend-python\alembic.ini" }
+if (-not (Test-Path (Join-Path $backendSrc "uv.lock"))) { throw "Missing backend-python\uv.lock" }
 
 if (Test-Path $outDir) {
   Remove-Item -LiteralPath $outDir -Recurse -Force

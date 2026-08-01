@@ -320,7 +320,7 @@ The system is developed **incrementally**. Each backend module plugs into the fo
 
 ## Architecture
 
-Backend lives in [`backend/`](backend/) and follows Clean Architecture with DDD modular packaging.
+Backend lives in [`backend-python/`](backend-python/) (V1 spec, read-only on `backend-v2`) and follows Clean Architecture with DDD modular packaging.
 
 ```text
 backend/
@@ -355,17 +355,17 @@ Living status docs: [`PROJECT_STATUS.md`](PROJECT_STATUS.md) · [`CHANGELOG.md`]
 
 | Path | Purpose |
 |---|---|
-| `backend/app/api` | HTTP presentation; versioned `/api/v1` surface |
-| `backend/app/modules` | Business bounded contexts (plug-in modules) |
-| `backend/app/common` | Shared mixins (`UUID`, timestamps, audit, soft delete) |
-| `backend/app/config` | Environment configuration |
-| `backend/app/database` | SQLAlchemy async engine/session and Redis client |
-| `backend/app/repositories` | Persistence abstractions |
-| `backend/app/services` | Application service base |
-| `backend/app/security` | Auth primitives (JWT/Argon2) used by Identity |
-| `backend/alembic` | Schema migrations and seeds |
-| `backend/tests` | Automated tests |
-| `backend/docs` | Backend operator documentation |
+| `backend-python/app/api` | HTTP presentation; versioned `/api/v1` surface |
+| `backend-python/app/modules` | Business bounded contexts (plug-in modules) |
+| `backend-python/app/common` | Shared mixins (`UUID`, timestamps, audit, soft delete) |
+| `backend-python/app/config` | Environment configuration |
+| `backend-python/app/database` | SQLAlchemy async engine/session and Redis client |
+| `backend-python/app/repositories` | Persistence abstractions |
+| `backend-python/app/services` | Application service base |
+| `backend-python/app/security` | Auth primitives (JWT/Argon2) used by Identity |
+| `backend-python/alembic` | Schema migrations and seeds |
+| `backend-python/tests` | Automated tests |
+| `backend-python/docs` | Backend operator documentation |
 
 ### Dependency flow
 
@@ -492,7 +492,7 @@ Frontend (Electron): **~15%** (foundation complete; no business UI yet)
 ## Backend Quick Start
 
 ```bash
-cd backend
+cd backend-python
 cp .env.example .env
 # Set SECRET_KEY and DATABASE_URL
 
@@ -519,7 +519,7 @@ pnpm --filter @juman/frontend dev
 
 Docs: [`docs/frontend/architecture.md`](docs/frontend/architecture.md)
 
-More detail: [`backend/docs/setup.md`](backend/docs/setup.md)
+More detail: [`backend-python/docs/setup.md`](backend/docs/setup.md)
 
 ---
 
@@ -576,7 +576,7 @@ Interactive report: [`juman-foundation-verification.canvas.tsx`](C:/Users/moham/
 - Audit module completed; Identity Phases 1–7 application auth live.
 - Foundation Version 0.1 integration verified (Settings, RBAC, Identity, Media).
 - Media module completed; Alembic asyncpg seed bind fix for fresh upgrades.
-- Docs refreshed (`backend/docs/*`, `PROJECT_STATUS.md`, `CHANGELOG.md`, root `README.md`).
+- Docs refreshed (`backend-python/docs/*`, `PROJECT_STATUS.md`, `CHANGELOG.md`, root `README.md`).
 - Backend Foundation, Settings, and RBAC modules completed earlier.
 - Production config validation; Alembic-only settings seeds; RBAC permission helpers consolidated.
 

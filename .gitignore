@@ -7,7 +7,7 @@ node_modules/
 .env.*
 !.env.example
 !**/.env.example
-backend/.env
+backend-python/.env
 frontend/.env
 
 # Build outputs
@@ -53,3 +53,7 @@ deployment/vendor/python/
 deployment/vendor/postgresql/
 deployment/dist/
 deployment/services/WinSW-x64.exe
+data/
+*.db
+backend-node/data/
+

@@ -65,5 +65,5 @@ Chosen option: "FastAPI + SQLAlchemy 2 async + Pydantic v2 (Python 3.13+)", beca
 
 ## More Information
 
-* [`backend/pyproject.toml`](../../backend/pyproject.toml)
+* [`backend-python/pyproject.toml`](../../backend-python/pyproject.toml)
 * [`docs/API_STANDARDS.md`](../API_STANDARDS.md)

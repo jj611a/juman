@@ -38,7 +38,7 @@ Chosen option: "Clean Architecture + DDD modules under `app/modules/<context>/`"
 
 * New features land as modules, not as cross-cutting dumps into `api/`
 * Dependency rule violations require refactor or a superseding ADR
-* See `backend/docs/architecture.md` for integration steps
+* See `backend-python/docs/architecture.md` for integration steps
 
 ## Validation
 
@@ -64,5 +64,5 @@ Chosen option: "Clean Architecture + DDD modules under `app/modules/<context>/`"
 
 ## More Information
 
-* [`backend/docs/architecture.md`](../../backend/docs/architecture.md)
-* [`backend/docs/structure.md`](../../backend/docs/structure.md)
+* [`backend-python/docs/architecture.md`](../../backend-python/docs/architecture.md)
+* [`backend-python/docs/structure.md`](../../backend-python/docs/structure.md)

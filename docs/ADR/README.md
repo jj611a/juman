@@ -76,4 +76,4 @@ We use **[MADR 3.x](https://adr.github.io/madr/)** with one Juman-specific addit
 - [`docs/DRESS_STATE_MACHINE.md`](../DRESS_STATE_MACHINE.md)
 - [`docs/API_STANDARDS.md`](../API_STANDARDS.md)
 - [`docs/DATABASE_GUIDELINES.md`](../DATABASE_GUIDELINES.md)
-- [`backend/docs/architecture.md`](../../backend/docs/architecture.md)
+- [`backend-python/docs/architecture.md`](../../backend-python/docs/architecture.md)

@@ -3,7 +3,7 @@ param(
   [string]$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 )
 $ErrorActionPreference = "Stop"
-$backend = Join-Path $RepoRoot "backend"
+$backend = Join-Path $RepoRoot "backend-python"
 $spec = Join-Path $RepoRoot "deployment\backend\juman-api.spec"
 $outDir = Join-Path $RepoRoot "deployment\dist\backend"
 New-Item -ItemType Directory -Force -Path $outDir | Out-Null

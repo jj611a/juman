@@ -42,8 +42,8 @@ Chosen option: "uv (`pyproject.toml` + `uv.lock`)", as used by the shipped backe
 
 ## Validation
 
-* `backend/pyproject.toml`, `backend/uv.lock`
-* [`backend/docs/setup.md`](../../backend/docs/setup.md)
+* `backend-python/pyproject.toml`, `backend-python/uv.lock`
+* [`backend-python/docs/setup.md`](../../backend-python/docs/setup.md)
 
 ## Pros and Cons of the Options
 
@@ -64,4 +64,4 @@ Chosen option: "uv (`pyproject.toml` + `uv.lock`)", as used by the shipped backe
 
 ## More Information
 
-* [`backend/docs/setup.md`](../../backend/docs/setup.md)
+* [`backend-python/docs/setup.md`](../../backend-python/docs/setup.md)

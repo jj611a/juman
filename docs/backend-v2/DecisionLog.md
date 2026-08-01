@@ -1,0 +1,39 @@
+# Backend V2 Decision Log
+
+## ADR-V2-001 — Replace Python stack with Nest + Prisma + SQLite
+
+- **Date:** 2026-08-01
+- **Status:** Accepted
+- **Context:** Desktop-first product; PostgreSQL and Alembic increase install friction.
+- **Decision:** Backend V2 uses Node.js LTS, TypeScript, NestJS, Prisma, SQLite (`data/juman.db`).
+- **Consequences:** Reimplement behavior; dual backends until parity; Electron still on Python until Phase 8.
+
+## ADR-V2-002 — Rename `backend/` → `backend-python/`
+
+- **Date:** 2026-08-01
+- **Status:** Accepted
+- **Context:** Clear separation of V1 spec vs V2 implementation.
+- **Decision:** On branch `backend-v2`, rename source tree to `backend-python/`. Installer *runtime* folder name `%INSTDIR%\backend\` stays for V1 packaging until Phase 8.
+- **Consequences:** Repo scripts that stage from source must use `backend-python`.
+
+## ADR-V2-003 — Dev HTTP port 8787
+
+- **Date:** 2026-08-01
+- **Status:** Accepted
+- **Context:** Avoid colliding with Python API on `:8000` during dual-run development.
+- **Decision:** Nest listens on `8787` by default.
+- **Consequences:** Electron must be retargeted in Phase 8.
+
+## ADR-V2-004 — Health contract without `/api/v1`
+
+- **Date:** 2026-08-01
+- **Status:** Accepted
+- **Context:** Foundation-only surface; V1 used `/api/v1/health`.
+- **Decision:** V2 Phase 1 exposes `GET /health` with `{ status, version, database, uptime }`.
+- **Consequences:** Clients must adapt at integration time; versioned prefix can return later if needed.
+
+## ADR-V2-005 — Long-lived branch `backend-v2`
+
+- **Date:** 2026-08-01
+- **Status:** Accepted
+- **Decision:** All V2 work lands on `backend-v2`; do not modify `main` for V2 features until merge policy is defined.

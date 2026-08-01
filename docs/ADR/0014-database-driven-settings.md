@@ -64,5 +64,5 @@ Chosen option: "Database-driven Settings module with Alembic-seeded defaults", a
 
 ## More Information
 
-* Settings module under `backend/app/modules/settings/`
+* Settings module under `backend-python/app/modules/settings/`
 * [`docs/DATABASE_GUIDELINES.md`](../DATABASE_GUIDELINES.md) seed policy

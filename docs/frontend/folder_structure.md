@@ -26,7 +26,7 @@ Root monorepo:
 
 ```text
 juman/
-├── backend/           # FastAPI (uv)
+├── backend-python/    # FastAPI V1 spec (uv, read-only on backend-v2)`n├── backend-node/      # NestJS V2 (Prisma + SQLite)
 ├── frontend/          # this package (@juman/frontend)
 ├── installer/         # reserved
 ├── docs/frontend/
