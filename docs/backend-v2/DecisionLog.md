@@ -61,3 +61,11 @@
 - **Context:** Phase 2.1 foundation needed a complete Electron-compatible auth surface.
 - **Decision:** Ship `/auth/{login,logout,change-password,session,me}`; audit events LOGIN/LOGOUT/LOGIN_FAILED/PASSWORD_CHANGED/ACCOUNT_LOCKED; seed Administrator; keep refresh rotation behind session restore header for cold start.
 - **Consequences:** Electron path mapping required in Phase 8; admin user/role HTTP CRUD deferred; coverage gates enforced via Vitest+SWC.
+
+## ADR-V2-009 - Phase 2 architecture audit gate
+
+- **Date:** 2026-08-01
+- **Status:** Accepted
+- **Context:** Auth/foundation code complete; entering business domain without audit would freeze defects.
+- **Decision:** Mandatory Phase 2.3 audit produced `docs/backend-v2/AUDIT_PHASE_2.md` with overall **56/100 FAIL**. Phase 3 blocked until Must-fix items are remediated and re-audited. No features in audit commit.
+- **Consequences:** Next work is hardening (2.4), not customers/inventory.
