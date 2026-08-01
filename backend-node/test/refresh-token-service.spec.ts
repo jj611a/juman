@@ -15,6 +15,7 @@ describe('RefreshTokenService', () => {
         updateMany: vi.fn(),
         findUnique: vi.fn(),
       },
+      $transaction: vi.fn(),
     };
     const service = new RefreshTokenService(prisma as never, opaque);
     expect(await service.findActiveByToken('x')).toBeNull();
@@ -30,6 +31,7 @@ describe('RefreshTokenService', () => {
         findFirst: vi.fn(),
         findUnique: vi.fn(),
       },
+      $transaction: vi.fn(),
     };
     const service = new RefreshTokenService(prisma as never, opaque);
     await expect(
@@ -49,6 +51,83 @@ describe('RefreshTokenService', () => {
     ).rejects.toBeInstanceOf(UnauthorizedException);
   });
 
+  it('assertNotReuse treats expired as expired not reuse', async () => {
+    const opaque = new OpaqueTokenService();
+    const prisma = {
+      refreshToken: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: 'rt1',
+          sessionId: 's1',
+          revokedAt: null,
+          expiresAt: new Date(Date.now() - 1000),
+        }),
+        updateMany: vi.fn(),
+      },
+      $transaction: vi.fn(),
+    };
+    const service = new RefreshTokenService(prisma as never, opaque);
+    await expect(service.assertNotReuse('token-value')).rejects.toThrow(/expired/i);
+    expect(prisma.refreshToken.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('assertNotReuse revokes family on reuse', async () => {
+    const opaque = new OpaqueTokenService();
+    const prisma = {
+      refreshToken: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: 'rt1',
+          sessionId: 's1',
+          revokedAt: new Date(),
+          expiresAt: new Date(Date.now() + 60_000),
+        }),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+      $transaction: vi.fn(),
+    };
+    const service = new RefreshTokenService(prisma as never, opaque);
+    await expect(service.assertNotReuse('token-value')).rejects.toThrow(/reuse/i);
+    expect(prisma.refreshToken.updateMany).toHaveBeenCalled();
+  });
+
+  it('rotate uses transactional CAS', async () => {
+    const opaque = new OpaqueTokenService();
+    const tx = {
+      refreshToken: {
+        create: vi.fn().mockResolvedValue({
+          id: 'rt2',
+          userId: 'u1',
+          sessionId: 's1',
+        }),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+    };
+    const prisma = {
+      refreshToken: { updateMany: vi.fn() },
+      $transaction: vi.fn(async (fn: (t: typeof tx) => Promise<unknown>) => fn(tx)),
+    };
+    const service = new RefreshTokenService(prisma as never, opaque);
+    const result = await service.rotate({
+      current: {
+        id: 'rt1',
+        userId: 'u1',
+        sessionId: 's1',
+        tokenHash: 'h',
+        expiresAt: new Date(Date.now() + 1000),
+        revokedAt: null,
+        replacedById: null,
+        createdAt: new Date(),
+      },
+      expiresAt: new Date(Date.now() + 1000),
+    });
+    expect(result.token).toBeTruthy();
+    expect(prisma.$transaction).toHaveBeenCalled();
+    expect(tx.refreshToken.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'rt1', revokedAt: null },
+      }),
+    );
+  });
+
   it('revokeAllForUser and revokeSessionFamilyExcept update rows', async () => {
     const opaque = new OpaqueTokenService();
     const prisma = {
@@ -59,6 +138,7 @@ describe('RefreshTokenService', () => {
         findFirst: vi.fn(),
         findUnique: vi.fn(),
       },
+      $transaction: vi.fn(),
     };
     const service = new RefreshTokenService(prisma as never, opaque);
     await service.revokeAllForUser('u1');

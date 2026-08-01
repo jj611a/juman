@@ -1,5 +1,5 @@
 import 'reflect-metadata';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { BadRequestException, ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import { AuthService } from '../src/auth/services/auth.service';
 import { AUDIT_EVENT } from '../src/core/auth.constants';
@@ -17,6 +17,7 @@ function buildService(overrides: Record<string, unknown> = {}) {
     listPasswordHistory: vi.fn().mockResolvedValue([]),
     changePassword: vi.fn(),
     disableAccount: vi.fn(),
+    unlockAccount: vi.fn(),
     enableAccount: vi.fn(),
     setActive: vi.fn(),
   };
@@ -56,7 +57,7 @@ function buildService(overrides: Record<string, unknown> = {}) {
     }),
     verifyAccessToken: vi.fn(),
   };
-  const hasher = { hash: vi.fn().mockResolvedValue('new-hash'), verify: vi.fn().mockResolvedValue(false) };
+  const hasher = { hash: vi.fn().mockResolvedValue('new-hash'), verify: vi.fn().mockResolvedValue(false), verifyDummy: vi.fn().mockResolvedValue(undefined) };
   const policy = { validate: vi.fn().mockReturnValue({ valid: true, errors: [] }) };
   const config = {
     getOrThrow: vi.fn().mockReturnValue({

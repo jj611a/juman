@@ -1,6 +1,6 @@
 # Backend V2 Authentication Design
 
-**Phase:** 2.2 Authentication Implementation  
+**Phase:** 2.4 Release Blocker Remediation  
 **Branch:** `backend-v2`
 
 ## Client model
@@ -9,13 +9,14 @@
 - Renderer never sees raw tokens (HttpOnly-compatible ownership in Main / `safeStorage` for Remember Me refresh).
 - Backend validates Bearer access JWTs; cold restore uses `X-Refresh-Token` on `GET /auth/session`.
 
-## API (Phase 2.2)
+## API (Phase 2.4)
 
 | Method | Path | Auth |
 |--------|------|------|
 | POST | `/auth/login` | Public |
 | POST | `/auth/logout` | Bearer |
 | POST | `/auth/change-password` | Bearer (allowlisted when forced) |
+| POST | `/auth/admin/unlock` | Bearer + `users.unlock` |
 | GET | `/auth/session` | Public + Bearer and/or `X-Refresh-Token` |
 | GET | `/auth/me` | Bearer |
 | GET | `/health` | Public |
@@ -24,10 +25,11 @@
 
 - Login / logout / session restore / Remember Me TTL
 - Force password change guard + change-password
-- Lockout after configurable failed attempts
-- Account enable/disable (UsersService; no admin HTTP yet)
+- Timed lockout (default 15 minutes) + admin unlock recovery
+- Account enable/disable with immediate session + refresh revocation
 - JWT create/validate (session-bound `sid`)
-- Opaque refresh rotation + reuse revocation
+- Opaque refresh rotation (SQLite transaction + CAS) + reuse revocation
+- Dummy Argon2 on unknown username (timing)
 - Permission resolution + RBAC guards/decorators
 - Seed: default roles/permissions + Administrator (`admin` / `Juman!Bootstrap1`, must change)
 
@@ -46,4 +48,4 @@ LOGIN · LOGOUT · LOGIN_FAILED · PASSWORD_CHANGED · ACCOUNT_LOCKED
 
 ## Out of scope
 
-Customers, inventory, rentals, reports, users/roles admin HTTP CRUD.
+Customers, inventory, rentals, reports, users/roles admin HTTP CRUD (beyond unlock).

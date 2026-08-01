@@ -1,6 +1,6 @@
 # Backend V2 Architecture
 
-**Status:** Phase 2.2 Authentication Implementation  
+**Status:** Phase 2.4 Release Blocker Remediation  
 **Branch:** `backend-v2`  
 **Spec source:** `backend-python/` (read-only Python FastAPI stack)
 
@@ -9,11 +9,11 @@
 ```
 Electron (desktop) — Main process owns tokens
     ↓ Bearer access JWT
-NestJS (backend-node)
+NestJS (backend-node) — binds HOST (default 127.0.0.1)
     ↓
-Prisma ORM
+Prisma ORM + migrate deploy on boot
     ↓
-SQLite → data/juman.db
+SQLite → data/juman.db (WAL, foreign_keys, busy_timeout)
 ```
 
 ## Design goals
@@ -34,45 +34,50 @@ On first startup the Nest process ensures:
 | `storage/` | Media and file storage |
 | `config/` | `juman.env` runtime configuration |
 
+Then: **Prisma `migrate deploy`** → schema verify → Nest boot. Migration failure aborts startup.
+
 ## Configuration
 
-Loaded from `config/juman.env`. Missing files are generated with safe defaults (including a random `JWT_SECRET`). Production requires an explicit `JWT_SECRET` (≥32 chars).
+Loaded from `config/juman.env`. Missing files are generated with safe defaults (including a random `JWT_SECRET`, `HOST=127.0.0.1`). Production requires an explicit `JWT_SECRET` (≥32 chars). Startup logs report the **actual** bound host/port.
 
 ## Logging
 
 Winston console + daily rotating JSON under `logs/` (application / errors / startup / requests).
 
-## API surface (Phase 2.2)
+## API surface (Phase 2.4)
 
 - `GET /health` — public
 - `POST /auth/login` / `POST /auth/logout` / `POST /auth/change-password`
+- `POST /auth/admin/unlock` — Bearer + `users.unlock`
 - `GET /auth/session` / `GET /auth/me`
 
-See `AuthenticationDesign.md` and `SecurityDesign.md`.
+See `AuthenticationDesign.md`, `SecurityDesign.md`, and `backend-node/README.md`.
 
 ## Layers
 
 ```
 src/
-  main.ts, app.module.ts
+  main.ts, app.module.ts   ← APP_GUARD registration (not AuthModule)
   config/, core/, database/, health/, logging/, exceptions/, validation/, storage/, shared/
-  security/       Argon2, JWT, opaque tokens, password policy
-  auth/           guards, strategies, session/refresh, login/logout/refresh/me
-  users/          repository + service (no CRUD HTTP yet)
-  roles/          system roles + permission resolution
-  permissions/    catalog seed + repository
+  security/       Argon2 (+ dummy verify), JWT, opaque tokens, password policy
+  auth/           guards, strategies, session/refresh, login/logout/unlock/me
+  users/          repository internal; service is public boundary
+  roles/          system roles + permission resolution (service export only)
+  permissions/    catalog seed (service export only)
 ```
 
 ## Auth / RBAC
 
 - Argon2id passwords; opaque refresh tokens (hashed); HS256 access JWT bound to session (`sid`)
+- Refresh rotation is transactional CAS (one live chain; reuse detection intact)
 - Permissions resolved from DB per request (not embedded in JWT)
 - System roles Admin / Cashier / Inventory / Laundry seeded on startup
 - Full permission catalog preserved from Python V1
+- Disable account revokes all sessions + refresh tokens immediately
 
 ## What is not in V2 (yet)
 
-- Users/roles admin HTTP APIs, change-password HTTP
+- Users/roles admin HTTP CRUD (beyond unlock)
 - Business modules (customers, inventory, rentals, sales, reports)
 - Hardware bridges
 - Electron process management / installer Nest packaging

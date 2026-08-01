@@ -20,6 +20,7 @@ describe('juman.env loader', () => {
     const result = loadOrCreateJumanEnv(paths);
     expect(result.created).toBe(true);
     expect(existsSync(paths.jumanEnvPath)).toBe(true);
+    expect(readFileSync(paths.jumanEnvPath, 'utf8')).toContain('HOST=');
     const body = readFileSync(paths.jumanEnvPath, 'utf8');
     expect(body).toContain('APP_VERSION=2.0.0');
     expect(body).toContain('DATABASE_URL=file:');

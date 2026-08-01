@@ -1,5 +1,6 @@
 export const APP_NAME = 'Juman';
 export const DEFAULT_PORT = 8787;
+export const DEFAULT_HOST = '127.0.0.1';
 export const DEFAULT_APP_VERSION = '2.0.0';
 export const DEFAULT_ENVIRONMENT = 'development';
 export const DEFAULT_LOG_LEVEL = 'info';

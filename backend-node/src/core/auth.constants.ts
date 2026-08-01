@@ -12,7 +12,7 @@ export const DEFAULT_ARGON2_MEMORY_COST = 65536;
 export const DEFAULT_ARGON2_PARALLELISM = 1;
 
 export const DEFAULT_MAX_FAILED_LOGIN_ATTEMPTS = 5;
-export const DEFAULT_ACCOUNT_LOCK_DURATION_MINUTES = 0;
+export const DEFAULT_ACCOUNT_LOCK_DURATION_MINUTES = 15;
 export const DEFAULT_PASSWORD_MIN_LENGTH = 10;
 export const DEFAULT_PASSWORD_MAX_LENGTH = 128;
 export const DEFAULT_PASSWORD_HISTORY_COUNT = 5;
@@ -46,6 +46,8 @@ export const SYSTEM_ROLE = {
 
 export const DEFAULT_ADMIN_USERNAME = 'admin';
 export const DEFAULT_ADMIN_FULL_NAME = 'Administrator';
+
+export const ACCOUNT_UNLOCK_PERMISSION = 'users.unlock';
 
 export const IS_PUBLIC_KEY = 'auth:isPublic';
 export const REQUIRED_PERMISSIONS_KEY = 'auth:requiredPermissions';

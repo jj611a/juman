@@ -1,6 +1,10 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { APP_GUARD } from '@nestjs/core';
 import { AuthModule } from './auth/auth.module';
+import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
+import { PasswordChangeGuard } from './auth/guards/password-change.guard';
+import { PermissionsGuard } from './auth/guards/permissions.guard';
 import { configuration } from './config/configuration';
 import { validateEnvironment } from './config/env.validation';
 import { PrismaModule } from './database/prisma.module';
@@ -25,6 +29,11 @@ import { UsersModule } from './users/users.module';
     UsersModule,
     AuthModule,
     HealthModule,
+  ],
+  providers: [
+    { provide: APP_GUARD, useClass: JwtAuthGuard },
+    { provide: APP_GUARD, useClass: PermissionsGuard },
+    { provide: APP_GUARD, useClass: PasswordChangeGuard },
   ],
 })
 export class AppModule {}

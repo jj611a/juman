@@ -1,5 +1,2 @@
-import { SetMetadata } from '@nestjs/common';
-import { IS_PUBLIC_KEY } from '../../core/auth.constants';
-
-export const Public = (): MethodDecorator & ClassDecorator =>
-  SetMetadata(IS_PUBLIC_KEY, true);
+/** Re-export from core to avoid cross-feature coupling for new code. */
+export { Public } from '../../core/public.decorator';

@@ -3,7 +3,8 @@ import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { loadOrCreateJumanEnv } from './config/juman-env.loader';
-import { buildRuntimePaths, resolveDataRoot } from './config/paths';
+import { buildRuntimePaths, resolveDataRoot, toSqliteFileUrl } from './config/paths';
+import { runPendingMigrations } from './database/migrate-on-boot';
 import { GlobalHttpExceptionFilter } from './exceptions/http-exception.filter';
 import { registerProcessExceptionHandlers } from './exceptions/process-exception.handlers';
 import { AppLoggerService } from './logging/app-logger.service';
@@ -16,6 +17,15 @@ async function bootstrap(): Promise<void> {
   const paths = buildRuntimePaths(jumanDataDir);
   ensureRuntimeDirectories(paths);
   const envLoad = loadOrCreateJumanEnv(paths);
+
+  const databaseUrl = process.env.DATABASE_URL ?? toSqliteFileUrl(paths.sqlitePath);
+  try {
+    runPendingMigrations(databaseUrl);
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`Fatal startup error (migrations): ${message}`);
+    process.exit(1);
+  }
 
   const app = await NestFactory.create(AppModule, { bufferLogs: true });
   const logger = app.get(AppLoggerService);
@@ -33,15 +43,17 @@ async function bootstrap(): Promise<void> {
   logger.startup('Juman Backend V2 starting', {
     version: appConfig.version,
     environment: appConfig.environment,
+    host: appConfig.host,
     port: appConfig.port,
     dataDir: appConfig.jumanDataDir,
     envFile: envLoad.path,
     envCreated: envLoad.created,
+    migrations: 'applied',
   });
 
-  await app.listen(appConfig.port);
+  await app.listen(appConfig.port, appConfig.host);
 
-  logger.startup(`Listening on http://127.0.0.1:${appConfig.port}`);
+  logger.startup(`Listening on http://${appConfig.host}:${appConfig.port}`);
   logger.startup('GET /health ready');
 
   const shutdown = async (signal: string): Promise<void> => {

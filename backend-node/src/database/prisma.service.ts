@@ -16,6 +16,7 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
 
   async onModuleInit(): Promise<void> {
     await this.$connect();
+    await this.applySqlitePragmas();
     await this.$queryRaw`SELECT 1`;
     this.logger.startup('Prisma connected to SQLite');
   }
@@ -23,6 +24,14 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
   async onModuleDestroy(): Promise<void> {
     await this.$disconnect();
     this.logger.startup('Prisma disconnected');
+  }
+
+  private async applySqlitePragmas(): Promise<void> {
+    // journal_mode returns a row — must use query, not execute.
+    await this.$queryRawUnsafe('PRAGMA foreign_keys = ON');
+    await this.$queryRawUnsafe('PRAGMA journal_mode = WAL');
+    await this.$queryRawUnsafe('PRAGMA busy_timeout = 5000');
+    this.logger.startup('SQLite PRAGMAs applied (foreign_keys, WAL, busy_timeout)');
   }
 
   async verifyConnection(): Promise<boolean> {

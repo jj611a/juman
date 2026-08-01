@@ -3,6 +3,7 @@ import {
   DEFAULT_APP_VERSION,
   DEFAULT_ENVIRONMENT,
   DEFAULT_LOG_LEVEL,
+  DEFAULT_HOST,
   DEFAULT_PORT,
 } from '../core/constants';
 import {
@@ -142,6 +143,7 @@ export function configuration(): { app: AppConfig } {
     name: process.env.APP_NAME ?? APP_NAME,
     version: process.env.APP_VERSION ?? DEFAULT_APP_VERSION,
     environment,
+    host: (process.env.HOST?.trim() || DEFAULT_HOST),
     port: parsePort(process.env.PORT),
     logLevel: process.env.LOG_LEVEL ?? DEFAULT_LOG_LEVEL,
     jumanDataDir,

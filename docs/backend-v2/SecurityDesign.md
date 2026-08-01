@@ -1,18 +1,19 @@
-# Backend V2 Security Design (Phase 2.2)
+# Backend V2 Security Design (Phase 2.4)
 
 ## Threat mitigations
 
 | Threat | Mitigation |
 |--------|------------|
 | Password storage compromise | Argon2id with configurable time/memory/parallelism; never SHA/MD5/bcrypt |
-| Token theft (access) | Short-lived JWT; session binding via `sid`; logout revokes session |
+| Token theft (access) | Short-lived JWT; session binding via `sid`; logout / disable revokes session |
 | Token theft (refresh) | Opaque token; only SHA-256 hash stored; Electron `safeStorage` for Remember Me |
-| Refresh replay / reuse | Rotation with `replacedById`; reuse revokes entire session family |
-| Brute force | Failed attempt counter + account lock; generic login error (no user enumeration) |
-| Timing attacks on password | Argon2 verify; generic failure path for missing users |
+| Refresh replay / reuse | Atomic rotate in SQLite TX + CAS on `revokedAt`; reuse revokes session family |
+| Brute force | Failed attempt counter + **timed** lock (default 15m); unlock API + documented recovery |
+| Timing attacks on password | Dummy Argon2 verify on unknown username; generic login error |
 | Session fixation | New session id issued at login; old sessions not reused |
 | Privilege escalation | Permissions loaded from DB each request; guards enforce keys; JWT carries no roles |
 | Forced password change bypass | `PasswordChangeGuard` allowlist |
+| Network exposure | Default bind `127.0.0.1` (`HOST` override); logs match actual interface |
 | Stack leak | Global exception filter never returns stacks |
 | Secret leakage | `JWT_SECRET` required in production (min 32); auto-generated into `juman.env` on first boot |
 
@@ -22,16 +23,22 @@
 - LAN / cloud sync later must not move tokens into the renderer.
 - Offline: SQLite local; auth works without network.
 
+## Lockout recovery
+
+1. Wait for `ACCOUNT_LOCK_DURATION_MINUTES` (default 15).
+2. `POST /auth/admin/unlock` with `users.unlock`.
+3. Emergency SQLite update (see `backend-node/README.md`) if sole admin is permanently locked (`duration=0`).
+
 ## Residual risks / known limitations
 
-- No unlock HTTP API yet (permission `users.unlock` seeded for later).
-- No change-password / admin reset HTTP yet (services/policy ready).
 - Absolute session expiry (not sliding idle timeout on every request).
-- Soft-delete of users does not yet cascade-revoke sessions at write time (principal resolve still fails closed).
+- Soft-delete username uniqueness still ignores deleted rows (rehire friction).
+- Argon2 native Electron ABI rebuild documented for Phase 8 packaging.
+- RBAC seed still rewrites on every boot (fingerprint deferred).
 
-## Phase 2.2 notes
+## Phase 2.4 notes
 
 - Default Administrator seeded with forced password change.
 - Session cold restore via `X-Refresh-Token` (tokens stay in Electron Main).
-- Auth coverage gate: Vitest lines ≥95% on `src/auth` (excluding DTO/bootstrap/decorators metadata).
-
+- Disable account immediately revokes sessions + refresh; JWTs fail closed.
+- Coverage gate expanded beyond auth to identity/security/config/database stack.

@@ -38,6 +38,7 @@ export interface AppConfig {
   readonly name: string;
   readonly version: string;
   readonly environment: AppEnvironmentName;
+  readonly host: string;
   readonly port: number;
   readonly logLevel: string;
   readonly jumanDataDir: string;

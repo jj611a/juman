@@ -44,7 +44,7 @@ function build() {
     createAccessToken: vi.fn().mockResolvedValue({ token: 'a', expiresAt: new Date() }),
     verifyAccessToken: vi.fn(),
   };
-  const hasher = { hash: vi.fn().mockResolvedValue('nh'), verify: vi.fn() };
+  const hasher = { hash: vi.fn().mockResolvedValue('nh'), verify: vi.fn(), verifyDummy: vi.fn().mockResolvedValue(undefined) };
   const policy = { validate: vi.fn().mockReturnValue({ valid: true, errors: [] }) };
   const config = { getOrThrow: vi.fn().mockReturnValue({ auth: { passwordHistoryCount: 5 } }) };
   const service = new AuthService(
@@ -128,7 +128,7 @@ describe('AuthService deeper branches', () => {
   });
 
   it('restoreSession with access token returns session view', async () => {
-    const { service, sessions, users, roles, jwt } = build();
+    const { service, sessions, users, jwt } = build();
     jwt.verifyAccessToken.mockResolvedValue({ sub: 'u1', sid: 's1', type: 'access' });
     sessions.getActive.mockResolvedValue({
       id: 's1', rememberMe: false, expiresAt: new Date(Date.now() + 1000),

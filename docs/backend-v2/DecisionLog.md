@@ -69,3 +69,11 @@
 - **Context:** Auth/foundation code complete; entering business domain without audit would freeze defects.
 - **Decision:** Mandatory Phase 2.3 audit produced `docs/backend-v2/AUDIT_PHASE_2.md` with overall **56/100 FAIL**. Phase 3 blocked until Must-fix items are remediated and re-audited. No features in audit commit.
 - **Consequences:** Next work is hardening (2.4), not customers/inventory.
+
+## ADR-V2-010 - Phase 2.4 release blocker remediation
+
+- **Date:** 2026-08-01
+- **Status:** Accepted
+- **Context:** Phase 2.3 audit FAILED (56/100) with packaging and security Must-Fix items blocking Phase 3.
+- **Decision:** Remediate only Must-Fix items: loopback bind + HOST, migrate-on-boot, timed lockout + unlock API, atomic refresh rotation, pinned deps, disable→revoke, dummy Argon2, expanded coverage, APP_GUARD/repo boundary cleanup, docs. Optional SQLite PRAGMAs included. No business modules.
+- **Consequences:** Re-audit in `AUDIT_PHASE_2_RETEST.md`; Phase 3 still requires PASS gate.

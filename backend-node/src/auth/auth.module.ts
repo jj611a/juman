@@ -1,5 +1,4 @@
 import { Module } from '@nestjs/common';
-import { APP_GUARD } from '@nestjs/core';
 import { PassportModule } from '@nestjs/passport';
 import { RolesModule } from '../roles/roles.module';
 import { SecurityModule } from '../security/security.module';
@@ -29,12 +28,18 @@ import { JwtStrategy } from './strategies/jwt.strategy';
     RefreshTokenService,
     LoginHistoryService,
     JwtStrategy,
+    JwtAuthGuard,
     PermissionsGuard,
+    PasswordChangeGuard,
     AdminBootstrapService,
-    { provide: APP_GUARD, useClass: JwtAuthGuard },
-    { provide: APP_GUARD, useClass: PermissionsGuard },
-    { provide: APP_GUARD, useClass: PasswordChangeGuard },
   ],
-  exports: [AuthService, SessionService, RefreshTokenService, PermissionsGuard],
+  exports: [
+    AuthService,
+    SessionService,
+    RefreshTokenService,
+    JwtAuthGuard,
+    PermissionsGuard,
+    PasswordChangeGuard,
+  ],
 })
 export class AuthModule {}

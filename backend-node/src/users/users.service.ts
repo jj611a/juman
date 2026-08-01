@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { PrismaService } from '../database/prisma.service';
 import type { AppConfig } from '../shared/types';
 import { PasswordHasherService } from '../security/password-hasher.service';
 import { PasswordPolicyService } from '../security/password-policy.service';
@@ -12,6 +13,7 @@ export class UsersService {
     private readonly hasher: PasswordHasherService,
     private readonly policy: PasswordPolicyService,
     private readonly config: ConfigService,
+    private readonly prisma: PrismaService,
   ) {}
 
   normalizeUsername(username: string): string {
@@ -105,16 +107,45 @@ export class UsersService {
     return this.repo.updateLoginSuccess(userId);
   }
 
-  setActive(userId: string, isActive: boolean) {
-    return this.repo.setActive(userId, isActive);
+  async setActive(userId: string, isActive: boolean) {
+    if (!isActive) {
+      return this.disableAccount(userId);
+    }
+    return this.repo.setActive(userId, true);
   }
 
   enableAccount(userId: string) {
-    return this.setActive(userId, true);
+    return this.repo.setActive(userId, true);
   }
 
-  disableAccount(userId: string) {
-    return this.setActive(userId, false);
+  /**
+   * Disable account and immediately revoke every session + refresh token.
+   * Existing JWTs fail on next principal resolve (session revoked).
+   */
+  async disableAccount(userId: string) {
+    const now = new Date();
+    return this.prisma.$transaction(async (tx) => {
+      const user = await tx.user.update({
+        where: { id: userId },
+        data: { isActive: false },
+      });
+      await tx.loginSession.updateMany({
+        where: { userId, revokedAt: null, deletedAt: null },
+        data: { revokedAt: now, revokedBy: userId },
+      });
+      await tx.refreshToken.updateMany({
+        where: { userId, revokedAt: null },
+        data: { revokedAt: now },
+      });
+      return user;
+    });
+  }
+
+  /**
+   * Administrator recovery: clear lockout state without changing password.
+   */
+  async unlockAccount(userId: string) {
+    return this.repo.clearExpiredLock(userId);
   }
 
   changePassword(input: { userId: string; previousHash: string; newHash: string }) {

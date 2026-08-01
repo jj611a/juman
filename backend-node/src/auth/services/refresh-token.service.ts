@@ -39,6 +39,10 @@ export class RefreshTokenService {
     });
   }
 
+  /**
+   * Rotate refresh token inside a SQLite transaction with CAS on revokedAt.
+   * Concurrent rotations of the same token revoke the family and fail closed.
+   */
   async rotate(input: {
     current: RefreshToken;
     expiresAt: Date;
@@ -48,21 +52,42 @@ export class RefreshTokenService {
       throw new UnauthorizedException('Refresh token reuse detected');
     }
 
-    const next = await this.issue({
-      userId: input.current.userId,
-      sessionId: input.current.sessionId,
-      expiresAt: input.expiresAt,
-    });
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const token = this.opaque.generate();
+        const tokenHash = this.opaque.hash(token);
+        const next = await tx.refreshToken.create({
+          data: {
+            userId: input.current.userId,
+            sessionId: input.current.sessionId,
+            tokenHash,
+            expiresAt: input.expiresAt,
+          },
+        });
 
-    await this.prisma.refreshToken.update({
-      where: { id: input.current.id },
-      data: {
-        revokedAt: new Date(),
-        replacedById: next.record.id,
-      },
-    });
+        const cas = await tx.refreshToken.updateMany({
+          where: { id: input.current.id, revokedAt: null },
+          data: {
+            revokedAt: new Date(),
+            replacedById: next.id,
+          },
+        });
 
-    return next;
+        if (cas.count !== 1) {
+          await tx.refreshToken.updateMany({
+            where: { sessionId: input.current.sessionId, revokedAt: null },
+            data: { revokedAt: new Date() },
+          });
+          throw new UnauthorizedException('Refresh token reuse detected');
+        }
+
+        return { token, record: next };
+      });
+    } catch (error: unknown) {
+      if (error instanceof UnauthorizedException) throw error;
+      await this.revokeSessionFamily(input.current.sessionId);
+      throw error;
+    }
   }
 
   async revokeSessionFamily(sessionId: string): Promise<void> {
@@ -87,7 +112,9 @@ export class RefreshTokenService {
   }
 
   /**
-   * Detect reuse of an already-rotated token and revoke the session family.
+   * Resolve a live refresh token.
+   * Expired tokens fail as expired (no family revoke).
+   * Already-revoked tokens trigger reuse detection + family revoke.
    */
   async assertNotReuse(token: string): Promise<RefreshToken> {
     const tokenHash = this.opaque.hash(token);
@@ -97,7 +124,10 @@ export class RefreshTokenService {
     if (!existing) {
       throw new UnauthorizedException('Invalid refresh token');
     }
-    if (existing.revokedAt || existing.expiresAt.getTime() <= Date.now()) {
+    if (existing.expiresAt.getTime() <= Date.now()) {
+      throw new UnauthorizedException('Refresh token expired');
+    }
+    if (existing.revokedAt) {
       await this.revokeSessionFamily(existing.sessionId);
       throw new UnauthorizedException('Refresh token reuse detected');
     }

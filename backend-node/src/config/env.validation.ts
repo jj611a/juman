@@ -37,6 +37,10 @@ class EnvironmentVariables {
   LOG_LEVEL?: string;
 
   @IsOptional()
+  @IsString()
+  HOST?: string;
+
+  @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(1)

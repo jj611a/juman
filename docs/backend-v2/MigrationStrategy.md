@@ -27,3 +27,10 @@ Mark module completed on V2 roadmap canvas
 ## Cutover
 
 Only after full parity may `backend-python/` be archived (e.g. moved to `archive/` or removed in a dedicated release decision). Until then it remains read-only documentation.
+
+## Schema migrations (Nest packaging)
+
+1. Prefer `prisma migrate deploy` for all environments (including tests / CI).
+2. Ban `prisma db push` for application startup and CI proof of schema.
+3. `backend-node` runs migrate deploy **before** Nest boots; failure aborts with diagnostics.
+4. Fresh install: dirs → `juman.env` → SQLite file → migrate deploy → verify status → Nest.

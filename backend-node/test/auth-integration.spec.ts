@@ -38,7 +38,7 @@ describe('Auth integration', () => {
     process.env.MAX_FAILED_LOGIN_ATTEMPTS = '3';
     process.env.ACCOUNT_LOCK_DURATION_MINUTES = '30';
 
-    execSync('pnpm exec prisma db push --skip-generate', {
+    execSync('pnpm exec prisma migrate deploy', {
       cwd: join(__dirname, '..'),
       env: { ...process.env, DATABASE_URL: dbUrl },
       stdio: 'pipe',

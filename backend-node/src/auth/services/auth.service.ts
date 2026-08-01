@@ -78,6 +78,7 @@ export class AuthService {
     const user = await this.users.findByUsername(username);
 
     if (!user) {
+      await this.hasher.verifyDummy(command.password);
       await this.history.recordLoginFailed({
         username,
         failureReason: LOGIN_FAILURE_REASON.USER_NOT_FOUND,
@@ -456,5 +457,15 @@ export class AuthService {
         code: 'password_change_required',
       });
     }
+  }
+
+  async unlockByUsername(usernameRaw: string): Promise<{ username: string; unlocked: boolean }> {
+    const username = this.users.normalizeUsername(usernameRaw);
+    const user = await this.users.findByUsername(username);
+    if (!user) {
+      throw new BadRequestException('User not found');
+    }
+    await this.users.unlockAccount(user.id);
+    return { username: user.username, unlocked: true };
   }
 }

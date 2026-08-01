@@ -12,11 +12,13 @@ describe('configuration', () => {
 
   it('loads typed defaults including auth', () => {
     process.env.JUMAN_DATA_DIR = process.cwd();
+    delete process.env.HOST;
     delete process.env.PORT;
     delete process.env.APP_VERSION;
     delete process.env.APP_ENV;
     delete process.env.JWT_SECRET;
     const cfg = configuration().app;
+    expect(cfg.host).toBe('127.0.0.1');
     expect(cfg.port).toBe(8787);
     expect(cfg.version).toBe('2.0.0');
     expect(cfg.environment).toBe('development');

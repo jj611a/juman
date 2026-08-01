@@ -4,6 +4,7 @@ import { config as loadDotenv } from 'dotenv';
 import {
   DEFAULT_APP_VERSION,
   DEFAULT_ENVIRONMENT,
+  DEFAULT_HOST,
   DEFAULT_LOG_LEVEL,
   DEFAULT_PORT,
 } from '../core/constants';
@@ -32,6 +33,7 @@ function buildDefaultEnvContents(paths: RuntimePaths): string {
       'APP_NAME=Juman',
       `APP_ENV=${DEFAULT_ENVIRONMENT}`,
       `APP_VERSION=${DEFAULT_APP_VERSION}`,
+      `HOST=${DEFAULT_HOST}`,
       `PORT=${DEFAULT_PORT}`,
       `LOG_LEVEL=${DEFAULT_LOG_LEVEL}`,
       `DATABASE_URL=${toSqliteFileUrl(paths.sqlitePath)}`,
@@ -67,6 +69,7 @@ export function loadOrCreateJumanEnv(paths: RuntimePaths): { created: boolean; p
   const root = paths.configDir.replace(/[/\\]config$/, '');
   process.env.JUMAN_DATA_DIR ??= root;
   process.env.DATABASE_URL ??= toSqliteFileUrl(paths.sqlitePath);
+  process.env.HOST ??= DEFAULT_HOST;
   process.env.PORT ??= String(DEFAULT_PORT);
   process.env.APP_VERSION ??= DEFAULT_APP_VERSION;
   process.env.APP_ENV ??= DEFAULT_ENVIRONMENT;

@@ -39,4 +39,8 @@ describe('PasswordHasherService', () => {
     expect(await hasher.verify(hash, 'Str0ng!Pass')).toBe(true);
     expect(await hasher.verify(hash, 'wrong-password')).toBe(false);
   });
+
+  it('verifyDummy completes without throwing', async () => {
+    await expect(hasher.verifyDummy('any-password')).resolves.toBeUndefined();
+  });
 });

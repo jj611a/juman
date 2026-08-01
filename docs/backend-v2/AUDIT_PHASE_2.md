@@ -296,3 +296,7 @@ Phase 3  Core Business         BLOCKED
 ---
 
 *End of Phase 2 audit. No business modules were implemented in this phase.*
+
+---
+
+**Follow-up:** Phase 2.4 remediation re-audit is in `docs/backend-v2/AUDIT_PHASE_2_RETEST.md`.

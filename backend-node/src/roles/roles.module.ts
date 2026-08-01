@@ -6,6 +6,6 @@ import { RolesService } from './roles.service';
 @Module({
   imports: [PermissionsModule],
   providers: [RolesRepository, RolesService],
-  exports: [RolesRepository, RolesService],
+  exports: [RolesService],
 })
 export class RolesModule {}

@@ -1,11 +1,13 @@
 import { Body, Controller, Get, Headers, HttpCode, Post, Req } from '@nestjs/common';
 import type { Request } from 'express';
-import { AUTH_API_PREFIX } from '../core/auth.constants';
+import { ACCOUNT_UNLOCK_PERMISSION, AUTH_API_PREFIX } from '../core/auth.constants';
+import { Public } from '../core/public.decorator';
 import type { AuthPrincipal } from '../shared/types';
 import { CurrentUser } from './decorators/current-user.decorator';
-import { Public } from './decorators/public.decorator';
+import { RequirePermissions } from './decorators/require-permissions.decorator';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { LoginDto } from './dto/login.dto';
+import { UnlockAccountDto } from './dto/unlock-account.dto';
 import { AuthService } from './services/auth.service';
 
 @Controller(AUTH_API_PREFIX)
@@ -41,6 +43,18 @@ export class AuthController {
   ) {
     await this.auth.changePassword(user, body.currentPassword, body.newPassword);
     return { success: true, message: 'Password changed' };
+  }
+
+  /**
+   * Administrator recovery for timed/permanent lockouts.
+   * Requires users.unlock. See README for timed wait and emergency SQLite recovery.
+   */
+  @Post('admin/unlock')
+  @HttpCode(200)
+  @RequirePermissions(ACCOUNT_UNLOCK_PERMISSION)
+  async unlock(@Body() body: UnlockAccountDto) {
+    const result = await this.auth.unlockByUsername(body.username);
+    return { success: true, ...result };
   }
 
   /**

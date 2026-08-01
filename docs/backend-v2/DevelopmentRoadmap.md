@@ -4,7 +4,7 @@
 |------:|------|------|
 | 0 | Architecture | Docs, branch, rename, canvas |
 | 1 | Foundation | Nest + Prisma + SQLite + `/health` |
-| 2 | Identity & Security | 2.1–2.2 code → **2.3 audit** → 2.4 hardening |
+| 2 | Identity & Security | 2.1–2.2 code → 2.3 audit FAIL → **2.4 remediation** → re-audit |
 | 3 | Core Business | Customers, categories, settings |
 | 4 | Inventory Engine | Dresses / inventory |
 | 5 | Rental Engine | Reservations → returns |
@@ -16,10 +16,10 @@
 
 ## Current milestone
 
-**Phase 2.3 Architecture Audit complete — FAIL (56/100).**  
-Report: `docs/backend-v2/AUDIT_PHASE_2.md`.  
+**Phase 2.4 Release Blocker Remediation complete.**  
+Re-audit: `docs/backend-v2/AUDIT_PHASE_2_RETEST.md`.
 
-**Phase 3 is BLOCKED** until Must-fix items are remediated and re-audited.
+**Phase 3 remains gated** on re-audit Must-Fix clearance (see retest verdict).
 
 ## Completion rule
 

@@ -22,5 +22,6 @@ describe('startup sequence', () => {
     expect(existsSync(paths.jumanEnvPath)).toBe(true);
     expect(existsSync(paths.dataDir)).toBe(true);
     expect(process.env.DATABASE_URL?.startsWith('file:')).toBe(true);
+    expect(process.env.HOST ?? '127.0.0.1').toBe('127.0.0.1');
   });
 });
