@@ -1,4 +1,5 @@
 packages:
+  - "backend-node"
   - "frontend"
   - "packages/*"
 allowBuilds:

@@ -1,0 +1,2 @@
+import { resolve } from 'node:path';
+export const configuration = () => { const root = resolve(process.env.JUMAN_DATA_DIR ?? resolve(process.cwd(), '..')); return { app: { port: Number(process.env.PORT ?? 8787), version: process.env.APP_VERSION ?? '2.0.0-foundation' }, database: { url: process.env.DATABASE_URL ?? `file:${resolve(root, 'data', 'juman.db').replaceAll('\\', '/')}` }, paths: { jumanDataDir: root } }; };
