@@ -12,3 +12,146 @@ model AppMeta {
   key   String @unique
   value String
 }
+
+model User {
+  id                   String    @id @default(uuid())
+  username             String    @unique
+  passwordHash         String
+  fullName             String
+  phone                String?
+  email                String?
+  roleId               String
+  isActive             Boolean   @default(true)
+  isLocked             Boolean   @default(false)
+  mustChangePassword   Boolean   @default(true)
+  failedLoginAttempts  Int       @default(0)
+  lockedUntil          DateTime?
+  lastLoginAt          DateTime?
+  passwordChangedAt    DateTime?
+  deletedAt            DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+  createdBy            String?
+  updatedBy            String?
+
+  role            Role             @relation(fields: [roleId], references: [id])
+  sessions        LoginSession[]
+  refreshTokens   RefreshToken[]
+  loginHistory    LoginHistory[]
+  passwordHistory PasswordHistory[]
+
+  @@index([roleId])
+  @@index([deletedAt])
+}
+
+model Role {
+  id          String    @id @default(uuid())
+  name        String    @unique
+  description String?
+  isSystem    Boolean   @default(false)
+  isActive    Boolean   @default(true)
+  deletedAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  users           User[]
+  rolePermissions RolePermission[]
+}
+
+model Permission {
+  id          String    @id @default(uuid())
+  key         String    @unique
+  displayName String
+  description String?
+  module      String
+  deletedAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  rolePermissions RolePermission[]
+
+  @@index([module])
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+  deletedAt    DateTime?
+  createdAt    DateTime @default(now())
+
+  role       Role       @relation(fields: [roleId], references: [id])
+  permission Permission @relation(fields: [permissionId], references: [id])
+
+  @@id([roleId, permissionId])
+  @@index([permissionId])
+}
+
+model LoginSession {
+  id             String    @id @default(uuid())
+  userId         String
+  deviceName     String?
+  ipAddress      String?
+  lastActivityAt DateTime
+  expiresAt      DateTime
+  revokedAt      DateTime?
+  revokedBy      String?
+  rememberMe     Boolean   @default(false)
+  deletedAt      DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  user          User           @relation(fields: [userId], references: [id])
+  refreshTokens RefreshToken[]
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model RefreshToken {
+  id           String    @id @default(uuid())
+  userId       String
+  sessionId    String
+  tokenHash    String    @unique
+  expiresAt    DateTime
+  revokedAt    DateTime?
+  replacedById String?
+  createdAt    DateTime  @default(now())
+
+  user    User         @relation(fields: [userId], references: [id])
+  session LoginSession @relation(fields: [sessionId], references: [id])
+
+  @@index([userId])
+  @@index([sessionId])
+  @@index([expiresAt])
+}
+
+model LoginHistory {
+  id                String   @id @default(uuid())
+  userId            String?
+  usernameAttempted String
+  eventType         String
+  success           Boolean
+  failureReason     String?
+  ipAddress         String?
+  deviceName        String?
+  userAgent         String?
+  sessionId         String?
+  createdAt         DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([createdAt])
+  @@index([eventType])
+}
+
+model PasswordHistory {
+  id           String   @id @default(uuid())
+  userId       String
+  passwordHash String
+  createdAt    DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+}

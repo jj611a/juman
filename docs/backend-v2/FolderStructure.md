@@ -12,23 +12,30 @@ juman/
   deployment/
 ```
 
-## `backend-node/` (Phase 1.1)
+## `backend-node/` (Phase 2.1)
 
 ```
 backend-node/
-  prisma/schema.prisma
+  prisma/
+    schema.prisma
+    migrations/
   src/
     main.ts
     app.module.ts
-    config/           # paths, juman.env loader, configuration, validation
-    core/             # constants
-    database/         # Prisma module/service
-    health/           # GET /health only
-    logging/          # Winston rotating JSON logger
-    exceptions/       # global filter + process handlers
-    validation/       # global ValidationPipe factory
-    storage/          # ensure runtime directories
-    shared/           # shared types
+    config/
+    core/                 # app + auth constants
+    database/
+    health/
+    logging/
+    exceptions/
+    validation/
+    storage/
+    shared/
+    security/             # Argon2, JWT, opaque tokens, password policy
+    auth/                 # module, controller, guards, strategies, services, dto
+    users/
+    roles/
+    permissions/
   test/
   package.json
 ```

@@ -6,7 +6,7 @@ Independent of the legacy master roadmap. Track progress on the **JUMAN BACKEND 
 |------:|------|------|
 | 0 | Architecture | Docs, branch, `backend-python` rename, canvas |
 | 1 | Foundation | Nest bootstrap, Prisma/SQLite, `/health`, tooling |
-| 2 | Authentication | Identity parity (login, JWT, RBAC foundations) |
+| 2 | Authentication | Identity foundation → full auth APIs (2.1 → 2.x) |
 | 3 | Core Modules | Customers, categories, inventory/dresses, settings |
 | 4 | Rental Engine | Reservations, rentals, returns, availability |
 | 5 | Financial | Sales, settlements, payments |
@@ -18,7 +18,8 @@ Independent of the legacy master roadmap. Track progress on the **JUMAN BACKEND 
 
 ## Current milestone
 
-**Phase 1.1 Foundation complete.** Next: Phase 2 Authentication (approval required).
+**Phase 2.1 Authentication Foundation complete.**  
+Next (approval required): Phase 2.2 — change-password, admin user/role APIs, unlock, bootstrap admin, logout-all/sessions list.
 
 ## Completion rule
 

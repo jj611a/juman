@@ -45,3 +45,11 @@
 - **Context:** Initial scaffold needed production logging, config/juman.env bootstrap, and fuller lifecycle handling.
 - **Decision:** Winston + daily rotate JSON logs (application/errors/startup/requests); load/generate `config/juman.env`; global filter + process handlers; health returns `database: connected|disconnected` and `environment`.
 - **Consequences:** Tests silence file transports under `VITEST=true`; Electron still on Python until Phase 8.
+
+## ADR-V2-007 - Authentication foundation (Phase 2.1)
+
+- **Date:** 2026-08-01
+- **Status:** Accepted
+- **Context:** Desktop-only Electron client; Python identity uses session-bound JWT + opaque refresh + Argon2id + RBAC.
+- **Decision:** Reimplement auth cleanly in Nest with Prisma models (User/Role/Permission/Session/RefreshToken/LoginHistory/PasswordHistory); Argon2id; JWT `aud=juman-desktop`; opaque refresh with reuse detection; permissions from DB; `GET /api/v1/auth/me` returns permissions; seed full RBAC catalog.
+- **Consequences:** No business modules yet; Electron path aliases deferred to Phase 8; intentional deviations documented in AuthenticationDesign.md.

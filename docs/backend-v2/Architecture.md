@@ -1,14 +1,14 @@
 # Backend V2 Architecture
 
-**Status:** Foundation (Phase 1.1)  
+**Status:** Phase 2.1 Authentication Foundation  
 **Branch:** `backend-v2`  
 **Spec source:** `backend-python/` (read-only Python FastAPI stack)
 
 ## Target runtime
 
 ```
-Electron (desktop)
-    ↓
+Electron (desktop) — Main process owns tokens
+    ↓ Bearer access JWT
 NestJS (backend-node)
     ↓
 Prisma ORM
@@ -34,67 +34,51 @@ On first startup the Nest process ensures:
 | `storage/` | Media and file storage |
 | `config/` | `juman.env` runtime configuration |
 
-Canonical env:
+## Configuration
 
-- `JUMAN_DATA_DIR` — root for `data/`, `logs/`, `storage/`, `config/`
-- `DATABASE_URL` — Prisma SQLite URL (`file:…/data/juman.db`)
-- `PORT` — HTTP listen port (dev default **8787**)
-- `APP_VERSION` — reported by `/health` (default `2.0.0`)
-- `APP_ENV` — `development` | `production` | `test`
-
-## Configuration file
-
-Runtime config is loaded from `config/juman.env` under `JUMAN_DATA_DIR`. Missing files are generated with safe defaults on first startup.
+Loaded from `config/juman.env`. Missing files are generated with safe defaults (including a random `JWT_SECRET`). Production requires an explicit `JWT_SECRET` (≥32 chars).
 
 ## Logging
 
-Centralized Winston logger writes console + daily rotating JSON files under `logs/` for channels: application, errors, startup, requests.
+Winston console + daily rotating JSON under `logs/` (application / errors / startup / requests).
 
-## API (Phase 1)
+## API surface (Phase 2.1)
 
-Only:
+- `GET /health` — public
+- `POST /api/v1/auth/login` — public
+- `POST /api/v1/auth/logout` — bearer
+- `POST /api/v1/auth/refresh` — public (refresh body)
+- `GET /api/v1/auth/me` — bearer (includes permissions)
 
-`GET /health`
+See `AuthenticationDesign.md` and `SecurityDesign.md`.
 
-```json
-{
-  "status": "ok",
-  "version": "2.0.0",
-  "database": "connected",
-  "uptime": 12.34,
-  "environment": "development"
-}
-```
-
-No `/api/v1` prefix in Phase 1. Electron still targets Python V1 until Phase 8.
-
-## Layers (Clean Architecture)
+## Layers
 
 ```
 src/
-  main.ts                 bootstrap + graceful shutdown
-  app.module.ts
-  config/                 juman.env + validated configuration
-  core/                   constants
-  database/               PrismaService
-  health/                 health module (presentation)
-  logging/                Winston logger
-  exceptions/             global filter + process handlers
-  validation/             ValidationPipe factory
-  storage/                ensure runtime dirs
-  shared/                 shared types
+  main.ts, app.module.ts
+  config/, core/, database/, health/, logging/, exceptions/, validation/, storage/, shared/
+  security/       Argon2, JWT, opaque tokens, password policy
+  auth/           guards, strategies, session/refresh, login/logout/refresh/me
+  users/          repository + service (no CRUD HTTP yet)
+  roles/          system roles + permission resolution
+  permissions/    catalog seed + repository
 ```
 
-Domain modules are added from Phase 2 onward. Persistence goes through Prisma only.
+## Auth / RBAC
+
+- Argon2id passwords; opaque refresh tokens (hashed); HS256 access JWT bound to session (`sid`)
+- Permissions resolved from DB per request (not embedded in JWT)
+- System roles Admin / Cashier / Inventory / Laundry seeded on startup
+- Full permission catalog preserved from Python V1
 
 ## What is not in V2 (yet)
 
-- Authentication / JWT
-- Business modules
+- Users/roles admin HTTP APIs, change-password HTTP
+- Business modules (customers, inventory, rentals, sales, reports)
 - Hardware bridges
-- Electron process management
-- Installer NSIS changes for Nest packaging
+- Electron process management / installer Nest packaging
 
 ## Python V1
 
-`backend-python/` remains in the repository as the **official behavioral specification** until full parity. Do not modify its application code on this track.
+`backend-python/` remains the official behavioral specification until full parity. Do not modify its application code on this track.
