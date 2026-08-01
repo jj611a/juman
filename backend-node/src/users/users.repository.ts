@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import type { User } from '@prisma/client';
+import type { PasswordHistory, User } from '@prisma/client';
 import { PrismaService } from '../database/prisma.service';
 
 export type UserWithRole = User & {
@@ -30,6 +30,7 @@ export class UsersRepository {
     fullName: string;
     roleId: string;
     mustChangePassword?: boolean;
+    isActive?: boolean;
   }) {
     return this.prisma.user.create({
       data: {
@@ -38,6 +39,7 @@ export class UsersRepository {
         fullName: input.fullName,
         roleId: input.roleId,
         mustChangePassword: input.mustChangePassword ?? true,
+        isActive: input.isActive ?? true,
       },
       include: { role: true },
     });
@@ -79,6 +81,44 @@ export class UsersRepository {
         lockedUntil: null,
         failedLoginAttempts: 0,
       },
+    });
+  }
+
+  setActive(userId: string, isActive: boolean): Promise<User> {
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: { isActive },
+    });
+  }
+
+  async changePassword(input: {
+    userId: string;
+    previousHash: string;
+    newHash: string;
+  }): Promise<void> {
+    await this.prisma.$transaction(async (tx) => {
+      await tx.passwordHistory.create({
+        data: { userId: input.userId, passwordHash: input.previousHash },
+      });
+      await tx.user.update({
+        where: { id: input.userId },
+        data: {
+          passwordHash: input.newHash,
+          mustChangePassword: false,
+          passwordChangedAt: new Date(),
+          failedLoginAttempts: 0,
+          isLocked: false,
+          lockedUntil: null,
+        },
+      });
+    });
+  }
+
+  listPasswordHistory(userId: string, take: number): Promise<PasswordHistory[]> {
+    return this.prisma.passwordHistory.findMany({
+      where: { userId },
+      orderBy: { createdAt: 'desc' },
+      take,
     });
   }
 }

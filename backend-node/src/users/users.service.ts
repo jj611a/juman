@@ -32,6 +32,7 @@ export class UsersService {
     fullName: string;
     roleId: string;
     mustChangePassword?: boolean;
+    isActive?: boolean;
   }): Promise<UserWithRole> {
     const username = this.normalizeUsername(input.username);
     const policy = this.policy.validate(input.password, username);
@@ -45,6 +46,7 @@ export class UsersService {
       fullName: input.fullName,
       roleId: input.roleId,
       mustChangePassword: input.mustChangePassword,
+      isActive: input.isActive,
     }) as Promise<UserWithRole>;
   }
 
@@ -101,5 +103,25 @@ export class UsersService {
 
   recordSuccessfulLogin(userId: string) {
     return this.repo.updateLoginSuccess(userId);
+  }
+
+  setActive(userId: string, isActive: boolean) {
+    return this.repo.setActive(userId, isActive);
+  }
+
+  enableAccount(userId: string) {
+    return this.setActive(userId, true);
+  }
+
+  disableAccount(userId: string) {
+    return this.setActive(userId, false);
+  }
+
+  changePassword(input: { userId: string; previousHash: string; newHash: string }) {
+    return this.repo.changePassword(input);
+  }
+
+  listPasswordHistory(userId: string, take: number) {
+    return this.repo.listPasswordHistory(userId, take);
   }
 }

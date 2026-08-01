@@ -1,6 +1,6 @@
 # Backend V2 Architecture
 
-**Status:** Phase 2.1 Authentication Foundation  
+**Status:** Phase 2.2 Authentication Implementation  
 **Branch:** `backend-v2`  
 **Spec source:** `backend-python/` (read-only Python FastAPI stack)
 
@@ -42,13 +42,11 @@ Loaded from `config/juman.env`. Missing files are generated with safe defaults (
 
 Winston console + daily rotating JSON under `logs/` (application / errors / startup / requests).
 
-## API surface (Phase 2.1)
+## API surface (Phase 2.2)
 
 - `GET /health` — public
-- `POST /api/v1/auth/login` — public
-- `POST /api/v1/auth/logout` — bearer
-- `POST /api/v1/auth/refresh` — public (refresh body)
-- `GET /api/v1/auth/me` — bearer (includes permissions)
+- `POST /auth/login` / `POST /auth/logout` / `POST /auth/change-password`
+- `GET /auth/session` / `GET /auth/me`
 
 See `AuthenticationDesign.md` and `SecurityDesign.md`.
 

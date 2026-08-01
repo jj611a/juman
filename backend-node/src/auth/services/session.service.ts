@@ -66,9 +66,14 @@ export class SessionService {
     });
   }
 
-  async revokeAllForUser(userId: string, revokedBy?: string): Promise<number> {
+  async revokeAllForUser(userId: string, revokedBy?: string, exceptSessionId?: string): Promise<number> {
     const result = await this.prisma.loginSession.updateMany({
-      where: { userId, revokedAt: null, deletedAt: null },
+      where: {
+        userId,
+        revokedAt: null,
+        deletedAt: null,
+        ...(exceptSessionId ? { id: { not: exceptSessionId } } : {}),
+      },
       data: { revokedAt: new Date(), revokedBy: revokedBy ?? null },
     });
     return result.count;

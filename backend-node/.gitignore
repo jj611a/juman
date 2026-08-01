@@ -7,3 +7,8 @@ logs/*
 prisma/*.db
 prisma/*.db-journal
 
+
+coverage/
+scripts/write-phase22*.mjs
+scripts/patch-auth-tests.mjs
+

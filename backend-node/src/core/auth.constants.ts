@@ -18,13 +18,15 @@ export const DEFAULT_PASSWORD_MAX_LENGTH = 128;
 export const DEFAULT_PASSWORD_HISTORY_COUNT = 5;
 export const PASSWORD_MIN_LENGTH_FLOOR = 8;
 
-export const AUTH_API_PREFIX = 'api/v1';
+/** Public auth route prefix (Electron Main client). */
+export const AUTH_API_PREFIX = 'auth';
 
-export const LOGIN_HISTORY_EVENT = {
-  LOGIN: 'login',
-  LOGOUT: 'logout',
-  ACCOUNT_LOCKED: 'account_locked',
-  PASSWORD_RESET: 'password_reset',
+export const AUDIT_EVENT = {
+  LOGIN: 'LOGIN',
+  LOGOUT: 'LOGOUT',
+  LOGIN_FAILED: 'LOGIN_FAILED',
+  PASSWORD_CHANGED: 'PASSWORD_CHANGED',
+  ACCOUNT_LOCKED: 'ACCOUNT_LOCKED',
 } as const;
 
 export const LOGIN_FAILURE_REASON = {
@@ -42,14 +44,17 @@ export const SYSTEM_ROLE = {
   LAUNDRY: 'Laundry',
 } as const;
 
+export const DEFAULT_ADMIN_USERNAME = 'admin';
+export const DEFAULT_ADMIN_FULL_NAME = 'Administrator';
+
 export const IS_PUBLIC_KEY = 'auth:isPublic';
 export const REQUIRED_PERMISSIONS_KEY = 'auth:requiredPermissions';
 export const REQUIRED_PERMISSIONS_MODE_KEY = 'auth:requiredPermissionsMode';
 
+/** Paths allowed while mustChangePassword is true. */
 export const PASSWORD_CHANGE_ALLOWED_PATHS = [
-  '/api/v1/auth/change-password',
-  '/api/v1/auth/logout',
-  '/api/v1/auth/logout-all',
-  '/api/v1/auth/me',
-  '/api/v1/auth/sessions',
+  '/auth/change-password',
+  '/auth/logout',
+  '/auth/me',
+  '/auth/session',
 ] as const;

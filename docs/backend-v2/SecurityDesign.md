@@ -1,4 +1,4 @@
-# Backend V2 Security Design (Auth Foundation)
+# Backend V2 Security Design (Phase 2.2)
 
 ## Threat mitigations
 
@@ -28,3 +28,10 @@
 - No change-password / admin reset HTTP yet (services/policy ready).
 - Absolute session expiry (not sliding idle timeout on every request).
 - Soft-delete of users does not yet cascade-revoke sessions at write time (principal resolve still fails closed).
+
+## Phase 2.2 notes
+
+- Default Administrator seeded with forced password change.
+- Session cold restore via `X-Refresh-Token` (tokens stay in Electron Main).
+- Auth coverage gate: Vitest lines ≥95% on `src/auth` (excluding DTO/bootstrap/decorators metadata).
+

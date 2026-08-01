@@ -79,6 +79,13 @@ export class RefreshTokenService {
     });
   }
 
+  async revokeSessionFamilyExcept(userId: string, keepSessionId: string): Promise<void> {
+    await this.prisma.refreshToken.updateMany({
+      where: { userId, revokedAt: null, sessionId: { not: keepSessionId } },
+      data: { revokedAt: new Date() },
+    });
+  }
+
   /**
    * Detect reuse of an already-rotated token and revoke the session family.
    */

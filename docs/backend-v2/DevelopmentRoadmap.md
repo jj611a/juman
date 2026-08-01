@@ -1,26 +1,20 @@
 # Backend V2 Development Roadmap
 
-Independent of the legacy master roadmap. Track progress on the **JUMAN BACKEND V2 ROADMAP** canvas.
-
 | Phase | Name | Goal |
 |------:|------|------|
-| 0 | Architecture | Docs, branch, `backend-python` rename, canvas |
-| 1 | Foundation | Nest bootstrap, Prisma/SQLite, `/health`, tooling |
-| 2 | Authentication | Identity foundation → full auth APIs (2.1 → 2.x) |
-| 3 | Core Modules | Customers, categories, inventory/dresses, settings |
-| 4 | Rental Engine | Reservations, rentals, returns, availability |
-| 5 | Financial | Sales, settlements, payments |
-| 6 | Reports | Operational and financial reports |
-| 7 | Hardware | Printers, scanner, drawer bridges |
-| 8 | Desktop Integration | Electron spawn, portable paths, installer |
-| 9 | Testing | Parity suites vs Python behavior |
-| 10 | Production | Hardening, packaging, cutover |
+| 0 | Architecture | Docs, branch, rename, canvas |
+| 1 | Foundation | Nest + Prisma + SQLite + `/health` |
+| 2 | Identity & Security | 2.1 foundation → 2.2 auth APIs → audit gate |
+| 3 | Core Business | Customers, categories, settings |
+| 4 | Inventory Engine | Dresses / inventory |
+| 5 | Rental Engine | Reservations → returns |
+| 6 | Financial Engine | Sales, settlements, payments |
+| 7 | Reports & Analytics | Operational + financial |
+| 8 | Desktop Integration | Electron + Nest sidecar |
+| 9 | Testing & Hardening | Parity suites |
+| 10 | Production & Installer | Cutover |
 
 ## Current milestone
 
-**Phase 2.1 Authentication Foundation complete.**  
-Next (approval required): Phase 2.2 — change-password, admin user/role APIs, unlock, bootstrap admin, logout-all/sessions list.
-
-## Completion rule
-
-A phase is complete when: docs/canvas updated, tests for the phase pass, and a dedicated commit exists on `backend-v2`.
+**Phase 2.2 Authentication Implementation complete.**  
+Next: **mandatory Phase 2 audit** (approval required). Do not start Phase 3 until audit passes.

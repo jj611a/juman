@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { LOGIN_HISTORY_EVENT } from '../../core/auth.constants';
+import { AUDIT_EVENT } from '../../core/auth.constants';
 import { PrismaService } from '../../database/prisma.service';
 
 @Injectable()
@@ -32,7 +32,7 @@ export class LoginHistoryService {
     });
   }
 
-  recordLoginSuccess(input: {
+  recordLogin(input: {
     userId: string;
     username: string;
     sessionId: string;
@@ -41,14 +41,18 @@ export class LoginHistoryService {
     userAgent?: string;
   }) {
     return this.record({
-      ...input,
+      userId: input.userId,
       usernameAttempted: input.username,
-      eventType: LOGIN_HISTORY_EVENT.LOGIN,
+      eventType: AUDIT_EVENT.LOGIN,
       success: true,
+      sessionId: input.sessionId,
+      ipAddress: input.ipAddress,
+      deviceName: input.deviceName,
+      userAgent: input.userAgent,
     });
   }
 
-  recordLoginFailure(input: {
+  recordLoginFailed(input: {
     userId?: string;
     username: string;
     failureReason: string;
@@ -59,7 +63,7 @@ export class LoginHistoryService {
     return this.record({
       userId: input.userId,
       usernameAttempted: input.username,
-      eventType: LOGIN_HISTORY_EVENT.LOGIN,
+      eventType: AUDIT_EVENT.LOGIN_FAILED,
       success: false,
       failureReason: input.failureReason,
       ipAddress: input.ipAddress,
@@ -78,7 +82,7 @@ export class LoginHistoryService {
     return this.record({
       userId: input.userId,
       usernameAttempted: input.username,
-      eventType: LOGIN_HISTORY_EVENT.LOGOUT,
+      eventType: AUDIT_EVENT.LOGOUT,
       success: true,
       sessionId: input.sessionId,
       ipAddress: input.ipAddress,
@@ -95,11 +99,25 @@ export class LoginHistoryService {
     return this.record({
       userId: input.userId,
       usernameAttempted: input.username,
-      eventType: LOGIN_HISTORY_EVENT.ACCOUNT_LOCKED,
+      eventType: AUDIT_EVENT.ACCOUNT_LOCKED,
       success: false,
       failureReason: 'locked',
       ipAddress: input.ipAddress,
       deviceName: input.deviceName,
+    });
+  }
+
+  recordPasswordChanged(input: {
+    userId: string;
+    username: string;
+    sessionId?: string;
+  }) {
+    return this.record({
+      userId: input.userId,
+      usernameAttempted: input.username,
+      eventType: AUDIT_EVENT.PASSWORD_CHANGED,
+      success: true,
+      sessionId: input.sessionId,
     });
   }
 }
