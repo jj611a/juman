@@ -1,6 +1,6 @@
 # Backend V2 Architecture
 
-**Status:** Phase 2.4 Release Blocker Remediation  
+**Status:** Phase 3.1 Shared Business Foundation  
 **Branch:** `backend-v2`  
 **Spec source:** `backend-python/` (read-only Python FastAPI stack)
 
@@ -64,6 +64,11 @@ src/
   users/          repository internal; service is public boundary
   roles/          system roles + permission resolution (service export only)
   permissions/    catalog seed (service export only)
+  shared/         money, pagination, search, soft-delete, errors
+  settings/       AppSetting typed config
+  audit/          AuditService.record (append-only)
+  media/          MediaFile abstraction (no upload HTTP)
+  barcode/        generate/validate/reserve
 ```
 
 ## Auth / RBAC
@@ -85,3 +90,5 @@ src/
 ## Python V1
 
 `backend-python/` remains the official behavioral specification until full parity. Do not modify its application code on this track.
+
+See `SharedFoundation.md` for Phase 3.1 contracts.

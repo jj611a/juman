@@ -86,3 +86,13 @@ All package versions are **exact pins** (no `latest`, no ranges).
 ## Docs
 
 See `docs/backend-v2/` — Architecture, AuthenticationDesign, SecurityDesign, DecisionLog, DevelopmentRoadmap, audits.
+
+## Shared foundation (Phase 3.1)
+
+Reusable settings/audit/media/barcode + `src/shared` primitives.
+
+`ash
+pnpm test:cov:shared
+`
+
+See `docs/backend-v2/SharedFoundation.md`.

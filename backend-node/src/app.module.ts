@@ -1,17 +1,21 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
+import { AuditModule } from './audit/audit.module';
 import { AuthModule } from './auth/auth.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { PasswordChangeGuard } from './auth/guards/password-change.guard';
 import { PermissionsGuard } from './auth/guards/permissions.guard';
+import { BarcodeModule } from './barcode/barcode.module';
 import { configuration } from './config/configuration';
 import { validateEnvironment } from './config/env.validation';
 import { PrismaModule } from './database/prisma.module';
 import { HealthModule } from './health/health.module';
 import { LoggerModule } from './logging/logger.module';
+import { MediaModule } from './media/media.module';
 import { PermissionsModule } from './permissions/permissions.module';
 import { RolesModule } from './roles/roles.module';
+import { SettingsModule } from './settings/settings.module';
 import { UsersModule } from './users/users.module';
 
 @Module({
@@ -24,6 +28,10 @@ import { UsersModule } from './users/users.module';
     }),
     LoggerModule,
     PrismaModule,
+    SettingsModule,
+    AuditModule,
+    MediaModule,
+    BarcodeModule,
     PermissionsModule,
     RolesModule,
     UsersModule,

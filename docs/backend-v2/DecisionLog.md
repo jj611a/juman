@@ -77,3 +77,11 @@
 - **Context:** Phase 2.3 audit FAILED (56/100) with packaging and security Must-Fix items blocking Phase 3.
 - **Decision:** Remediate only Must-Fix items: loopback bind + HOST, migrate-on-boot, timed lockout + unlock API, atomic refresh rotation, pinned deps, disable→revoke, dummy Argon2, expanded coverage, APP_GUARD/repo boundary cleanup, docs. Optional SQLite PRAGMAs included. No business modules.
 - **Consequences:** Re-audit in `AUDIT_PHASE_2_RETEST.md`; Phase 3 still requires PASS gate.
+
+## ADR-V2-011 - Shared business foundation (Phase 3.1)
+
+- **Date:** 2026-08-01
+- **Status:** Accepted
+- **Context:** Domain modules must not duplicate cross-cutting logic; Phase 3 needs a stable substrate.
+- **Decision:** Introduce shared primitives (`src/shared`) plus Settings/Audit/Media/Barcode modules with Prisma models `AppSetting`, `MediaFile`, `MediaReference`, `Barcode`, `SequenceCounter`, `AuditLog`. Money = integer fils (1000 = 1 IQD). Soft-delete = `deletedAt`. Audit writes only via `AuditService.record`. No domain HTTP for media/barcode/search yet.
+- **Consequences:** Customers/inventory must import these services; coverage gate `pnpm test:cov:shared` enforces ≥95% on shared infra.

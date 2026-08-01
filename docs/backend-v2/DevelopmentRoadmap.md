@@ -4,8 +4,8 @@
 |------:|------|------|
 | 0 | Architecture | Docs, branch, rename, canvas |
 | 1 | Foundation | Nest + Prisma + SQLite + `/health` |
-| 2 | Identity & Security | 2.1–2.2 code → 2.3 audit FAIL → **2.4 remediation** → re-audit |
-| 3 | Core Business | Customers, categories, settings |
+| 2 | Identity & Security | Auth + audit remediation |
+| 3 | Core Business | **3.1 shared foundation** → customers/categories/settings HTTP |
 | 4 | Inventory Engine | Dresses / inventory |
 | 5 | Rental Engine | Reservations → returns |
 | 6 | Financial Engine | Sales, settlements, payments |
@@ -16,11 +16,11 @@
 
 ## Current milestone
 
-**Phase 2.4 Release Blocker Remediation complete.**  
-Re-audit: `docs/backend-v2/AUDIT_PHASE_2_RETEST.md`.
+**Phase 3.1 Shared Business Foundation complete.**  
+Doc: `docs/backend-v2/SharedFoundation.md`.
 
-**Phase 3 remains gated** on re-audit Must-Fix clearance (see retest verdict).
+**Next (requires approval):** customers / categories / settings HTTP — still no inventory/rentals/sales.
 
 ## Completion rule
 
-A phase is complete when: docs/canvas updated, tests for the phase pass, and a dedicated commit exists on `backend-v2`. Audit phases may FAIL without implementing features.
+A phase is complete when: docs/canvas updated, tests for the phase pass, and a dedicated commit exists on `backend-v2`.

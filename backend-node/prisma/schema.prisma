@@ -155,3 +155,123 @@ model PasswordHistory {
 
   @@index([userId])
 }
+
+model AppSetting {
+  id          String    @id @default(uuid())
+  key         String    @unique
+  value       String
+  valueType   String    @default("string")
+  category    String
+  description String?
+  isEditable  Boolean   @default(true)
+  deletedAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  createdBy   String?
+  updatedBy   String?
+
+  @@index([category])
+  @@index([deletedAt])
+}
+
+model MediaFile {
+  id               String    @id @default(uuid())
+  originalFilename String
+  storedFilename   String
+  extension        String
+  mimeType         String
+  sizeBytes        Int
+  sha256Hash       String
+  storageProvider  String    @default("local")
+  relativePath     String
+  kind             String
+  isPublic         Boolean   @default(false)
+  uploadedBy       String?
+  deletedAt        DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  createdBy        String?
+  updatedBy        String?
+
+  references MediaReference[]
+
+  @@index([sha256Hash])
+  @@index([kind])
+  @@index([deletedAt])
+}
+
+model MediaReference {
+  id           String    @id @default(uuid())
+  mediaFileId  String
+  moduleName   String
+  entityType   String
+  entityId     String
+  purpose      String
+  displayOrder Int       @default(0)
+  isPrimary    Boolean   @default(false)
+  deletedAt    DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  createdBy    String?
+  updatedBy    String?
+
+  mediaFile MediaFile @relation(fields: [mediaFileId], references: [id])
+
+  @@index([moduleName, entityType, entityId])
+  @@index([mediaFileId])
+  @@index([purpose])
+  @@index([deletedAt])
+}
+
+/// Reserved / allocated barcode codes (inventory flows consume this later).
+model Barcode {
+  id          String    @id @default(uuid())
+  code        String    @unique
+  prefix      String
+  status      String
+  entityType  String?
+  entityId    String?
+  reservedAt  DateTime?
+  allocatedAt DateTime?
+  releasedAt  DateTime?
+  deletedAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  createdBy   String?
+  updatedBy   String?
+
+  @@index([prefix])
+  @@index([status])
+  @@index([entityType, entityId])
+  @@index([deletedAt])
+}
+
+model SequenceCounter {
+  prefix    String   @id
+  lastValue Int      @default(0)
+  updatedAt DateTime @updatedAt
+}
+
+/// Append-only domain audit trail. Write only via AuditService.record.
+model AuditLog {
+  id         String   @id @default(uuid())
+  module     String
+  entityType String
+  entityId   String?
+  action     String
+  oldValues  String?
+  newValues  String?
+  userId     String?
+  username   String?
+  ipAddress  String?
+  metadata   String?
+  message    String?
+  createdAt  DateTime @default(now())
+
+  @@index([module])
+  @@index([entityType])
+  @@index([entityId])
+  @@index([action])
+  @@index([userId])
+  @@index([createdAt])
+}

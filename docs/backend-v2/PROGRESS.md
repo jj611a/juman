@@ -4,11 +4,11 @@
 Phase 0  Architecture                    DONE
 Phase 1  Foundation                      DONE
 Phase 2  Identity & Security
-         2.1 Auth foundation             DONE
-         2.2 Auth APIs                   DONE
-         2.3 Architecture audit          FAIL (56/100) — AUDIT_PHASE_2.md
-         2.4 Release blocker remediation DONE — AUDIT_PHASE_2_RETEST.md
-Phase 3  Core Business                   WAITING APPROVAL (gate on re-audit)
+         2.1–2.4                         DONE (re-audit PASS 77/100)
+Phase 3  Core Business
+         3.1 Shared business foundation  DONE
+         3.2 Customers / categories      WAITING APPROVAL
+Phase 4+ Inventory / Rentals / Sales     BLOCKED until approved
 ```
 
-**YOU ARE HERE:** After Phase 2.4 remediation + re-audit. Do not start customers/inventory until re-audit Must-Fix clearance and explicit approval.
+**YOU ARE HERE:** After Phase 3.1 shared foundation. Do not implement customers, inventory, rentals, sales, or reports until explicit approval.
