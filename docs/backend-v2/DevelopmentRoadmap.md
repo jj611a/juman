@@ -5,7 +5,7 @@
 | 0 | Architecture | Docs, branch, rename, canvas |
 | 1 | Foundation | Nest + Prisma + SQLite + `/health` |
 | 2 | Identity & Security | Auth + audit remediation |
-| 3 | Core Business | **3.1 shared** ? **3.2 customers DONE** ? categories/settings HTTP |
+| 3 | Core Business | **3.1?3.3 DONE** (shared ? customers ? media) ? categories/settings HTTP |
 | 4 | Inventory Engine | Dresses / inventory |
 | 5 | Rental Engine | Reservations ? returns |
 | 6 | Financial Engine | Sales, settlements, payments |
@@ -16,8 +16,8 @@
 
 ## Current milestone
 
-**Phase 3.2 Customer Domain complete.**  
-Docs: `CustomerDomain.md`, `CustomerAPI.md`, `SharedFoundation.md`.
+**Phase 3.3 Media & Attachments complete.**  
+Docs: `MediaDomain.md`, `CustomerDomain.md`, `SharedFoundation.md`.
 
 **Next (requires approval):** categories / settings HTTP ? still no inventory/rentals/sales.
 

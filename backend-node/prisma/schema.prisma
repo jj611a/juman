@@ -182,6 +182,9 @@ model MediaFile {
   mimeType         String
   sizeBytes        Int
   sha256Hash       String
+  width            Int?
+  height           Int?
+  orientation      Int?
   storageProvider  String    @default("local")
   relativePath     String
   kind             String
@@ -197,7 +200,10 @@ model MediaFile {
 
   @@index([sha256Hash])
   @@index([kind])
+  @@index([extension])
+  @@index([mimeType])
   @@index([deletedAt])
+  @@index([createdAt])
 }
 
 model MediaReference {

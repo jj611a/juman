@@ -40,6 +40,7 @@ export const DEFAULT_PERMISSIONS: readonly PermissionSeed[] = [
   perm('media.view', 'عرض الملفات', 'عرض وتنزيل الملفات والمراجع'),
   perm('media.delete', 'حذف ملفات', 'حذف الملفات أو مراجعها'),
   perm('media.manage', 'إدارة الملفات', 'إدارة مراجع الملفات'),
+  perm('media.restore', 'استعادة ملفات', 'استعادة ملفات محذوفة'),
   perm('audit.view', 'عرض سجل التدقيق', 'عرض سجلات تدقيق النظام'),
   perm('categories.view', 'عرض التصنيفات', 'عرض تصنيفات الفساتين'),
   perm('categories.create', 'إنشاء تصنيف', 'إنشاء تصنيف جديد'),
@@ -149,6 +150,7 @@ export const INVENTORY_PERMISSIONS: readonly string[] = [
   'media.view',
   'media.delete',
   'media.manage',
+  'media.restore',
 ];
 
 export const LAUNDRY_PERMISSIONS: readonly string[] = [

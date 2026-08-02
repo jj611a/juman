@@ -92,3 +92,11 @@
 - **Context:** First business module after shared foundation; Python V1 allows duplicate phones and has no restore/city.
 - **Decision:** Implement Nest `CustomersModule` with Prisma `Customer` (soft delete, restore, city, status, normalized phones). Block duplicate **active** primary phones. Reuse shared Audit/Settings/SequenceCounter/phone/pagination. No CustomerAttachment/CustomerAudit/CustomerNote tables ? use shared media/audit and a notes column. Permissions remain singular `customer.*` (+ `customer.restore`). HTTP under `/customers` without `/api/v1`.
 - **Consequences:** Categories/settings HTTP still pending; inventory blocked. Coverage gate `pnpm test:cov:customers` ?95%.
+
+## ADR-V2-013 - Media subsystem (Phase 3.3)
+
+- **Date:** 2026-08-02
+- **Status:** Accepted
+- **Context:** Every future module needs files; duplicating attachment tables or ad-hoc disk writes would freeze technical debt.
+- **Decision:** Extend Phase 3.1 `MediaModule` into the sole blob authority: typed storage categories under configured `storage/`, SHA-256 checksums, MIME/magic validation, soft-delete **keeping** blobs for restore, polymorphic `MediaReference` only. HTTP under `/media` without exposing absolute paths. No thumbnails/camera/cloud yet.
+- **Consequences:** Inventory/rentals must attach Media IDs. Coverage gate `pnpm test:cov:media` ?95%. Download streaming HTTP can follow without schema changes.

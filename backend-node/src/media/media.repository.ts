@@ -1,30 +1,28 @@
 import { Injectable } from '@nestjs/common';
-import type { MediaFile, MediaReference } from '@prisma/client';
+import type { MediaFile, MediaReference, Prisma } from '@prisma/client';
 import { PrismaService } from '../database/prisma.service';
-import { liveWhere, softDeleteData } from '../shared/soft-delete/soft-delete';
+import {
+  liveWhere,
+  restoreSoftDeleteData,
+  softDeleteData,
+} from '../shared/soft-delete/soft-delete';
 
 @Injectable()
 export class MediaRepository {
   constructor(private readonly prisma: PrismaService) {}
 
-  createFile(data: {
-    originalFilename: string;
-    storedFilename: string;
-    extension: string;
-    mimeType: string;
-    sizeBytes: number;
-    sha256Hash: string;
-    storageProvider: string;
-    relativePath: string;
-    kind: string;
-    isPublic: boolean;
-    uploadedBy: string | null;
-    createdBy: string | null;
-  }): Promise<MediaFile> {
+  createFile(data: Prisma.MediaFileCreateInput): Promise<MediaFile> {
     return this.prisma.mediaFile.create({ data });
   }
 
-  findFileById(id: string): Promise<MediaFile | null> {
+  updateFile(id: string, data: Prisma.MediaFileUpdateInput): Promise<MediaFile> {
+    return this.prisma.mediaFile.update({ where: { id }, data });
+  }
+
+  findFileById(id: string, opts?: { includeDeleted?: boolean }): Promise<MediaFile | null> {
+    if (opts?.includeDeleted) {
+      return this.prisma.mediaFile.findUnique({ where: { id } });
+    }
     return this.prisma.mediaFile.findFirst({ where: liveWhere({ id }) });
   }
 
@@ -32,23 +30,46 @@ export class MediaRepository {
     return this.prisma.mediaFile.findMany({ where: liveWhere({ sha256Hash }) });
   }
 
-  softDeleteFile(id: string): Promise<MediaFile> {
+  softDeleteFile(id: string, updatedBy?: string | null): Promise<MediaFile> {
     return this.prisma.mediaFile.update({
       where: { id },
+      data: { ...softDeleteData(), updatedBy: updatedBy ?? null },
+    });
+  }
+
+  restoreFile(id: string, updatedBy?: string | null): Promise<MediaFile> {
+    return this.prisma.mediaFile.update({
+      where: { id },
+      data: { ...restoreSoftDeleteData(), updatedBy: updatedBy ?? null },
+    });
+  }
+
+  softDeleteReferencesForFile(mediaFileId: string): Promise<Prisma.BatchPayload> {
+    return this.prisma.mediaReference.updateMany({
+      where: { mediaFileId, deletedAt: null },
       data: softDeleteData(),
     });
   }
 
-  createReference(data: {
-    mediaFileId: string;
-    moduleName: string;
-    entityType: string;
-    entityId: string;
-    purpose: string;
-    displayOrder: number;
-    isPrimary: boolean;
-    createdBy: string | null;
-  }): Promise<MediaReference> {
+  async listFiles(input: {
+    where: Prisma.MediaFileWhereInput;
+    orderBy: Prisma.MediaFileOrderByWithRelationInput;
+    offset: number;
+    limit: number;
+  }): Promise<{ rows: MediaFile[]; total: number }> {
+    const [rows, total] = await Promise.all([
+      this.prisma.mediaFile.findMany({
+        where: input.where,
+        orderBy: input.orderBy,
+        skip: input.offset,
+        take: input.limit,
+      }),
+      this.prisma.mediaFile.count({ where: input.where }),
+    ]);
+    return { rows, total };
+  }
+
+  createReference(data: Prisma.MediaReferenceCreateInput): Promise<MediaReference> {
     return this.prisma.mediaReference.create({ data });
   }
 

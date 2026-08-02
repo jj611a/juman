@@ -1,6 +1,6 @@
 # Backend V2 Architecture
 
-**Status:** Phase 3.2 Customer Domain  
+**Status:** Phase 3.3 Media & Attachments  
 **Branch:** `backend-v2`  
 **Spec source:** `backend-python/` (read-only Python FastAPI stack)
 
@@ -103,3 +103,8 @@ First business module: `src/customers` over Prisma `Customer`.
 - Audit via `AuditService` (create/update/soft_delete/restore; optional view)
 - Attachments deferred to shared `MediaReference` (no CustomerAttachment table)
 - Docs: `CustomerDomain.md`, `CustomerAPI.md`
+
+
+## Media domain (Phase 3.3)
+
+Reusable `MediaModule` is the only blob store. Domain modules attach via `MediaReference`. Soft-delete keeps bytes for restore. Docs: `MediaDomain.md`.

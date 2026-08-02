@@ -41,6 +41,7 @@ backend-node/
     media/
     barcode/
     customers/          # Phase 3.2
+    media/              # Phase 3.3 (providers, validation, HTTP)
   test/
   package.json
 ```

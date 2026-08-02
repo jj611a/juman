@@ -91,6 +91,28 @@ export const DEFAULT_APP_SETTINGS: readonly SettingSeed[] = [
     isEditable: true,
   },
   {
+    key: 'media.allowed_extensions',
+    value: JSON.stringify(['jpg','jpeg','png','gif','webp','bmp','pdf','docx','xlsx','txt','csv']),
+    valueType: SETTING_VALUE_TYPE.JSON,
+    category: 'media',
+    description: 'Allowed upload extensions',
+    isEditable: true,
+  },
+  {
+    key: 'media.allowed_mime_types',
+    value: JSON.stringify([
+      'image/jpeg','image/png','image/gif','image/webp','image/bmp',
+      'application/pdf',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'application/zip','text/plain','text/csv','application/csv'
+    ]),
+    valueType: SETTING_VALUE_TYPE.JSON,
+    category: 'media',
+    description: 'Allowed upload MIME types',
+    isEditable: true,
+  },
+  {
     key: 'customers.number.prefix',
     value: 'CUS',
     valueType: SETTING_VALUE_TYPE.STRING,

@@ -50,6 +50,7 @@ export const AUDIT_ACTION = {
   HARD_DELETE: 'hard_delete',
   RESTORE: 'restore',
   VIEW: 'view',
+  INTEGRITY_FAILURE: 'integrity_failure',
   ALLOCATE: 'allocate',
   RESERVE: 'reserve',
   RELEASE: 'release',
