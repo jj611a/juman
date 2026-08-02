@@ -128,6 +128,10 @@ export class CreatePaymentDto {
   amountFils!: number;
 
   @IsOptional()
+  @IsUUID()
+  settlementId?: string;
+
+  @IsOptional()
   @IsString()
   @MaxLength(32)
   method?: string;

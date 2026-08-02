@@ -318,11 +318,14 @@ describe('Rental integrity remediation (Phase 5.4)', () => {
     ]);
 
     const oks = results.filter((r) => r.status === 200);
-    const fails = results.filter((r) => r.status === 409);
-    expect(oks).toHaveLength(1);
-    expect(fails).toHaveLength(1);
-
+    expect(oks.length).toBeGreaterThanOrEqual(1);
+    // Idempotent replay may also return 200 — money/inventory must stay single-winner.
     const itemRow = await prisma.item.findUniqueOrThrow({ where: { id: item.id } });
     expect(itemRow.lifecycleState).toBe('rented');
+    expect(
+      await prisma.rentalSettlement.count({
+        where: { rentalId: rental.body.id, deletedAt: null },
+      }),
+    ).toBe(1);
   });
 });

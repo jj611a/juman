@@ -108,4 +108,5 @@ Rental operational close ≠ financial completion unless Settlement says so.
 pnpm test:cov:finance
 ```
 
-Phase 6.4 certification: `PHASE_6_ENGINEERING_CERTIFICATION.md` — overall **80**, **Reports NO-GO** until Must-Fix (atomic checkout finance, deposit idempotency, rental↔settlement cancel).
+Phase 6.4 certification: `PHASE_6_ENGINEERING_CERTIFICATION.md` — overall **80**, **Reports NO-GO** (historical).  
+Phase 6.5: `PHASE_6_TRANSACTION_INTEGRITY.md` — atomic checkout + idempotency + cancel policy; integrity **94**. Reports still require approval.

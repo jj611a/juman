@@ -41,6 +41,7 @@ describe('settlement.rules', () => {
     expect(canClose(SETTLEMENT_STATUS.PAID)).toBe(true);
     expect(canClose(SETTLEMENT_STATUS.OPEN)).toBe(false);
     expect(canCancel(SETTLEMENT_STATUS.OPEN)).toBe(true);
+    expect(canCancel(SETTLEMENT_STATUS.PARTIALLY_PAID)).toBe(false);
     expect(canCancel(SETTLEMENT_STATUS.CLOSED)).toBe(false);
     expect(isFinanciallyComplete(SETTLEMENT_STATUS.PAID)).toBe(true);
     expect(isFinanciallyComplete(SETTLEMENT_STATUS.OPEN)).toBe(false);
@@ -98,8 +99,10 @@ describe('SettlementService', () => {
   };
   const finance = {
     ensureAccountForCustomer: vi.fn(),
+    ensureAccountForCustomerInTx: vi.fn(),
     allocatePaymentNumberPublic: vi.fn(),
     registerPaymentInTx: vi.fn(),
+    voidSettlementObligationLedgerInTx: vi.fn(),
   };
   const settings = {
     getString: vi.fn(async (_: string, f: string) => f),
@@ -123,9 +126,37 @@ describe('SettlementService', () => {
       id: 'a1',
       accountNumber: 'FIN-1',
     });
+    finance.ensureAccountForCustomerInTx.mockResolvedValue({
+      id: 'a1',
+      accountNumber: 'FIN-1',
+    });
     finance.allocatePaymentNumberPublic.mockResolvedValue('PAY-00000001');
+    finance.voidSettlementObligationLedgerInTx.mockResolvedValue(0);
     repo.client.$transaction.mockImplementation(
-      async (fn: (tx: unknown) => Promise<unknown>) => fn({}),
+      async (fn: (tx: {
+        rentalSettlement: {
+          findFirst: ReturnType<typeof vi.fn>;
+          findUnique: ReturnType<typeof vi.fn>;
+        };
+        financeIdempotencyKey: {
+          findUnique: ReturnType<typeof vi.fn>;
+          create: ReturnType<typeof vi.fn>;
+          update: ReturnType<typeof vi.fn>;
+        };
+      }) => Promise<unknown>) => {
+        const tx = {
+          rentalSettlement: {
+            findFirst: vi.fn().mockResolvedValue(null),
+            findUnique: vi.fn().mockResolvedValue(null),
+          },
+          financeIdempotencyKey: {
+            findUnique: vi.fn().mockResolvedValue(null),
+            create: vi.fn(),
+            update: vi.fn(),
+          },
+        };
+        return fn(tx);
+      },
     );
   });
 
@@ -159,10 +190,16 @@ describe('SettlementService', () => {
     repo.findByRentalId.mockResolvedValue(null);
     repo.client.$transaction.mockImplementation(
       async (fn: (tx: {
-        rentalSettlement: { findFirst: ReturnType<typeof vi.fn> };
+        rentalSettlement: {
+          findFirst: ReturnType<typeof vi.fn>;
+          findUnique: ReturnType<typeof vi.fn>;
+        };
       }) => Promise<unknown>) => {
         const tx = {
-          rentalSettlement: { findFirst: vi.fn().mockResolvedValue(null) },
+          rentalSettlement: {
+            findFirst: vi.fn().mockResolvedValue(null),
+            findUnique: vi.fn().mockResolvedValue(null),
+          },
         };
         return fn(tx);
       },
@@ -396,7 +433,20 @@ describe('SettlementService', () => {
     ).rejects.toBeInstanceOf(BusinessException);
 
     settings.getString.mockImplementation(async (_k: string, f: string) => f);
-    repo.findAnyNumber.mockResolvedValue({ id: 'taken' });
+    repo.findByRentalId.mockResolvedValue(null);
+    finance.ensureAccountForCustomerInTx.mockResolvedValue({ id: 'a1' });
+    repo.client.$transaction.mockImplementation(
+      async (fn: (tx: {
+        rentalSettlement: { findUnique: ReturnType<typeof vi.fn> };
+      }) => Promise<unknown>) => {
+        const tx = {
+          rentalSettlement: {
+            findUnique: vi.fn().mockResolvedValue({ id: 'taken' }),
+          },
+        };
+        return fn(tx);
+      },
+    );
     await expect(
       service.createForRental({
         rentalId: 'ry',
@@ -405,21 +455,11 @@ describe('SettlementService', () => {
       }),
     ).rejects.toBeInstanceOf(BusinessException);
 
-    repo.findAnyNumber.mockResolvedValue(null);
     repo.findByRentalId
       .mockResolvedValueOnce(null)
       .mockResolvedValueOnce(settlementBase);
     repo.client.$transaction.mockImplementation(
-      async (fn: (tx: {
-        rentalSettlement: { findFirst: ReturnType<typeof vi.fn> };
-      }) => Promise<unknown>) => {
-        const tx = {
-          rentalSettlement: {
-            findFirst: vi.fn().mockResolvedValue({ id: 'race' }),
-          },
-        };
-        return fn(tx);
-      },
+      async (fn: (tx: unknown) => Promise<unknown>) => fn({}),
     );
     const raced = await service.createForRental({
       rentalId: 'r1',

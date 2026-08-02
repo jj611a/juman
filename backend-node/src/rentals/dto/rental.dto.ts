@@ -109,4 +109,10 @@ export class RentalActionDto {
   @IsInt()
   @Min(0)
   depositAmountFils?: number;
+
+  /** Client idempotency key — duplicate checkout requests replay prior result. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(128)
+  idempotencyKey?: string;
 }

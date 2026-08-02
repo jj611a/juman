@@ -88,9 +88,11 @@ Platform audit + settlement history for: created, payment_applied, closed, cance
 
 **Resolved in Phase 6.3:** Dual payment paths closed. `POST /finance/payments` is rejected while any open/partial settlement exists on the account. Rental payments must use `POST /settlements/:id/payment`. Outstanding HTTP prefers Settlement remaining (`balanceSource: settlement`).
 
-**Phase 6.4:** Foundation certified **80** PASS WITH WARNINGS. **Reports NO-GO** until Must-Fix: atomic checkout finance, deposit idempotency, rental↔settlement cancel. See `PHASE_6_ENGINEERING_CERTIFICATION.md`.
+**Phase 6.4:** Foundation certified **80** PASS WITH WARNINGS. See `PHASE_6_ENGINEERING_CERTIFICATION.md`.
 
-**Remaining:** Payment idempotency keys; refunds/adjustments (when added) must be Settlement-owned.
+**Phase 6.5:** Must-Fix cleared — atomic checkout TX, idempotency keys, rental cancel policy, settlement refs. Integrity **94**. See `PHASE_6_TRANSACTION_INTEGRITY.md`.
+
+**Remaining:** Refunds/late fees/discounts (when added) must be Settlement-owned; Reports need product approval.
 
 ## Coverage
 

@@ -1,7 +1,7 @@
 # Backend V2 Progress Canvas
 
 **Live canvas:** `juman-backend-v2-roadmap.canvas.tsx`  
-**Branch:** `backend-v2` — **Updated:** 2026-08-02 — **Overall ~84%**
+**Branch:** `backend-v2` — **Updated:** 2026-08-02 — **Overall ~86%**
 
 ```
 Phase 0  Architecture                    DONE
@@ -15,8 +15,9 @@ Phase 6  Financial
          6.2 Settlement engine           DONE
          6.3 Integrity remediation       DONE
          6.4 Engineering certification   DONE (score 80 · Reports NO-GO)
-Phase 7+ Reports / Desktop               WAITING — Reports blocked until Must-Fix
+         6.5 Transaction integrity       DONE (score 94 · Must-Fix cleared)
+Phase 7+ Reports / Desktop               WAITING — approval required
 ```
 
-**YOU ARE HERE:** After Phase 6.4 financial certification (**PASS WITH WARNINGS**, overall **80**).  
-**Reports:** **NO-GO** until atomic checkout finance, deposit idempotency, and rental↔settlement cancel policy are fixed.
+**YOU ARE HERE:** After Phase 6.5 transactional checkout integrity (**94**).  
+**Reports:** Still **NO-GO** until explicit approval (refunds/late fees not built; foundation blockers cleared).

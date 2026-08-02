@@ -153,4 +153,6 @@ Inventory mutations remain exclusive to `LifecycleService`.
 
 ## Financial (Phase 6)
 
-`FinanceModule` (`src/finance`) is the sole owner of money. Rentals request `createCharge` / `registerDeposit`; balances are computed, never stored on rental/inventory. Docs: `FinancialDesign.md`.
+`FinanceModule` (`src/finance`) is the sole owner of money.  
+**Phase 6.5:** Checkout finance runs inside the same `AvailabilityService.runExclusive` TX as inventory/rental (`*InTx` APIs). Charges/deposits/payments reference `settlementId`. Idempotency via `FinanceIdempotencyKey`.  
+Docs: `FinancialDesign.md`, `SettlementDesign.md`, `PHASE_6_TRANSACTION_INTEGRITY.md`.

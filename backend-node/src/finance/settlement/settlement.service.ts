@@ -43,7 +43,14 @@ import {
   isSettlementStatus,
   statusAfterPayment,
 } from './settlement.rules';
+import { decideRentalCancelFinance } from './rental-cancel.policy';
 import { assertSettlementBalanceInvariant } from './settlement.integrity';
+import {
+  beginIdempotency,
+  completeIdempotency,
+  hashIdempotencyPayload,
+  IDEMPOTENCY_SCOPE,
+} from '../idempotency/idempotency';
 
 export type CreateSettlementInput = {
   rentalId: string;
@@ -107,10 +114,38 @@ export class SettlementService {
 
   /**
    * Create settlement after rental checkout charges/deposits.
-   * Idempotent per rentalId.
+   * Idempotent per rentalId. Prefer createForRentalInTx inside checkout TX.
    */
   async createForRental(input: CreateSettlementInput, actor?: AuthPrincipal) {
     const existing = await this.repo.findByRentalId(input.rentalId);
+    if (existing) return toSettlementPublic(existing);
+
+    const row = await this.repo.client.$transaction(async (tx) =>
+      this.createForRentalInTx(tx, input, actor),
+    );
+
+    await this.audit.record({
+      module: FINANCE_MODULE,
+      entityType: SETTLEMENT_ENTITY,
+      entityId: row.id,
+      action: SETTLEMENT_ACTION.CREATED,
+      newValues: toSettlementSnapshot(row as never),
+      actor: { userId: actor?.userId, username: actor?.username },
+    });
+
+    return row;
+  }
+
+  /**
+   * Settlement create inside an outer business TX (checkout).
+   * Does not open a nested transaction. Platform AuditService left to caller.
+   */
+  async createForRentalInTx(
+    tx: Prisma.TransactionClient,
+    input: CreateSettlementInput,
+    actor?: AuthPrincipal,
+  ) {
+    const existing = await this.repo.findByRentalId(input.rentalId, tx);
     if (existing) return toSettlementPublic(existing);
 
     const charge = Money.ofNonNegativeFils(input.chargeFils);
@@ -121,65 +156,91 @@ export class SettlementService {
       );
     }
     const total = charge.subtract(deposit);
-    const account = await this.finance.ensureAccountForCustomer(
+    const account = await this.finance.ensureAccountForCustomerInTx(
+      tx,
       input.customerId,
       actor,
     );
 
-    const settlementNumber = await this.allocateNumber();
+    const settlementNumber = await this.allocateNumber(tx);
     const initialStatus =
       total.amountFils === 0
         ? SETTLEMENT_STATUS.PAID
         : SETTLEMENT_STATUS.OPEN;
 
-    const row = await this.repo.client.$transaction(async (tx) => {
-      const again = await tx.rentalSettlement.findFirst({
-        where: { rentalId: input.rentalId, deletedAt: null },
-      });
-      if (again) {
-        return this.repo.findByRentalId(input.rentalId);
-      }
+    const row = await this.repo.create(
+      tx,
+      {
+        settlementNumber,
+        rentalId: input.rentalId,
+        accountId: account.id,
+        customerId: input.customerId,
+        totalFils: total.amountFils,
+        paidFils: 0,
+        remainingFils: total.amountFils,
+        status: initialStatus,
+        currency: FINANCE_CURRENCY,
+        createdBy: actor?.userId ?? null,
+        updatedBy: actor?.userId ?? null,
+      },
+      {
+        oldStatus: SETTLEMENT_STATUS.OPEN,
+        newStatus: initialStatus,
+        action: SETTLEMENT_ACTION.CREATED,
+        reason: 'checkout',
+        userId: actor?.userId ?? null,
+        username: actor?.username ?? null,
+      },
+    );
 
-      return this.repo.create(
-        tx,
-        {
-          settlementNumber,
-          rentalId: input.rentalId,
-          accountId: account.id,
-          customerId: input.customerId,
-          totalFils: total.amountFils,
-          paidFils: 0,
-          remainingFils: total.amountFils,
-          status: initialStatus,
-          currency: FINANCE_CURRENCY,
-          createdBy: actor?.userId ?? null,
-          updatedBy: actor?.userId ?? null,
-        },
-        {
-          oldStatus: SETTLEMENT_STATUS.OPEN,
-          newStatus: initialStatus,
-          action: SETTLEMENT_ACTION.CREATED,
-          reason: 'checkout',
-          userId: actor?.userId ?? null,
-          username: actor?.username ?? null,
-        },
-      );
-    });
-
-    if (!row) {
-      throw BusinessException.invariant('Settlement create failed');
-    }
-
-    await this.audit.record({
-      module: FINANCE_MODULE,
-      entityType: SETTLEMENT_ENTITY,
-      entityId: row.id,
-      action: SETTLEMENT_ACTION.CREATED,
-      newValues: toSettlementSnapshot(row),
-      actor: { userId: actor?.userId, username: actor?.username },
-    });
-
+    assertSettlementBalanceInvariant(row);
     return toSettlementPublic(row);
+  }
+
+  /**
+   * Cancel open unpaid settlement for a rental cancel (same TX as inventory unwind).
+   * Voids charge/deposit ledger rows. Rejects partial/paid (refund required).
+   */
+  async applyRentalCancelPolicyInTx(
+    tx: Prisma.TransactionClient,
+    rentalId: string,
+    actor?: AuthPrincipal,
+    reason?: string,
+  ) {
+    const settlement = await this.repo.findByRentalId(rentalId, tx);
+    const decision = decideRentalCancelFinance(
+      settlement
+        ? {
+            id: settlement.id,
+            status: settlement.status,
+            paidFils: settlement.paidFils,
+            totalFils: settlement.totalFils,
+          }
+        : null,
+    );
+    if (decision.kind !== 'cancel_open_unpaid') return decision;
+
+    await this.finance.voidSettlementObligationLedgerInTx(
+      tx,
+      decision.settlementId,
+      actor,
+    );
+
+    const from = settlement!.status as SettlementStatus;
+    const updated = await this.repo.transitionStatus(tx, {
+      settlementId: decision.settlementId,
+      from,
+      to: SETTLEMENT_STATUS.CANCELLED,
+      action: SETTLEMENT_ACTION.CANCELLED,
+      reason: reason?.trim() || 'rental_cancelled',
+      userId: actor?.userId ?? null,
+      username: actor?.username ?? null,
+      extra: { cancelledAt: new Date() },
+    });
+    if (!updated) {
+      throw BusinessException.conflict('Concurrent settlement cancel rejected');
+    }
+    return { kind: 'cancel_open_unpaid' as const, settlement: updated };
   }
 
   /**
@@ -204,9 +265,31 @@ export class SettlementService {
       );
     }
 
+    const requestHash = hashIdempotencyPayload({
+      settlementId: id,
+      amountFils: amount.amountFils,
+      method: dto.method ?? 'cash',
+      notes: dto.notes ?? null,
+    });
+    const idemKey = dto.idempotencyKey?.trim();
+
     const paymentNumber = await this.finance.allocatePaymentNumberPublic();
 
     const result = await this.repo.client.$transaction(async (tx) => {
+      if (idemKey) {
+        const began = await beginIdempotency<ReturnType<typeof toSettlementPublic>>(
+          tx,
+          {
+            scope: IDEMPOTENCY_SCOPE.SETTLEMENT_PAYMENT,
+            key: idemKey,
+            requestHash,
+          },
+        );
+        if (began.kind === 'replay') {
+          return { replay: began.response as ReturnType<typeof toSettlementPublic> };
+        }
+      }
+
       await this.repo.lockSettlement(tx, settlement.id);
       const live = await tx.rentalSettlement.findFirst({
         where: { id: settlement.id, deletedAt: null },
@@ -224,6 +307,7 @@ export class SettlementService {
         tx,
         {
           accountId: live.accountId,
+          settlementId: live.id,
           amountFils: amount.amountFils,
           method: dto.method,
           notes: dto.notes,
@@ -252,8 +336,23 @@ export class SettlementService {
         throw BusinessException.conflict('Concurrent settlement payment rejected');
       }
       assertSettlementBalanceInvariant(updated);
-      return { updated, payment };
+
+      const pub = toSettlementPublic(updated);
+      if (idemKey) {
+        await completeIdempotency(tx, {
+          scope: IDEMPOTENCY_SCOPE.SETTLEMENT_PAYMENT,
+          key: idemKey,
+          resourceType: SETTLEMENT_ENTITY,
+          resourceId: updated.id,
+          response: pub,
+        });
+      }
+      return { updated, payment, pub };
     });
+
+    if ('replay' in result && result.replay) {
+      return result.replay;
+    }
 
     await this.audit.record({
       module: FINANCE_MODULE,
@@ -262,13 +361,13 @@ export class SettlementService {
       action: SETTLEMENT_ACTION.PAYMENT_APPLIED,
       oldValues: toSettlementSnapshot(settlement),
       newValues: {
-        ...toSettlementSnapshot(result.updated),
-        paymentId: result.payment.id,
+        ...toSettlementSnapshot(result.updated!),
+        paymentId: result.payment!.id,
       },
       actor: { userId: actor?.userId, username: actor?.username },
     });
 
-    return toSettlementPublic(result.updated);
+    return result.pub!;
   }
 
   async markPaid(id: string, reason?: string, actor?: AuthPrincipal) {
@@ -431,7 +530,7 @@ export class SettlementService {
     return row;
   }
 
-  private async allocateNumber() {
+  private async allocateNumber(tx?: Prisma.TransactionClient) {
     const prefix = (
       await this.settings.getString(
         SETTLEMENT_NUMBER_SETTING.PREFIX,
@@ -456,12 +555,17 @@ export class SettlementService {
     ) {
       throw BusinessException.validation('Invalid settlement number settings');
     }
+    const client = tx ?? this.repo.client;
     for (let i = 0; i < 25; i += 1) {
       const seq = await this.repo.nextSequence(
         `${SETTLEMENT_NUMBER_SETTING.PREFIX}:${prefix}`,
+        tx,
       );
       const number = `${prefix}${separator}${String(seq).padStart(padding, '0')}`;
-      if (!(await this.repo.findAnyNumber(number))) return number;
+      const taken = await client.rentalSettlement.findUnique({
+        where: { settlementNumber: number },
+      });
+      if (!taken) return number;
     }
     throw BusinessException.invariant('Unable to allocate settlement number');
   }

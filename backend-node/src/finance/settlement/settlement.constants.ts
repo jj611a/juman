@@ -31,9 +31,13 @@ export const SETTLEMENT_STATUS_TRANSITIONS: Readonly<
   [SETTLEMENT_STATUS.PARTIALLY_PAID]: [
     SETTLEMENT_STATUS.PARTIALLY_PAID,
     SETTLEMENT_STATUS.PAID,
+    // Cancel blocked — refund required (Phase 6.5 policy).
+  ],
+  [SETTLEMENT_STATUS.PAID]: [
+    SETTLEMENT_STATUS.CLOSED,
+    // Zero-obligation cancel only (enforced in rental-cancel.policy — not via HTTP canCancel).
     SETTLEMENT_STATUS.CANCELLED,
   ],
-  [SETTLEMENT_STATUS.PAID]: [SETTLEMENT_STATUS.CLOSED],
   [SETTLEMENT_STATUS.CANCELLED]: [],
   [SETTLEMENT_STATUS.CLOSED]: [],
 };

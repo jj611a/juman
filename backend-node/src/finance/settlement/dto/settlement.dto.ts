@@ -65,6 +65,12 @@ export class SettlementPaymentDto {
   @IsString()
   @MaxLength(2000)
   notes?: string;
+
+  /** Client idempotency key — duplicate payment requests replay prior result. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(128)
+  idempotencyKey?: string;
 }
 
 export class SettlementActionDto {

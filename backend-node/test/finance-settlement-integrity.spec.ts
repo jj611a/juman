@@ -4,6 +4,7 @@ import { SETTLEMENT_STATUS } from '../src/finance/settlement/settlement.constant
 import {
   assertLedgerMatchesSettlement,
   assertSettlementBalanceInvariant,
+  assertSettlementObligationFormula,
   assertSettlementStatusIntegrity,
 } from '../src/finance/settlement/settlement.integrity';
 import {
@@ -89,6 +90,36 @@ describe('settlement integrity invariants', () => {
         settlementPaidFils: 1000,
         settlementRemainingFils: 3000,
         appliedPaymentFils: 1500,
+      }),
+    ).toThrow(BusinessException);
+  });
+
+  it('enforces obligation formula charges − discounts + late − refunds', () => {
+    expect(() =>
+      assertSettlementObligationFormula({
+        chargeFils: 4000,
+        settlementTotalFils: 4000,
+        settlementPaidFils: 1000,
+        settlementRemainingFils: 3000,
+      }),
+    ).not.toThrow();
+    expect(() =>
+      assertSettlementObligationFormula({
+        chargeFils: 4000,
+        discountFils: 500,
+        lateFeeFils: 200,
+        refundFils: 100,
+        settlementTotalFils: 3600,
+        settlementPaidFils: 0,
+        settlementRemainingFils: 3600,
+      }),
+    ).not.toThrow();
+    expect(() =>
+      assertSettlementObligationFormula({
+        chargeFils: 4000,
+        settlementTotalFils: 3000,
+        settlementPaidFils: 0,
+        settlementRemainingFils: 3000,
       }),
     ).toThrow(BusinessException);
   });

@@ -97,6 +97,25 @@ describe('FinanceService', () => {
     },
   };
 
+  function makeTx(overrides: Record<string, unknown> = {}) {
+    return {
+      financeIdempotencyKey: {
+        findUnique: vi.fn().mockResolvedValue(null),
+        create: vi.fn(),
+        update: vi.fn(),
+      },
+      financialAccount: {
+        findFirst: vi.fn().mockResolvedValue(account),
+      },
+      financialTransaction: {
+        findFirst: vi.fn().mockResolvedValue(null),
+        findMany: vi.fn().mockResolvedValue([]),
+        update: vi.fn(),
+      },
+      ...overrides,
+    };
+  }
+
   beforeEach(() => {
     vi.clearAllMocks();
     service = new FinanceService(
@@ -117,8 +136,11 @@ describe('FinanceService', () => {
     repo.countBlockingSettlements.mockResolvedValue(0);
     repo.settlementOutstandingFils.mockResolvedValue(null);
     repo.client.$transaction.mockImplementation(
-      async (fn: (tx: unknown) => Promise<unknown>) => fn({}),
+      async (fn: (tx: unknown) => Promise<unknown>) => fn(makeTx()),
     );
+    (repo.client as { financeIdempotencyKey?: unknown }).financeIdempotencyKey = {
+      findUnique: vi.fn().mockResolvedValue(null),
+    };
   });
 
   it('creates charge and registers deposit and payment', async () => {
@@ -139,16 +161,10 @@ describe('FinanceService', () => {
     };
     repo.createTransaction.mockResolvedValue(txn);
 
-    // ensureAccount finds existing via tx findFirst — mock via createAccount path:
-    // ensureAccountInTx uses tx.financialAccount.findFirst — need richer tx mock
-    repo.client.$transaction.mockImplementation(async (fn: (tx: Record<string, unknown>) => Promise<unknown>) => {
-      const tx = {
-        financialAccount: {
-          findFirst: vi.fn().mockResolvedValue(account),
-        },
-      };
-      return fn(tx);
-    });
+    // ensureAccount finds existing via tx findFirst
+    repo.client.$transaction.mockImplementation(
+      async (fn: (tx: unknown) => Promise<unknown>) => fn(makeTx()),
+    );
 
     const charge = await service.createCharge(
       {
@@ -217,6 +233,10 @@ describe('FinanceService', () => {
       service.createCharge({ customerId: 'c1', amountFils: 0 }),
     ).rejects.toBeInstanceOf(BusinessException);
 
+    await expect(
+      service.createCharge({ customerId: 'c1', amountFils: 100 }),
+    ).rejects.toBeInstanceOf(BusinessException);
+
     const existing = {
       id: 't9',
       accountId: 'a1',
@@ -277,14 +297,14 @@ describe('FinanceService', () => {
 
   it('rejects payment on missing account', async () => {
     repo.client.$transaction.mockImplementation(
-      async (fn: (tx: Record<string, unknown>) => Promise<unknown>) => {
-        const tx = {
-          financialAccount: {
-            findFirst: vi.fn().mockResolvedValue(null),
-          },
-        };
-        return fn(tx);
-      },
+      async (fn: (tx: unknown) => Promise<unknown>) =>
+        fn(
+          makeTx({
+            financialAccount: {
+              findFirst: vi.fn().mockResolvedValue(null),
+            },
+          }),
+        ),
     );
     await expect(
       service.registerPayment({ accountId: 'missing', amountFils: 100 }),
@@ -301,19 +321,24 @@ describe('FinanceService', () => {
 
     customers.getById.mockResolvedValueOnce({ id: 'c1', status: 'inactive' });
     await expect(
-      service.createCharge({ customerId: 'c1', amountFils: 100 }),
+      service.createCharge({
+        customerId: 'c1',
+        amountFils: 100,
+        referenceType: 'rental',
+        referenceId: 'r-new',
+      }),
     ).rejects.toBeInstanceOf(BusinessException);
     customers.getById.mockResolvedValue({ id: 'c1', status: 'active' });
 
     repo.client.$transaction.mockImplementation(
-      async (fn: (tx: Record<string, unknown>) => Promise<unknown>) => {
-        const tx = {
-          financialAccount: {
-            findFirst: vi.fn().mockResolvedValue(null),
-          },
-        };
-        return fn(tx);
-      },
+      async (fn: (tx: unknown) => Promise<unknown>) =>
+        fn(
+          makeTx({
+            financialAccount: {
+              findFirst: vi.fn().mockResolvedValue(null),
+            },
+          }),
+        ),
     );
     repo.createAccount.mockResolvedValue(account);
     repo.createTransaction.mockResolvedValue({
@@ -322,15 +347,20 @@ describe('FinanceService', () => {
       type: FINANCIAL_TX_TYPE.RENTAL_CHARGE,
       amountFils: 100,
       status: 'posted',
-      referenceType: null,
-      referenceId: null,
+      referenceType: 'rental',
+      referenceId: 'r-new',
       description: 'c',
       createdAt: new Date(),
       updatedAt: new Date(),
       createdBy: null,
       updatedBy: null,
     });
-    await service.createCharge({ customerId: 'c1', amountFils: 100 });
+    await service.createCharge({
+      customerId: 'c1',
+      amountFils: 100,
+      referenceType: 'rental',
+      referenceId: 'r-new',
+    });
     expect(repo.createAccount).toHaveBeenCalled();
 
     repo.findAccountByCustomerId.mockResolvedValue(account);
@@ -355,17 +385,22 @@ describe('FinanceService', () => {
       return f;
     });
     repo.client.$transaction.mockImplementation(
-      async (fn: (tx: Record<string, unknown>) => Promise<unknown>) => {
-        const tx = {
-          financialAccount: {
-            findFirst: vi.fn().mockResolvedValue(null),
-          },
-        };
-        return fn(tx);
-      },
+      async (fn: (tx: unknown) => Promise<unknown>) =>
+        fn(
+          makeTx({
+            financialAccount: {
+              findFirst: vi.fn().mockResolvedValue(null),
+            },
+          }),
+        ),
     );
     await expect(
-      service.createCharge({ customerId: 'c1', amountFils: 50 }),
+      service.createCharge({
+        customerId: 'c1',
+        amountFils: 50,
+        referenceType: 'rental',
+        referenceId: 'r-bad',
+      }),
     ).rejects.toBeInstanceOf(BusinessException);
 
     settings.getString.mockImplementation(async (_k: string, f: string) => f);
@@ -375,20 +410,80 @@ describe('FinanceService', () => {
     ).rejects.toBeInstanceOf(BusinessException);
   });
 
+  it('covers peek idempotency, void ledger, and ensure account helpers', async () => {
+    (repo.client as {
+      financeIdempotencyKey: { findUnique: ReturnType<typeof vi.fn> };
+    }).financeIdempotencyKey.findUnique.mockResolvedValueOnce({
+      status: 'completed',
+      responseJson: JSON.stringify({ id: 'replayed' }),
+    });
+    const peeked = await service.peekIdempotencyReplay<{ id: string }>(
+      'rental.checkout',
+      'k1',
+    );
+    expect(peeked?.id).toBe('replayed');
+
+    (repo.client as {
+      financeIdempotencyKey: { findUnique: ReturnType<typeof vi.fn> };
+    }).financeIdempotencyKey.findUnique.mockResolvedValueOnce(null);
+    expect(await service.peekIdempotencyReplay('rental.checkout', 'missing')).toBeNull();
+
+    const txnRow = {
+      id: 't-void',
+      accountId: 'a1',
+      type: FINANCIAL_TX_TYPE.RENTAL_CHARGE,
+      amountFils: 100,
+      status: 'posted',
+      referenceType: 'rental',
+      referenceId: 'r1',
+      description: 'c',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      createdBy: null,
+      updatedBy: null,
+    };
+    const tx = makeTx({
+      financialTransaction: {
+        findMany: vi.fn().mockResolvedValue([txnRow]),
+        update: vi.fn().mockResolvedValue({ ...txnRow, status: 'voided' }),
+      },
+    });
+    const voided = await service.voidSettlementObligationLedgerInTx(
+      tx as never,
+      's1',
+      { userId: 'u1', username: 'admin' } as never,
+    );
+    expect(voided).toBe(1);
+
+    repo.client.$transaction.mockImplementation(
+      async (fn: (tx: unknown) => Promise<unknown>) => fn(makeTx()),
+    );
+    await service.ensureAccountForCustomer('c1');
+    await service.ensureAccountForCustomerInTx(makeTx() as never, 'c1');
+    await service.allocatePaymentNumberInTx(makeTx() as never);
+
+    await expect(
+      service.registerDeposit({
+        customerId: 'c1',
+        amountFils: 10,
+      }),
+    ).rejects.toBeInstanceOf(BusinessException);
+  });
+
   it('rejects payment on closed account inside TX', async () => {
     repo.client.$transaction.mockImplementation(
-      async (fn: (tx: Record<string, unknown>) => Promise<unknown>) => {
-        const tx = {
-          financialAccount: {
-            findFirst: vi.fn().mockResolvedValue({
-              id: 'a1',
-              status: 'closed',
-              deletedAt: null,
-            }),
-          },
-        };
-        return fn(tx);
-      },
+      async (fn: (tx: unknown) => Promise<unknown>) =>
+        fn(
+          makeTx({
+            financialAccount: {
+              findFirst: vi.fn().mockResolvedValue({
+                id: 'a1',
+                status: 'closed',
+                deletedAt: null,
+              }),
+            },
+          }),
+        ),
     );
     await expect(
       service.registerPayment({ accountId: 'a1', amountFils: 10 }),

@@ -50,13 +50,22 @@ import {
 } from './finance.mapper';
 import { FinanceRepository } from './finance.repository';
 import { Money } from './money/money.value';
+import {
+  beginIdempotency,
+  completeIdempotency,
+  hashIdempotencyPayload,
+  IDEMPOTENCY_SCOPE,
+} from './idempotency/idempotency';
 
 export type CreateChargeInput = {
   customerId: string;
   amountFils: number;
   referenceType?: string | null;
   referenceId?: string | null;
+  settlementId?: string | null;
   description?: string | null;
+  /** Optional client idempotency key (scope finance.charge). */
+  idempotencyKey?: string | null;
 };
 
 export type RegisterDepositInput = {
@@ -64,7 +73,9 @@ export type RegisterDepositInput = {
   amountFils: number;
   referenceType?: string | null;
   referenceId?: string | null;
+  settlementId?: string | null;
   description?: string | null;
+  idempotencyKey?: string | null;
 };
 
 /**
@@ -184,143 +195,244 @@ export class FinanceService {
 
   /**
    * Create a rental (or other) charge — increases outstanding.
-   * Called by RentalsService; never writes rental tables.
+   * Prefer createChargeInTx when composing an outer business TX (checkout).
    */
   async createCharge(input: CreateChargeInput, actor?: AuthPrincipal) {
+    await this.requireActiveCustomer(input.customerId);
+    const result = await this.repo.client.$transaction(async (tx) =>
+      this.createChargeInTx(tx, input, actor),
+    );
+    await this.audit.record({
+      module: FINANCE_MODULE,
+      entityType: FINANCE_ENTITY_TRANSACTION,
+      entityId: result.id,
+      action: 'charge',
+      newValues: result,
+      actor: { userId: actor?.userId, username: actor?.username },
+    });
+    return result;
+  }
+
+  async createChargeInTx(
+    tx: Prisma.TransactionClient,
+    input: CreateChargeInput,
+    actor?: AuthPrincipal,
+  ) {
     const money = Money.ofNonNegativeFils(input.amountFils);
     if (money.isZero()) {
       throw BusinessException.validation('Charge amount must be greater than zero');
     }
-    await this.requireActiveCustomer(input.customerId);
-
-    if (input.referenceType && input.referenceId) {
-      const existing = await this.repo.findPostedByReference(
-        FINANCIAL_TX_TYPE.RENTAL_CHARGE,
-        input.referenceType,
-        input.referenceId,
+    if (!input.referenceType || !input.referenceId) {
+      throw BusinessException.validation(
+        'Charge requires referenceType and referenceId for idempotency',
       );
-      if (existing) return toTransactionPublic(existing);
     }
 
-    const result = await this.repo.client.$transaction(async (tx) => {
-      const account = await this.ensureAccountInTx(
-        tx,
-        input.customerId,
-        actor,
-      );
-      await this.repo.lockAccount(tx, account.id);
+    const requestHash = hashIdempotencyPayload({
+      customerId: input.customerId,
+      amountFils: money.amountFils,
+      referenceType: input.referenceType,
+      referenceId: input.referenceId,
+      settlementId: input.settlementId ?? null,
+    });
+    const idemKey =
+      input.idempotencyKey?.trim() ||
+      `${input.referenceType}:${input.referenceId}:charge`;
 
-      const txn = await this.repo.createTransaction(tx, {
-        accountId: account.id,
-        type: FINANCIAL_TX_TYPE.RENTAL_CHARGE,
-        amountFils: money.amountFils,
-        status: FINANCIAL_TX_STATUS.POSTED,
-        referenceType: input.referenceType ?? null,
-        referenceId: input.referenceId ?? null,
-        description: input.description?.trim() || 'rental_charge',
-        createdBy: actor?.userId ?? null,
-        updatedBy: actor?.userId ?? null,
+    const began = await beginIdempotency<ReturnType<typeof toTransactionPublic>>(
+      tx,
+      {
+        scope: IDEMPOTENCY_SCOPE.FINANCE_CHARGE,
+        key: idemKey,
+        requestHash,
+      },
+    );
+    if (began.kind === 'replay') return began.response;
+
+    const existing = await this.repo.findPostedByReference(
+      FINANCIAL_TX_TYPE.RENTAL_CHARGE,
+      input.referenceType,
+      input.referenceId,
+      tx,
+    );
+    if (existing) {
+      const pub = toTransactionPublic(existing);
+      await completeIdempotency(tx, {
+        scope: IDEMPOTENCY_SCOPE.FINANCE_CHARGE,
+        key: idemKey,
+        resourceType: FINANCE_ENTITY_TRANSACTION,
+        resourceId: existing.id,
+        response: pub,
       });
+      return pub;
+    }
 
-      await this.repo.createMovement(tx, {
-        accountId: account.id,
-        transactionId: txn.id,
-        direction: MONEY_MOVEMENT_DIRECTION.OUT,
-        amountFils: money.amountFils,
-        currency: FINANCE_CURRENCY,
-        kind: MONEY_MOVEMENT_KIND.CHARGE,
-        createdBy: actor?.userId ?? null,
-      });
+    const account = await this.ensureAccountInTx(tx, input.customerId, actor);
+    await this.repo.lockAccount(tx, account.id);
 
-      await this.repo.createAudit(tx, {
-        entityType: FINANCE_ENTITY_TRANSACTION,
-        entityId: txn.id,
-        action: 'charge',
-        newValues: JSON.stringify(toTransactionPublic(txn)),
-        userId: actor?.userId ?? null,
-        username: actor?.username ?? null,
-        message: 'create_charge',
-      });
-
-      return { account, txn };
+    const txn = await this.repo.createTransaction(tx, {
+      accountId: account.id,
+      type: FINANCIAL_TX_TYPE.RENTAL_CHARGE,
+      amountFils: money.amountFils,
+      status: FINANCIAL_TX_STATUS.POSTED,
+      referenceType: input.referenceType,
+      referenceId: input.referenceId,
+      settlementId: input.settlementId ?? null,
+      description: input.description?.trim() || 'rental_charge',
+      createdBy: actor?.userId ?? null,
+      updatedBy: actor?.userId ?? null,
     });
 
-    await this.audit.record({
-      module: FINANCE_MODULE,
+    await this.repo.createMovement(tx, {
+      accountId: account.id,
+      transactionId: txn.id,
+      direction: MONEY_MOVEMENT_DIRECTION.OUT,
+      amountFils: money.amountFils,
+      currency: FINANCE_CURRENCY,
+      kind: MONEY_MOVEMENT_KIND.CHARGE,
+      createdBy: actor?.userId ?? null,
+    });
+
+    await this.repo.createAudit(tx, {
       entityType: FINANCE_ENTITY_TRANSACTION,
-      entityId: result.txn.id,
+      entityId: txn.id,
       action: 'charge',
-      newValues: toTransactionPublic(result.txn),
-      actor: { userId: actor?.userId, username: actor?.username },
+      newValues: JSON.stringify(toTransactionPublic(txn)),
+      userId: actor?.userId ?? null,
+      username: actor?.username ?? null,
+      message: 'create_charge',
     });
 
-    return toTransactionPublic(result.txn);
+    const pub = toTransactionPublic(txn);
+    await completeIdempotency(tx, {
+      scope: IDEMPOTENCY_SCOPE.FINANCE_CHARGE,
+      key: idemKey,
+      resourceType: FINANCE_ENTITY_TRANSACTION,
+      resourceId: txn.id,
+      response: pub,
+    });
+    return pub;
   }
 
   /**
    * Register a deposit credit — decreases outstanding.
-   * Called by RentalsService; never writes rental tables.
+   * Prefer registerDepositInTx when composing an outer business TX (checkout).
    */
   async registerDeposit(input: RegisterDepositInput, actor?: AuthPrincipal) {
-    const money = Money.ofNonNegativeFils(input.amountFils);
-    if (money.isZero()) {
-      throw BusinessException.validation('Deposit amount must be greater than zero');
-    }
     await this.requireActiveCustomer(input.customerId);
-
-    const result = await this.repo.client.$transaction(async (tx) => {
-      const account = await this.ensureAccountInTx(
-        tx,
-        input.customerId,
-        actor,
-      );
-      await this.repo.lockAccount(tx, account.id);
-
-      const txn = await this.repo.createTransaction(tx, {
-        accountId: account.id,
-        type: FINANCIAL_TX_TYPE.DEPOSIT,
-        amountFils: money.amountFils,
-        status: FINANCIAL_TX_STATUS.POSTED,
-        referenceType: input.referenceType ?? null,
-        referenceId: input.referenceId ?? null,
-        description: input.description?.trim() || 'deposit',
-        createdBy: actor?.userId ?? null,
-        updatedBy: actor?.userId ?? null,
-      });
-
-      await this.repo.createMovement(tx, {
-        accountId: account.id,
-        transactionId: txn.id,
-        direction: MONEY_MOVEMENT_DIRECTION.IN,
-        amountFils: money.amountFils,
-        currency: FINANCE_CURRENCY,
-        kind: MONEY_MOVEMENT_KIND.DEPOSIT,
-        createdBy: actor?.userId ?? null,
-      });
-
-      await this.repo.createAudit(tx, {
-        entityType: FINANCE_ENTITY_TRANSACTION,
-        entityId: txn.id,
-        action: 'deposit',
-        newValues: JSON.stringify(toTransactionPublic(txn)),
-        userId: actor?.userId ?? null,
-        username: actor?.username ?? null,
-        message: 'register_deposit',
-      });
-
-      return txn;
-    });
-
+    const result = await this.repo.client.$transaction(async (tx) =>
+      this.registerDepositInTx(tx, input, actor),
+    );
     await this.audit.record({
       module: FINANCE_MODULE,
       entityType: FINANCE_ENTITY_TRANSACTION,
       entityId: result.id,
       action: 'deposit',
-      newValues: toTransactionPublic(result),
+      newValues: result,
       actor: { userId: actor?.userId, username: actor?.username },
     });
+    return result;
+  }
 
-    return toTransactionPublic(result);
+  async registerDepositInTx(
+    tx: Prisma.TransactionClient,
+    input: RegisterDepositInput,
+    actor?: AuthPrincipal,
+  ) {
+    const money = Money.ofNonNegativeFils(input.amountFils);
+    if (money.isZero()) {
+      throw BusinessException.validation('Deposit amount must be greater than zero');
+    }
+    if (!input.referenceType || !input.referenceId) {
+      throw BusinessException.validation(
+        'Deposit requires referenceType and referenceId for idempotency',
+      );
+    }
+
+    const requestHash = hashIdempotencyPayload({
+      customerId: input.customerId,
+      amountFils: money.amountFils,
+      referenceType: input.referenceType,
+      referenceId: input.referenceId,
+      settlementId: input.settlementId ?? null,
+    });
+    const idemKey =
+      input.idempotencyKey?.trim() ||
+      `${input.referenceType}:${input.referenceId}:deposit`;
+
+    const began = await beginIdempotency<ReturnType<typeof toTransactionPublic>>(
+      tx,
+      {
+        scope: IDEMPOTENCY_SCOPE.FINANCE_DEPOSIT,
+        key: idemKey,
+        requestHash,
+      },
+    );
+    if (began.kind === 'replay') return began.response;
+
+    const existing = await this.repo.findPostedByReference(
+      FINANCIAL_TX_TYPE.DEPOSIT,
+      input.referenceType,
+      input.referenceId,
+      tx,
+    );
+    if (existing) {
+      const pub = toTransactionPublic(existing);
+      await completeIdempotency(tx, {
+        scope: IDEMPOTENCY_SCOPE.FINANCE_DEPOSIT,
+        key: idemKey,
+        resourceType: FINANCE_ENTITY_TRANSACTION,
+        resourceId: existing.id,
+        response: pub,
+      });
+      return pub;
+    }
+
+    const account = await this.ensureAccountInTx(tx, input.customerId, actor);
+    await this.repo.lockAccount(tx, account.id);
+
+    const txn = await this.repo.createTransaction(tx, {
+      accountId: account.id,
+      type: FINANCIAL_TX_TYPE.DEPOSIT,
+      amountFils: money.amountFils,
+      status: FINANCIAL_TX_STATUS.POSTED,
+      referenceType: input.referenceType,
+      referenceId: input.referenceId,
+      settlementId: input.settlementId ?? null,
+      description: input.description?.trim() || 'deposit',
+      createdBy: actor?.userId ?? null,
+      updatedBy: actor?.userId ?? null,
+    });
+
+    await this.repo.createMovement(tx, {
+      accountId: account.id,
+      transactionId: txn.id,
+      direction: MONEY_MOVEMENT_DIRECTION.IN,
+      amountFils: money.amountFils,
+      currency: FINANCE_CURRENCY,
+      kind: MONEY_MOVEMENT_KIND.DEPOSIT,
+      createdBy: actor?.userId ?? null,
+    });
+
+    await this.repo.createAudit(tx, {
+      entityType: FINANCE_ENTITY_TRANSACTION,
+      entityId: txn.id,
+      action: 'deposit',
+      newValues: JSON.stringify(toTransactionPublic(txn)),
+      userId: actor?.userId ?? null,
+      username: actor?.username ?? null,
+      message: 'register_deposit',
+    });
+
+    const pub = toTransactionPublic(txn);
+    await completeIdempotency(tx, {
+      scope: IDEMPOTENCY_SCOPE.FINANCE_DEPOSIT,
+      key: idemKey,
+      resourceType: FINANCE_ENTITY_TRANSACTION,
+      resourceId: txn.id,
+      response: pub,
+    });
+    return pub;
   }
 
   /**
@@ -376,6 +488,7 @@ export class FinanceService {
     const pending = await this.repo.createPayment(tx, {
       paymentNumber,
       accountId: account.id,
+      settlementId: dto.settlementId ?? null,
       amountFils: money.amountFils,
       status: PAYMENT_STATUS.PENDING,
       method: dto.method?.trim() || 'cash',
@@ -391,6 +504,7 @@ export class FinanceService {
       status: FINANCIAL_TX_STATUS.POSTED,
       referenceType: 'payment',
       referenceId: pending.id,
+      settlementId: dto.settlementId ?? null,
       description: 'payment',
       createdBy: actor?.userId ?? null,
       updatedBy: actor?.userId ?? null,
@@ -435,9 +549,82 @@ export class FinanceService {
     );
   }
 
+  /** Join an outer TX (checkout) without nesting transactions. */
+  async ensureAccountForCustomerInTx(
+    tx: Prisma.TransactionClient,
+    customerId: string,
+    actor?: AuthPrincipal,
+  ) {
+    await this.requireActiveCustomer(customerId);
+    return this.ensureAccountInTx(tx, customerId, actor);
+  }
+
   /** Allocate payment number for callers composing outer transactions. */
   async allocatePaymentNumberPublic() {
     return this.allocatePaymentNumber();
+  }
+
+  async allocatePaymentNumberInTx(tx: Prisma.TransactionClient) {
+    return this.allocatePaymentNumber(tx);
+  }
+
+  /**
+   * Peek a completed idempotency response outside a mutation TX
+   * (checkout retry after success).
+   */
+  async peekIdempotencyReplay<T>(
+    scope: string,
+    key: string,
+  ): Promise<T | null> {
+    const row = await this.repo.client.financeIdempotencyKey.findUnique({
+      where: { scope_key: { scope, key: key.trim() } },
+    });
+    if (row?.status === 'completed' && row.responseJson) {
+      return JSON.parse(row.responseJson) as T;
+    }
+    return null;
+  }
+
+  /**
+   * Void posted charge/deposit rows for an unpaid open settlement cancel.
+   * Not a customer refund — ledger status → voided so outstanding reconstructs.
+   */
+  async voidSettlementObligationLedgerInTx(
+    tx: Prisma.TransactionClient,
+    settlementId: string,
+    actor?: AuthPrincipal,
+  ) {
+    const rows = await tx.financialTransaction.findMany({
+      where: {
+        settlementId,
+        status: FINANCIAL_TX_STATUS.POSTED,
+        type: {
+          in: [FINANCIAL_TX_TYPE.RENTAL_CHARGE, FINANCIAL_TX_TYPE.DEPOSIT],
+        },
+      },
+    });
+    for (const row of rows) {
+      await tx.financialTransaction.update({
+        where: { id: row.id },
+        data: {
+          status: FINANCIAL_TX_STATUS.VOIDED,
+          updatedBy: actor?.userId ?? null,
+        },
+      });
+      await this.repo.createAudit(tx, {
+        entityType: FINANCE_ENTITY_TRANSACTION,
+        entityId: row.id,
+        action: 'void',
+        oldValues: JSON.stringify(toTransactionPublic(row)),
+        newValues: JSON.stringify(
+          toTransactionPublic({ ...row, status: FINANCIAL_TX_STATUS.VOIDED }),
+        ),
+        userId: actor?.userId ?? null,
+        username: actor?.username ?? null,
+        message: 'void_settlement_obligation',
+      });
+    }
+    return rows.length;
   }
 
   /**
@@ -545,13 +732,14 @@ export class FinanceService {
     );
   }
 
-  private async allocatePaymentNumber() {
+  private async allocatePaymentNumber(tx?: Prisma.TransactionClient) {
     return this.allocateNumber(
       FINANCE_PAYMENT_NUMBER_SETTING.PREFIX,
       FINANCE_DEFAULT_PAYMENT_PREFIX,
       FINANCE_PAYMENT_NUMBER_SETTING.SEPARATOR,
       FINANCE_PAYMENT_NUMBER_SETTING.PADDING,
       (n) => this.repo.findAnyPaymentNumber(n),
+      tx,
     );
   }
 

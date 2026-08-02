@@ -212,3 +212,11 @@
 - **Context:** Need a formal GO/NO-GO before Reports, after 6.1–6.3 delivered settlement ownership and dual-path closure.
 - **Decision:** Certify financial **foundation** as **PASS WITH WARNINGS (overall 80)**. **NO-GO for Reports** until Must-Fix: (1) atomic checkout finance TX, (2) deposit/charge reference uniqueness + idempotency, (3) rental cancel ↔ settlement coupling policy. Payment idempotency keys and refund/adjustment remain High/Medium debt, not Reports blockers only if Reports stay unbuilt.
 - **Consequences:** Do not start Phase 7 Reports, late fees, invoices, or refunds without remediation approval. Report: `PHASE_6_ENGINEERING_CERTIFICATION.md`.
+
+## ADR-V2-028 - Transactional checkout integrity (Phase 6.5)
+
+- **Date:** 2026-08-02
+- **Status:** Accepted
+- **Context:** Phase 6.4 Must-Fix: non-atomic checkout finance, deposit non-idempotency, rental↔settlement cancel decoupling.
+- **Decision:** (1) Checkout finance (`createForRentalInTx` → `createChargeInTx` / `registerDepositInTx`) runs inside `AvailabilityService.runExclusive` with inventory/rental. (2) `FinanceIdempotencyKey` for checkout/payment/charge/deposit. (3) Authoritative cancel policy: open unpaid → void ledger + cancel settlement; partial/paid → reject. (4) Charge/deposit/payment reference `settlementId`; unique ledger refs.
+- **Consequences:** Integrity score **94**. Reports still require product approval (refunds/late fees unbuilt). Report: `PHASE_6_TRANSACTION_INTEGRITY.md`.

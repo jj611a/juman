@@ -66,8 +66,12 @@ export class SettlementRepository {
     });
   }
 
-  findByRentalId(rentalId: string): Promise<SettlementWithRelations | null> {
-    return this.prisma.rentalSettlement.findFirst({
+  findByRentalId(
+    rentalId: string,
+    tx?: Prisma.TransactionClient,
+  ): Promise<SettlementWithRelations | null> {
+    const client = tx ?? this.prisma;
+    return client.rentalSettlement.findFirst({
       where: { rentalId, deletedAt: null },
       include: settlementInclude,
     });

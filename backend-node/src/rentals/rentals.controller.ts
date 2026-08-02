@@ -49,7 +49,13 @@ export class RentalsController {
     @Body() body: RentalActionDto,
     @CurrentUser() user: AuthPrincipal,
   ) {
-    return this.rentals.checkout(id, body.reason, user, body.depositAmountFils);
+    return this.rentals.checkout(
+      id,
+      body.reason,
+      user,
+      body.depositAmountFils,
+      body.idempotencyKey,
+    );
   }
 
   @Post(':id/return')

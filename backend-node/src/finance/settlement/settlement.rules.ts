@@ -36,11 +36,9 @@ export function canClose(status: string): boolean {
   return status === SETTLEMENT_STATUS.PAID;
 }
 
+/** Only unpaid open settlements may cancel; partial requires refund. */
 export function canCancel(status: string): boolean {
-  return (
-    status === SETTLEMENT_STATUS.OPEN ||
-    status === SETTLEMENT_STATUS.PARTIALLY_PAID
-  );
+  return status === SETTLEMENT_STATUS.OPEN;
 }
 
 export function isFinanciallyComplete(status: string): boolean {

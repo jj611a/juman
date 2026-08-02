@@ -111,4 +111,9 @@ export class ReservationActionDto {
   @IsInt()
   @Min(0)
   depositAmountFils?: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(128)
+  idempotencyKey?: string;
 }

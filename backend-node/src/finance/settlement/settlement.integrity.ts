@@ -43,6 +43,39 @@ export function assertSettlementStatusIntegrity(status: string): void {
 }
 
 /**
+ * Settlement obligation invariant (Phase 6.5):
+ * total = charges − discounts + lateFees − refunds
+ * remaining = total − paid (= outstanding for this settlement)
+ *
+ * Discounts / late fees / refunds are tracked as zero until those products ship.
+ */
+export function assertSettlementObligationFormula(input: {
+  chargeFils: number;
+  discountFils?: number;
+  lateFeeFils?: number;
+  refundFils?: number;
+  settlementTotalFils: number;
+  settlementPaidFils: number;
+  settlementRemainingFils: number;
+}): void {
+  const discounts = input.discountFils ?? 0;
+  const lateFees = input.lateFeeFils ?? 0;
+  const refunds = input.refundFils ?? 0;
+  const expectedTotal =
+    input.chargeFils - discounts + lateFees - refunds;
+  if (input.settlementTotalFils !== expectedTotal) {
+    throw BusinessException.invariant(
+      `Settlement total ${input.settlementTotalFils} ≠ charges-discounts+late-refunds ${expectedTotal}`,
+    );
+  }
+  assertSettlementBalanceInvariant({
+    totalFils: input.settlementTotalFils,
+    paidFils: input.settlementPaidFils,
+    remainingFils: input.settlementRemainingFils,
+  });
+}
+
+/**
  * Ledger reconstruction for a rental settlement:
  * charge − deposit − settlement-applied payments should equal remaining,
  * and settlement.total should equal charge − deposit.

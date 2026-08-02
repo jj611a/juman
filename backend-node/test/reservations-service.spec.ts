@@ -191,6 +191,7 @@ describe('ReservationsService', () => {
   const rentals = {
     materializeActiveFromReservation: vi.fn(),
     syncCheckoutFinance: vi.fn(),
+    syncCheckoutFinanceInTx: vi.fn(),
   };
   const settings = {
     getString: vi.fn(async (_: string, f: string) => f),
@@ -240,6 +241,7 @@ describe('ReservationsService', () => {
       rentalNumber: 'RENT-1',
     });
     rentals.syncCheckoutFinance.mockResolvedValue(undefined);
+    rentals.syncCheckoutFinanceInTx.mockResolvedValue(undefined);
   });
 
   it('creates confirmed reservation with audits', async () => {

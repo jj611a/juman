@@ -57,6 +57,7 @@ export class ReservationsController {
       body.reason,
       user,
       body.depositAmountFils,
+      body.idempotencyKey,
     );
   }
 

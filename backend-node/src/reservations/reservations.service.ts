@@ -155,6 +155,7 @@ export class ReservationsService {
     reason?: string,
     actor?: AuthPrincipal,
     depositAmountFils?: number,
+    idempotencyKey?: string,
   ) {
     const reservation = await this.requireLive(id);
     if (!canCheckoutReservation(reservation.status)) {
@@ -196,6 +197,13 @@ export class ReservationsService {
       );
       rentalId = rental.id;
 
+      await this.rentals.syncCheckoutFinanceInTx(
+        tx,
+        rental.id,
+        depositAmountFils ?? 0,
+        actor,
+      );
+
       const updated = await this.repo.transitionStatus({
         reservationId: reservation.id,
         from: RESERVATION_STATUS.CONFIRMED,
@@ -213,20 +221,17 @@ export class ReservationsService {
     });
 
     const updated = await this.requireLive(id);
-    if (rentalId) {
-      await this.rentals.syncCheckoutFinance(
-        rentalId,
-        depositAmountFils,
-        actor,
-      );
-    }
     await this.audit.record({
       module: RESERVATION_MODULE,
       entityType: RESERVATION_ENTITY,
       entityId: id,
       action: 'checkout',
       oldValues: this.snapshot(reservation),
-      newValues: { ...this.snapshot(updated), rentalId },
+      newValues: {
+        ...this.snapshot(updated),
+        rentalId,
+        idempotencyKey: idempotencyKey ?? null,
+      },
       actor: { userId: actor?.userId, username: actor?.username },
     });
     return toReservationPublic(updated);

@@ -7,7 +7,14 @@ import { CustomersService } from '../customers/customers.service';
 import { CUSTOMER_STATUS } from '../customers/customers.constants';
 import { FinanceService } from '../finance/finance.service';
 import { FINANCE_REFERENCE_RENTAL } from '../finance/finance.constants';
+import {
+  beginIdempotency,
+  completeIdempotency,
+  hashIdempotencyPayload,
+  IDEMPOTENCY_SCOPE,
+} from '../finance/idempotency/idempotency';
 import { SettlementService } from '../finance/settlement/settlement.service';
+import { assertLedgerMatchesSettlement } from '../finance/settlement/settlement.integrity';
 import { ItemsService } from '../inventory/items/items.service';
 import { ITEM_LIFECYCLE, ITEM_STATUS } from '../inventory/inventory.constants';
 import { LifecycleService } from '../inventory/lifecycle/lifecycle.service';
@@ -149,24 +156,36 @@ export class RentalsService {
   }
 
   /**
-   * Checkout: draft → checked_out → active, inventory available → reserved → rented.
-   * Entire mutation runs in one Prisma transaction; failure rolls back completely.
+   * Checkout: draft → checked_out → active, inventory available → reserved → rented,
+   * settlement + charge + deposit — ONE Prisma transaction. Failure rolls back all.
    */
   async checkout(
     id: string,
     reason?: string,
     actor?: AuthPrincipal,
     depositAmountFils?: number,
+    idempotencyKey?: string,
   ) {
     const rental = await this.requireLive(id);
+    const deposit = depositAmountFils ?? 0;
+    const idemKey =
+      idempotencyKey?.trim() || `rental:${id}:checkout`;
+    const requestHash = hashIdempotencyPayload({
+      rentalId: id,
+      depositAmountFils: deposit,
+    });
+
     if (!canCheckout(rental.status)) {
+      const replay = await this.finance.peekIdempotencyReplay<
+        ReturnType<typeof toRentalPublic>
+      >(IDEMPOTENCY_SCOPE.RENTAL_CHECKOUT, idemKey);
+      if (replay) return replay;
       throw BusinessException.conflict(
         `Cannot checkout rental in status ${rental.status}`,
       );
     }
     await this.requireActiveCustomer(rental.customerId);
 
-    // Re-validate items are still rentable before opening the TX.
     for (const line of rental.items) {
       await this.assertItemRentable(line.itemId, line.barcodeValue);
     }
@@ -176,7 +195,17 @@ export class RentalsService {
       referenceId: rental.id,
     };
 
-    await this.availability.runExclusive(async (tx) => {
+    const result = await this.availability.runExclusive(async (tx) => {
+      const began = await beginIdempotency<ReturnType<typeof toRentalPublic>>(
+        tx,
+        {
+          scope: IDEMPOTENCY_SCOPE.RENTAL_CHECKOUT,
+          key: idemKey,
+          requestHash,
+        },
+      );
+      if (began.kind === 'replay') return began.response;
+
       await this.availability.assertItemsAvailable(
         rental.items.map((i) => i.itemId),
         rental.rentalDate,
@@ -238,9 +267,20 @@ export class RentalsService {
           'Concurrent rental activation rejected',
         );
       }
+
+      await this.syncCheckoutFinanceInTx(tx, rental.id, deposit, actor);
+
+      const pub = toRentalPublic(afterActive);
+      await completeIdempotency(tx, {
+        scope: IDEMPOTENCY_SCOPE.RENTAL_CHECKOUT,
+        key: idemKey,
+        resourceType: RENTAL_ENTITY,
+        resourceId: rental.id,
+        response: pub,
+      });
+      return pub;
     });
 
-    // Audit inventory transitions after successful TX (no partial rental left).
     for (const line of rental.items) {
       await this.audit.record({
         module: RENTAL_MODULE,
@@ -256,61 +296,42 @@ export class RentalsService {
       });
     }
 
-    await this.syncCheckoutFinance(id, depositAmountFils, actor);
-
-    const updated = await this.requireLive(id);
     await this.audit.record({
       module: RENTAL_MODULE,
       entityType: RENTAL_ENTITY,
       entityId: id,
       action: 'checkout',
       oldValues: this.snapshot(rental),
-      newValues: this.snapshot(updated),
+      newValues: this.snapshot(await this.requireLive(id)),
       actor: { userId: actor?.userId, username: actor?.username },
     });
-    return toRentalPublic(updated);
+    return result;
   }
 
   /**
-   * Request FinancialService for charge (+ optional deposit).
-   * Rentals never write balances or payment tables directly.
+   * Finance slice of checkout — must run inside the same outer TX as inventory/rental.
+   * Order: settlement → charge → deposit (all reference settlementId).
    */
-  async syncCheckoutFinance(
+  async syncCheckoutFinanceInTx(
+    tx: Prisma.TransactionClient,
     rentalId: string,
-    depositAmountFils?: number,
+    depositAmountFils: number,
     actor?: AuthPrincipal,
   ) {
-    const rental = await this.requireLive(rentalId);
+    const rental = await tx.rental.findFirst({
+      where: { id: rentalId, deletedAt: null },
+      include: { items: true },
+    });
+    if (!rental) throw BusinessException.notFound('Rental not found');
+
     const chargeFils = rental.items.reduce(
       (sum, line) => sum + (line.agreedRentalPrice ?? 0),
       0,
     );
-    if (chargeFils > 0) {
-      await this.finance.createCharge(
-        {
-          customerId: rental.customerId,
-          amountFils: chargeFils,
-          referenceType: FINANCE_REFERENCE_RENTAL,
-          referenceId: rental.id,
-          description: `Rental charge ${rental.rentalNumber}`,
-        },
-        actor,
-      );
-    }
     const deposit = depositAmountFils ?? 0;
-    if (deposit > 0) {
-      await this.finance.registerDeposit(
-        {
-          customerId: rental.customerId,
-          amountFils: deposit,
-          referenceType: FINANCE_REFERENCE_RENTAL,
-          referenceId: rental.id,
-          description: `Rental deposit ${rental.rentalNumber}`,
-        },
-        actor,
-      );
-    }
-    await this.settlements.createForRental(
+
+    const settlement = await this.settlements.createForRentalInTx(
+      tx,
       {
         rentalId: rental.id,
         customerId: rental.customerId,
@@ -319,6 +340,63 @@ export class RentalsService {
       },
       actor,
     );
+
+    if (chargeFils > 0) {
+      await this.finance.createChargeInTx(
+        tx,
+        {
+          customerId: rental.customerId,
+          amountFils: chargeFils,
+          referenceType: FINANCE_REFERENCE_RENTAL,
+          referenceId: rental.id,
+          settlementId: settlement.id,
+          description: `Rental charge ${rental.rentalNumber}`,
+        },
+        actor,
+      );
+    }
+    if (deposit > 0) {
+      await this.finance.registerDepositInTx(
+        tx,
+        {
+          customerId: rental.customerId,
+          amountFils: deposit,
+          referenceType: FINANCE_REFERENCE_RENTAL,
+          referenceId: rental.id,
+          settlementId: settlement.id,
+          description: `Rental deposit ${rental.rentalNumber}`,
+        },
+        actor,
+      );
+    }
+
+    assertLedgerMatchesSettlement({
+      chargeFils,
+      depositFils: deposit,
+      settlementTotalFils: settlement.totalFils,
+      settlementPaidFils: settlement.paidFils,
+      settlementRemainingFils: settlement.remainingFils,
+      appliedPaymentFils: settlement.paidFils,
+    });
+  }
+
+  /**
+   * @deprecated Prefer syncCheckoutFinanceInTx inside checkout exclusive TX.
+   * Kept for reservation path migration — delegates to exclusive TX.
+   */
+  async syncCheckoutFinance(
+    rentalId: string,
+    depositAmountFils?: number,
+    actor?: AuthPrincipal,
+  ) {
+    await this.availability.runExclusive(async (tx) => {
+      await this.syncCheckoutFinanceInTx(
+        tx,
+        rentalId,
+        depositAmountFils ?? 0,
+        actor,
+      );
+    });
   }
 
   /** Foundation return: outbound → return_pending; inventory rented → return_pending. */
@@ -538,10 +616,17 @@ export class RentalsService {
 
     const outbound = from !== RENTAL_STATUS.DRAFT;
 
-    await this.repo.client.$transaction(async (tx) => {
+    await this.availability.runExclusive(async (tx) => {
+      // Authoritative cancel policy — reject partial/paid before inventory unwind.
+      await this.settlements.applyRentalCancelPolicyInTx(
+        tx,
+        rental.id,
+        actor,
+        reason,
+      );
+
       if (outbound) {
         for (const line of rental.items) {
-          // rented → return_pending → inspection → available
           let expected: string = ITEM_LIFECYCLE.RENTED;
           for (const next of RENTAL_CANCEL_ITEM_PATH) {
             await this.lifecycle.transition(

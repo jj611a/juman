@@ -682,20 +682,25 @@ model FinancialTransaction {
   status        String   @default("posted")
   referenceType String?
   referenceId   String?
+  /// Owning settlement when this entry is part of a rental obligation (Phase 6.5).
+  settlementId  String?
   description   String?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
   createdBy     String?
   updatedBy     String?
 
-  account   FinancialAccount @relation(fields: [accountId], references: [id])
-  payment   Payment?
-  movements MoneyMovement[]
+  account    FinancialAccount  @relation(fields: [accountId], references: [id])
+  settlement RentalSettlement? @relation(fields: [settlementId], references: [id])
+  payment    Payment?
+  movements  MoneyMovement[]
 
+  @@unique([type, referenceType, referenceId])
   @@index([accountId])
   @@index([type])
   @@index([status])
   @@index([referenceType, referenceId])
+  @@index([settlementId])
   @@index([createdAt])
 }
 
@@ -704,6 +709,7 @@ model Payment {
   id            String    @id @default(uuid())
   paymentNumber String    @unique
   accountId     String
+  settlementId  String?
   transactionId String?   @unique
   amountFils    Int
   status        String    @default("pending")
@@ -719,10 +725,13 @@ model Payment {
   deletedBy     String?
 
   account     FinancialAccount      @relation(fields: [accountId], references: [id])
+  settlement  RentalSettlement?     @relation(fields: [settlementId], references: [id])
   transaction FinancialTransaction? @relation(fields: [transactionId], references: [id])
   movements   MoneyMovement[]
+  historyLinks SettlementHistory[]
 
   @@index([accountId])
+  @@index([settlementId])
   @@index([paymentNumber])
   @@index([status])
   @@index([deletedAt])
@@ -797,9 +806,11 @@ model RentalSettlement {
   updatedBy        String?
   deletedBy        String?
 
-  rental   Rental              @relation(fields: [rentalId], references: [id])
-  account  FinancialAccount    @relation(fields: [accountId], references: [id])
-  history  SettlementHistory[]
+  rental       Rental                 @relation(fields: [rentalId], references: [id])
+  account      FinancialAccount       @relation(fields: [accountId], references: [id])
+  history      SettlementHistory[]
+  transactions FinancialTransaction[]
+  payments     Payment[]
 
   @@index([settlementNumber])
   @@index([rentalId])
@@ -826,10 +837,29 @@ model SettlementHistory {
   createdAt    DateTime @default(now())
 
   settlement RentalSettlement @relation(fields: [settlementId], references: [id])
+  payment    Payment?         @relation(fields: [paymentId], references: [id])
 
   @@index([settlementId])
   @@index([action])
   @@index([paymentId])
   @@index([newStatus])
+  @@index([createdAt])
+}
+
+/// Client/request idempotency for finance mutations (Phase 6.5).
+model FinanceIdempotencyKey {
+  id           String   @id @default(uuid())
+  scope        String
+  key          String
+  requestHash  String?
+  resourceType String?
+  resourceId   String?
+  status       String   @default("completed")
+  responseJson String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([scope, key])
+  @@index([resourceType, resourceId])
   @@index([createdAt])
 }

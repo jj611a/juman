@@ -81,10 +81,15 @@ describe('RentalsService', () => {
   const finance = {
     createCharge: vi.fn(),
     registerDeposit: vi.fn(),
+    createChargeInTx: vi.fn(),
+    registerDepositInTx: vi.fn(),
+    peekIdempotencyReplay: vi.fn(),
   };
   const settlements = {
     createForRental: vi.fn(),
+    createForRentalInTx: vi.fn(),
     assertFinanciallyComplete: vi.fn(),
+    applyRentalCancelPolicyInTx: vi.fn(),
   };
   let service: RentalsService;
 
@@ -117,11 +122,37 @@ describe('RentalsService', () => {
     repo.list.mockResolvedValue({ rows: [draftRental], total: 1 });
     availability.assertItemsAvailable.mockResolvedValue(undefined);
     availability.runExclusive.mockImplementation(
-      async (fn: (tx: unknown) => Promise<unknown>) => fn({}),
+      async (fn: (tx: Record<string, unknown>) => Promise<unknown>) => {
+        const tx = {
+          financeIdempotencyKey: {
+            findUnique: vi.fn().mockResolvedValue(null),
+            create: vi.fn(),
+            update: vi.fn(),
+          },
+          rental: {
+            findFirst: vi.fn().mockResolvedValue({
+              ...draftRental,
+              status: RENTAL_STATUS.ACTIVE,
+            }),
+          },
+        };
+        return fn(tx);
+      },
     );
     finance.createCharge.mockResolvedValue({ id: 'tx1' });
     finance.registerDeposit.mockResolvedValue({ id: 'tx2' });
+    finance.createChargeInTx.mockResolvedValue({ id: 'tx1' });
+    finance.registerDepositInTx.mockResolvedValue({ id: 'tx2' });
+    finance.peekIdempotencyReplay.mockResolvedValue(null);
     settlements.createForRental.mockResolvedValue({ id: 's1', status: 'open' });
+    settlements.createForRentalInTx.mockResolvedValue({
+      id: 's1',
+      status: 'open',
+      totalFils: 2000,
+      paidFils: 0,
+      remainingFils: 2000,
+    });
+    settlements.applyRentalCancelPolicyInTx.mockResolvedValue({ kind: 'none' });
     settlements.assertFinanciallyComplete.mockResolvedValue(undefined);
     repo.transitionStatus.mockReset();
     repo.transitionStatus.mockImplementation(async (input: { to: string }) => ({
@@ -211,8 +242,8 @@ describe('RentalsService', () => {
       expect.objectContaining({ excludeRentalId: 'r1' }),
     );
     expect(result.status).toBe(RENTAL_STATUS.ACTIVE);
-    expect(finance.createCharge).toHaveBeenCalled();
-    expect(settlements.createForRental).toHaveBeenCalled();
+    expect(finance.createChargeInTx).toHaveBeenCalled();
+    expect(settlements.createForRentalInTx).toHaveBeenCalled();
     expect(audit.record).toHaveBeenCalledWith(
       expect.objectContaining({ action: 'checkout' }),
     );
