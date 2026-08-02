@@ -39,7 +39,7 @@ backend-node/
     settings/
     audit/
     media/
-    barcode/
+    barcode/            # Phase 3.5 platform (+ hardware ports design-only)
     customers/          # Phase 3.2
     media/              # Phase 3.3 (providers, validation, HTTP)
   test/

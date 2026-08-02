@@ -40,6 +40,11 @@ export const DEFAULT_PERMISSIONS: readonly PermissionSeed[] = [
   perm('media.view', 'عرض الملفات', 'عرض وتنزيل الملفات والمراجع'),
   perm('media.delete', 'حذف ملفات', 'حذف الملفات أو مراجعها'),
   perm('media.manage', 'إدارة الملفات', 'إدارة مراجع الملفات'),
+    perm('barcode.view', 'View barcodes', 'View barcode registry'),
+  perm('barcode.generate', 'Generate barcode', 'Generate a new barcode value'),
+  perm('barcode.reserve', 'Reserve barcode', 'Reserve a barcode value'),
+  perm('barcode.release', 'Release barcode', 'Release entity binding from barcode'),
+  perm('barcode.retire', 'Retire barcode', 'Permanently retire a barcode value'),
   perm('media.restore', 'استعادة ملفات', 'استعادة ملفات محذوفة'),
   perm('audit.view', 'عرض سجل التدقيق', 'عرض سجلات تدقيق النظام'),
   perm('categories.view', 'عرض التصنيفات', 'عرض تصنيفات الفساتين'),
@@ -151,6 +156,11 @@ export const INVENTORY_PERMISSIONS: readonly string[] = [
   'media.delete',
   'media.manage',
   'media.restore',
+  'barcode.view',
+  'barcode.generate',
+  'barcode.reserve',
+  'barcode.release',
+  'barcode.retire',
 ];
 
 export const LAUNDRY_PERMISSIONS: readonly string[] = [

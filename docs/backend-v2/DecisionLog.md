@@ -108,3 +108,11 @@
 - **Context:** Features through Media shipped; need a non-feature gate before Phase 3.5.
 - **Decision:** Run logical/functional/API/DB/perf/security/architecture/TS/coverage/packaging/docs review; publish `PHASE_3_ENGINEERING_CERTIFICATION.md` with score **85 PASS WITH WARNINGS**. No barcode/inventory work in this commit.
 - **Consequences:** Phase 3.5 requires approval; tracked Medium/High debt must not be forgotten when multi-client or inventory starts.
+
+## ADR-V2-015 - Reusable barcode platform (Phase 3.5)
+
+- **Date:** 2026-08-02
+- **Status:** Accepted
+- **Context:** Inventory and other modules will need barcodes; embedding generation in inventory would fork symbology, uniqueness, and hardware concerns.
+- **Decision:** Extend Phase 3.1 `Barcode` into a dedicated platform: configurable types (Code-128 default, Code-39, EAN-13/8, UPC-A, QR-ready), lifetime-unique `code`, statuses reserved/activated/retired, service API (generate/reserve/activate/release/retire/validate/find/exists/normalize), generic HTTP `/barcodes`, RBAC `barcode.*`, audit events, hardware port interfaces only. No inventory workflows.
+- **Consequences:** Domains call `activate` to bind entities. Never recycle retired values. Coverage gate `pnpm test:cov:barcode` ≥95%. Label printers/scanners remain future adapters.

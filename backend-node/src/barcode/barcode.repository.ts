@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import type { Barcode, SequenceCounter } from '@prisma/client';
+import type { Barcode, Prisma, SequenceCounter } from '@prisma/client';
 import { PrismaService } from '../database/prisma.service';
 import { liveWhere } from '../shared/soft-delete/soft-delete';
 
@@ -7,40 +7,43 @@ import { liveWhere } from '../shared/soft-delete/soft-delete';
 export class BarcodeRepository {
   constructor(private readonly prisma: PrismaService) {}
 
+  findById(id: string): Promise<Barcode | null> {
+    return this.prisma.barcode.findFirst({ where: liveWhere({ id }) });
+  }
+
   findByCode(code: string): Promise<Barcode | null> {
     return this.prisma.barcode.findFirst({ where: liveWhere({ code }) });
   }
 
-  /** Uniqueness includes soft-deleted rows (lifetime uniqueness). */
+  /** Uniqueness includes soft-deleted / retired rows (lifetime uniqueness). */
   findAnyByCode(code: string): Promise<Barcode | null> {
     return this.prisma.barcode.findUnique({ where: { code } });
   }
 
-  create(data: {
-    code: string;
-    prefix: string;
-    status: string;
-    entityType: string | null;
-    entityId: string | null;
-    reservedAt: Date | null;
-    allocatedAt: Date | null;
-    createdBy: string | null;
-  }): Promise<Barcode> {
+  create(data: Prisma.BarcodeCreateInput): Promise<Barcode> {
     return this.prisma.barcode.create({ data });
   }
 
-  updateStatus(
-    id: string,
-    data: {
-      status: string;
-      entityType?: string | null;
-      entityId?: string | null;
-      allocatedAt?: Date | null;
-      releasedAt?: Date | null;
-      updatedBy?: string | null;
-    },
-  ): Promise<Barcode> {
+  update(id: string, data: Prisma.BarcodeUpdateInput): Promise<Barcode> {
     return this.prisma.barcode.update({ where: { id }, data });
+  }
+
+  async list(input: {
+    where: Prisma.BarcodeWhereInput;
+    orderBy: Prisma.BarcodeOrderByWithRelationInput;
+    offset: number;
+    limit: number;
+  }): Promise<{ rows: Barcode[]; total: number }> {
+    const [rows, total] = await Promise.all([
+      this.prisma.barcode.findMany({
+        where: input.where,
+        orderBy: input.orderBy,
+        skip: input.offset,
+        take: input.limit,
+      }),
+      this.prisma.barcode.count({ where: input.where }),
+    ]);
+    return { rows, total };
   }
 
   async nextSequence(prefix: string): Promise<number> {

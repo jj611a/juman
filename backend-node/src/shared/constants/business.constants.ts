@@ -16,9 +16,14 @@ export const BARCODE_PREFIX_PATTERN = /^[A-Z0-9]+$/;
 
 export const BARCODE_STATUS = {
   RESERVED: 'reserved',
-  ALLOCATED: 'allocated',
-  RELEASED: 'released',
+  ACTIVATED: 'activated',
+  RETIRED: 'retired',
 } as const;
+
+/** @deprecated Use BARCODE_STATUS.ACTIVATED */
+export const BARCODE_STATUS_LEGACY_ALLOCATED = 'allocated';
+/** @deprecated Use BARCODE_STATUS.RETIRED */
+export const BARCODE_STATUS_LEGACY_RELEASED = 'released';
 
 export type BarcodeStatus = (typeof BARCODE_STATUS)[keyof typeof BARCODE_STATUS];
 
@@ -50,6 +55,9 @@ export const AUDIT_ACTION = {
   HARD_DELETE: 'hard_delete',
   RESTORE: 'restore',
   VIEW: 'view',
+  GENERATE: 'generate',
+  RETIRE: 'retire',
+  VALIDATE_FAILURE: 'validate_failure',
   INTEGRITY_FAILURE: 'integrity_failure',
   ALLOCATE: 'allocate',
   RESERVE: 'reserve',

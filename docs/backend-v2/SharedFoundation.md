@@ -19,7 +19,7 @@
 | Settings | `src/settings/**` | `AppSetting` typed get/set + seed defaults |
 | Audit | `src/audit/**` | Central `AuditService` + append-only `AuditLog` |
 | Media | `src/media/**` | `MediaFile` + `MediaReference` abstraction (no HTTP upload yet) |
-| Barcode | `src/barcode/**` | Generate / validate / uniqueness / reserve / allocate / release |
+| Barcode | `src/barcode/**` | Phase 3.1 seed; full platform + HTTP in Phase 3.5 (`BarcodePlatform.md`) |
 
 ## Prisma models (shared)
 

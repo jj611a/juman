@@ -1,6 +1,6 @@
 # Backend V2 Architecture
 
-**Status:** Phase 3.4 Engineering Certification  
+**Status:** Phase 3.5 Barcode Platform  
 **Branch:** `backend-v2`  
 **Spec source:** `backend-python/` (read-only Python FastAPI stack)
 
@@ -67,8 +67,9 @@ src/
   shared/         money, pagination, search, soft-delete, errors
   settings/       AppSetting typed config
   audit/          AuditService.record (append-only)
-  media/          MediaFile abstraction (no upload HTTP)
-  barcode/        generate/validate/reserve
+  media/          MediaFile + HTTP /media
+  barcode/        reusable platform + HTTP /barcodes
+  customers/      Customer domain
 ```
 
 ## Auth / RBAC
@@ -83,8 +84,8 @@ src/
 ## What is not in V2 (yet)
 
 - Users/roles admin HTTP CRUD (beyond unlock)
-- Business modules (customers, inventory, rentals, sales, reports)
-- Hardware bridges
+- Inventory / rentals / sales / reports workflows
+- Barcode hardware adapters / label printing
 - Electron process management / installer Nest packaging
 
 ## Python V1
@@ -108,3 +109,7 @@ First business module: `src/customers` over Prisma `Customer`.
 ## Media domain (Phase 3.3)
 
 Reusable `MediaModule` is the only blob store. Domain modules attach via `MediaReference`. Soft-delete keeps bytes for restore. Docs: `MediaDomain.md`.
+
+## Barcode platform (Phase 3.5)
+
+Reusable `BarcodeModule` is the only barcode authority. Domains bind via `activate(entityType, entityId)`; HTTP is generic registry only (`/barcodes`). Status: reserved → activated → reserved (release) or retired. Values are globally unique for life. Hardware ports are design-only. Docs: `BarcodePlatform.md`.

@@ -15,7 +15,8 @@
     "prisma:migrate:deploy": "prisma migrate deploy",
     "test:cov:shared": "vitest run --coverage --config vitest.shared.config.ts",
     "test:cov:customers": "vitest run --coverage --config vitest.customers.config.ts",
-    "test:cov:media": "vitest run --coverage --config vitest.media.config.ts"
+    "test:cov:media": "vitest run --coverage --config vitest.media.config.ts",
+    "test:cov:barcode": "vitest run --coverage --config vitest.barcode.config.ts"
   },
   "dependencies": {
     "@nestjs/common": "11.1.28",

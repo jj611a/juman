@@ -229,17 +229,18 @@ model MediaReference {
   @@index([deletedAt])
 }
 
-/// Reserved / allocated barcode codes (inventory flows consume this later).
+/// Reusable barcode registry (domains bind via entityType/entityId ? no inventory logic here).
 model Barcode {
   id          String    @id @default(uuid())
   code        String    @unique
+  type        String    @default("code128")
   prefix      String
   status      String
   entityType  String?
   entityId    String?
   reservedAt  DateTime?
-  allocatedAt DateTime?
-  releasedAt  DateTime?
+  activatedAt DateTime?
+  retiredAt   DateTime?
   deletedAt   DateTime?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
@@ -248,8 +249,10 @@ model Barcode {
 
   @@index([prefix])
   @@index([status])
+  @@index([type])
   @@index([entityType, entityId])
   @@index([deletedAt])
+  @@index([createdAt])
 }
 
 model SequenceCounter {

@@ -75,6 +75,14 @@ export const DEFAULT_APP_SETTINGS: readonly SettingSeed[] = [
     isEditable: true,
   },
   {
+    key: 'barcode.default_type',
+    value: 'code128',
+    valueType: SETTING_VALUE_TYPE.STRING,
+    category: 'inventory',
+    description: 'Default barcode symbology',
+    isEditable: true,
+  },
+  {
     key: 'barcode.padding',
     value: String(BARCODE_DEFAULT_PADDING),
     valueType: SETTING_VALUE_TYPE.INTEGER,
