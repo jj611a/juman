@@ -1,6 +1,6 @@
 # Backend V2 Architecture
 
-**Status:** Phase 4.1 Inventory Catalog Engine  
+**Status:** Phase 4.2 Inventory Lifecycle Foundation  
 **Branch:** `backend-v2`  
 **Spec source:** `backend-python/` (read-only Python FastAPI stack)
 
@@ -119,3 +119,7 @@ Reusable `BarcodeModule` is the only barcode authority. Domains bind via `activa
 ## Inventory catalog (Phase 4.1)
 
 Generic Item Catalog in `src/inventory` — not a dress-specific engine. Taxonomy: Category (tree-ready), Brand, Color, Size. Items bind barcodes/media via platforms + `ItemBarcode`/`ItemMedia`. Catalog statuses only (draft/active/inactive/archived/retired). Docs: `InventoryDesign.md`.
+
+## Inventory lifecycle (Phase 4.2)
+
+Authoritative operational `lifecycleState` on `Item` with `ItemStateHistory` and `LifecycleService.transition` (CAS + audit). Availability predicates (`isRentable` / `isSellable` / …) only — no reservations or calendar. Docs: `InventoryDesign.md`.

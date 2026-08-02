@@ -49,6 +49,7 @@ export interface ListItemsQuery extends PaginationInput {
   colorId?: string;
   sizeId?: string;
   status?: string;
+  lifecycleState?: string;
   displayName?: string;
   internalCode?: string;
   deleted?: boolean | string;

@@ -10,6 +10,7 @@ export function toItemPublic(row: ItemWithRelations) {
     salePrice: row.salePrice,
     condition: row.condition,
     status: row.status,
+    lifecycleState: row.lifecycleState,
     description: row.description,
     category: summary(row.category),
     brand: summary(row.brand),

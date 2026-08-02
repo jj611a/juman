@@ -203,4 +203,63 @@ describe('Inventory integration', () => {
       .set('Authorization', `Bearer ${token}`)
       .expect(200);
   });
+
+  it('transitions lifecycle, rejects invalid edges, records history', async () => {
+    const created = await request(app.getHttpServer())
+      .post('/items')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ displayName: 'Lifecycle item', status: 'active' })
+      .expect(201);
+    const id = created.body.id as string;
+    expect(created.body.lifecycleState).toBe('available');
+
+    const state = await request(app.getHttpServer())
+      .get(`/items/${id}/state`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    expect(state.body.isRentable).toBe(true);
+
+    await request(app.getHttpServer())
+      .post(`/items/${id}/transition`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ newState: 'rented', reason: 'skip reserved' })
+      .expect(409);
+
+    await request(app.getHttpServer())
+      .post(`/items/${id}/transition`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ newState: 'reserved', reason: 'hold', expectedState: 'available' })
+      .expect(200);
+
+    const reserved = await request(app.getHttpServer())
+      .get(`/items/${id}/state`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    expect(reserved.body.lifecycleState).toBe('reserved');
+    expect(reserved.body.isRentable).toBe(false);
+
+    await request(app.getHttpServer())
+      .patch(`/items/${id}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ displayName: 'should fail' })
+      .expect(409);
+
+    const history = await request(app.getHttpServer())
+      .get(`/items/${id}/history`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    expect(history.body.meta.total).toBeGreaterThanOrEqual(2);
+
+    const LifecycleService = (await import('../src/inventory/lifecycle/lifecycle.service'))
+      .LifecycleService;
+    const lifecycle = app.get(LifecycleService);
+    const results = await Promise.allSettled([
+      lifecycle.transition(id, { newState: 'rented', expectedState: 'reserved' }),
+      lifecycle.transition(id, { newState: 'available', expectedState: 'reserved' }),
+    ]);
+    const fulfilled = results.filter((r) => r.status === 'fulfilled');
+    const rejected = results.filter((r) => r.status === 'rejected');
+    expect(fulfilled.length).toBe(1);
+    expect(rejected.length).toBe(1);
+  });
 });

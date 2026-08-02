@@ -13,6 +13,7 @@ const baseRow = {
   salePrice: 0,
   condition: null,
   status: 'draft',
+  lifecycleState: 'available',
   description: null,
   deletedAt: null,
   createdAt: new Date(),
@@ -76,6 +77,7 @@ describe('ItemsService', () => {
     activate: vi.fn(),
   };
   const media = { find: vi.fn(), attach: vi.fn() };
+  const lifecycle = { recordCreated: vi.fn().mockResolvedValue(undefined) };
   let service: ItemsService;
 
   beforeEach(() => {
@@ -86,6 +88,7 @@ describe('ItemsService', () => {
       audit as never,
       barcode as never,
       media as never,
+      lifecycle as never,
     );
     repo.nextSequence.mockResolvedValue(1);
     repo.findAnyCode.mockResolvedValue(null);

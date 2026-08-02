@@ -62,6 +62,7 @@ export const AUDIT_ACTION = {
   ALLOCATE: 'allocate',
   RESERVE: 'reserve',
   RELEASE: 'release',
+  TRANSITION: 'transition',
 } as const;
 
 export type AuditAction = (typeof AUDIT_ACTION)[keyof typeof AUDIT_ACTION];

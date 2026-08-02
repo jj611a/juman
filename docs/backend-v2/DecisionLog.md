@@ -124,3 +124,11 @@
 - **Context:** Need inventory foundation without freezing a dress-only model or embedding rental availability.
 - **Decision:** Implement a reusable Item Catalog (Category/Brand/Color/Size/Item) with catalog-only statuses, soft delete/restore, `ItemMedia`/`ItemBarcode` joins that reference Media/Barcode platforms (no local generation or blobs). Frontend may keep “Dress” terminology; backend entity type remains `item`.
 - **Consequences:** Reservations/rentals/calendar remain blocked. Coverage gate `pnpm test:cov:inventory` ≥95%. Future item types extend taxonomy without redesigning Item.
+
+## ADR-V2-017 - Inventory lifecycle foundation (Phase 4.2)
+
+- **Date:** 2026-08-02
+- **Status:** Accepted
+- **Context:** Rentals/sales will mutate item availability; embedding ad-hoc status flags in those modules would fork state machines.
+- **Decision:** Add operational `lifecycleState` (separate from catalog `status`) with a closed transition graph, append-only `ItemStateHistory`, CAS transitions, `inventory.transition` RBAC, and availability predicates (`isOperational`/`isRentable`/`isSellable`/`isEditable`). No reservations/calendar/payments.
+- **Consequences:** All future domains must call `LifecycleService`. Invalid/concurrent transitions → 409. Lost/damaged supported without schema redesign.

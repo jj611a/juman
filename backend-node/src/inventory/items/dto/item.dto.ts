@@ -117,6 +117,10 @@ export class ListItemsDto {
 
   @IsOptional()
   @IsString()
+  lifecycleState?: string;
+
+  @IsOptional()
+  @IsString()
   displayName?: string;
 
   @IsOptional()

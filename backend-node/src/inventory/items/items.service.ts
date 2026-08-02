@@ -22,6 +22,7 @@ import {
   ITEM_DEFAULT_PREFIX,
   ITEM_DEFAULT_SEPARATOR,
   ITEM_ENTITY,
+  ITEM_LIFECYCLE_DEFAULT,
   ITEM_SORT_FIELDS,
   ITEM_STATUS,
   INVENTORY_MODULE,
@@ -35,6 +36,8 @@ import type {
 } from '../inventory.types';
 import { toItemPublic } from './items.mapper';
 import { ItemsRepository } from './items.repository';
+import { LifecycleService } from '../lifecycle/lifecycle.service';
+import { isEditable } from '../lifecycle/lifecycle.rules';
 @Injectable()
 export class ItemsService {
   constructor(
@@ -43,6 +46,7 @@ export class ItemsService {
     private readonly audit: AuditService,
     private readonly barcode: BarcodeService,
     private readonly media: MediaService,
+    private readonly lifecycle: LifecycleService,
   ) {}
   async create(dto: ItemPayload, actor?: AuthPrincipal) {
     const item = await this.repo.create(
@@ -59,6 +63,7 @@ export class ItemsService {
         await this.barcode.activate(b.id, ITEM_ENTITY, item.id, actor);
         await this.repo.createBarcode(item.id, b.id, true, actor?.userId);
       }
+      await this.lifecycle.recordCreated(item.id, actor);
       const row = await this.getById(item.id);
       await this.audit.recordCreate(
         INVENTORY_MODULE,
@@ -75,6 +80,17 @@ export class ItemsService {
   }
   async update(id: string, dto: ItemPayload, actor?: AuthPrincipal) {
     const old = await this.live(id);
+    if (
+      !isEditable({
+        deletedAt: old.deletedAt,
+        status: old.status,
+        lifecycleState: old.lifecycleState,
+      })
+    ) {
+      throw BusinessException.conflict(
+        'Item catalog fields are not editable in the current lifecycle state',
+      );
+    }
     const row = await this.repo.update(
       id,
       (await this.data(dto, actor, false)) as Prisma.ItemUncheckedUpdateInput,
@@ -181,6 +197,10 @@ export class ItemsService {
     if (q.colorId) w.colorId = q.colorId;
     if (q.sizeId) w.sizeId = q.sizeId;
     if (q.status) w.status = this.status(q.status);
+    if (q.lifecycleState) {
+      const ls = q.lifecycleState.trim().toLowerCase();
+      w.lifecycleState = ls;
+    }
     const text = normalizeSearchQuery(q.q);
     if (text)
       w.OR = [
@@ -219,6 +239,7 @@ export class ItemsService {
       x.rentalPrice = this.money(d.rentalPrice ?? 0, 'rentalPrice');
       x.salePrice = this.money(d.salePrice ?? 0, 'salePrice');
       x.status = this.status(d.status ?? ITEM_STATUS.DRAFT);
+      x.lifecycleState = ITEM_LIFECYCLE_DEFAULT;
       if (d.condition !== undefined) {
         x.condition = this.condition(d.condition);
       }
@@ -323,6 +344,7 @@ export class ItemsService {
       internalCode: r.internalCode,
       displayName: r.displayName,
       status: r.status,
+      lifecycleState: r.lifecycleState,
       condition: r.condition,
       deletedAt: r.deletedAt,
     };

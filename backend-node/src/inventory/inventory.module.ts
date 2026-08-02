@@ -14,12 +14,17 @@ import { SizesService } from './sizes/sizes.service';
 import { ItemsController } from './items/items.controller';
 import { ItemsRepository } from './items/items.repository';
 import { ItemsService } from './items/items.service';
+import { LifecycleController } from './lifecycle/lifecycle.controller';
+import { LifecycleRepository } from './lifecycle/lifecycle.repository';
+import { LifecycleService } from './lifecycle/lifecycle.service';
+
 @Module({
   controllers: [
     CategoriesController,
     BrandsController,
     ColorsController,
     SizesController,
+    LifecycleController,
     ItemsController,
   ],
   providers: [
@@ -33,6 +38,8 @@ import { ItemsService } from './items/items.service';
     SizesService,
     ItemsRepository,
     ItemsService,
+    LifecycleRepository,
+    LifecycleService,
   ],
   exports: [
     CategoriesService,
@@ -40,6 +47,7 @@ import { ItemsService } from './items/items.service';
     ColorsService,
     SizesService,
     ItemsService,
+    LifecycleService,
   ],
 })
 export class InventoryModule {}

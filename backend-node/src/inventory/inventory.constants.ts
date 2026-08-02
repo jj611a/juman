@@ -12,6 +12,7 @@ export const INVENTORY_PERMISSION = {
   UPDATE: 'inventory.update',
   DELETE: 'inventory.delete',
   RESTORE: 'inventory.restore',
+  TRANSITION: 'inventory.transition',
 } as const;
 export const CATEGORY_PERMISSION = {
   VIEW: 'categories.view',
@@ -34,6 +35,93 @@ export const ITEM_CONDITION = {
   POOR: 'poor',
   UNKNOWN: 'unknown',
 } as const;
+
+/** Operational lifecycle (Phase 4.2) — separate from catalog ITEM_STATUS. */
+export const ITEM_LIFECYCLE = {
+  AVAILABLE: 'available',
+  RESERVED: 'reserved',
+  RENTED: 'rented',
+  RETURN_PENDING: 'return_pending',
+  INSPECTION: 'inspection',
+  CLEANING: 'cleaning',
+  MAINTENANCE: 'maintenance',
+  FOR_SALE: 'for_sale',
+  SOLD: 'sold',
+  RETIRED: 'retired',
+  LOST: 'lost',
+  DAMAGED: 'damaged',
+} as const;
+
+export type ItemLifecycleState =
+  (typeof ITEM_LIFECYCLE)[keyof typeof ITEM_LIFECYCLE];
+
+export const ITEM_LIFECYCLE_VALUES = Object.values(ITEM_LIFECYCLE);
+
+export const ITEM_LIFECYCLE_DEFAULT = ITEM_LIFECYCLE.AVAILABLE;
+
+/**
+ * Allowed transitions. Future modules MUST use LifecycleService —
+ * never invent parallel state machines.
+ */
+export const ITEM_LIFECYCLE_TRANSITIONS: Readonly<
+  Record<ItemLifecycleState, readonly ItemLifecycleState[]>
+> = {
+  [ITEM_LIFECYCLE.AVAILABLE]: [
+    ITEM_LIFECYCLE.RESERVED,
+    ITEM_LIFECYCLE.FOR_SALE,
+    ITEM_LIFECYCLE.MAINTENANCE,
+    ITEM_LIFECYCLE.RETIRED,
+    ITEM_LIFECYCLE.LOST,
+    ITEM_LIFECYCLE.DAMAGED,
+  ],
+  [ITEM_LIFECYCLE.RESERVED]: [
+    ITEM_LIFECYCLE.AVAILABLE,
+    ITEM_LIFECYCLE.RENTED,
+    ITEM_LIFECYCLE.LOST,
+    ITEM_LIFECYCLE.DAMAGED,
+  ],
+  [ITEM_LIFECYCLE.RENTED]: [
+    ITEM_LIFECYCLE.RETURN_PENDING,
+    ITEM_LIFECYCLE.LOST,
+    ITEM_LIFECYCLE.DAMAGED,
+  ],
+  [ITEM_LIFECYCLE.RETURN_PENDING]: [
+    ITEM_LIFECYCLE.INSPECTION,
+    ITEM_LIFECYCLE.LOST,
+    ITEM_LIFECYCLE.DAMAGED,
+  ],
+  [ITEM_LIFECYCLE.INSPECTION]: [
+    ITEM_LIFECYCLE.CLEANING,
+    ITEM_LIFECYCLE.MAINTENANCE,
+    ITEM_LIFECYCLE.AVAILABLE,
+    ITEM_LIFECYCLE.DAMAGED,
+    ITEM_LIFECYCLE.RETIRED,
+  ],
+  [ITEM_LIFECYCLE.CLEANING]: [
+    ITEM_LIFECYCLE.AVAILABLE,
+    ITEM_LIFECYCLE.MAINTENANCE,
+  ],
+  [ITEM_LIFECYCLE.MAINTENANCE]: [
+    ITEM_LIFECYCLE.AVAILABLE,
+    ITEM_LIFECYCLE.RETIRED,
+    ITEM_LIFECYCLE.DAMAGED,
+  ],
+  [ITEM_LIFECYCLE.FOR_SALE]: [
+    ITEM_LIFECYCLE.AVAILABLE,
+    ITEM_LIFECYCLE.SOLD,
+    ITEM_LIFECYCLE.RETIRED,
+    ITEM_LIFECYCLE.LOST,
+    ITEM_LIFECYCLE.DAMAGED,
+  ],
+  [ITEM_LIFECYCLE.SOLD]: [ITEM_LIFECYCLE.RETIRED],
+  [ITEM_LIFECYCLE.RETIRED]: [],
+  [ITEM_LIFECYCLE.LOST]: [ITEM_LIFECYCLE.AVAILABLE, ITEM_LIFECYCLE.RETIRED],
+  [ITEM_LIFECYCLE.DAMAGED]: [
+    ITEM_LIFECYCLE.MAINTENANCE,
+    ITEM_LIFECYCLE.RETIRED,
+  ],
+};
+
 export const ITEM_SORT_FIELDS = [
   'displayName',
   'internalCode',

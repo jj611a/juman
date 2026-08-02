@@ -421,6 +421,7 @@ model Item {
   salePrice     Int       @default(0)
   condition     String?
   status        String    @default("draft")
+  lifecycleState String   @default("available")
   description   String?
   deletedAt     DateTime?
   createdAt     DateTime  @default(now())
@@ -435,6 +436,7 @@ model Item {
   size     Size?     @relation(fields: [sizeId], references: [id])
   media    ItemMedia[]
   barcodes ItemBarcode[]
+  stateHistory ItemStateHistory[]
 
   @@index([displayName])
   @@index([internalCode])
@@ -443,11 +445,34 @@ model Item {
   @@index([colorId])
   @@index([sizeId])
   @@index([status])
+  @@index([lifecycleState])
   @@index([condition])
   @@index([deletedAt])
   @@index([createdAt])
   @@index([updatedAt])
   @@index([status, deletedAt])
+  @@index([lifecycleState, deletedAt])
+}
+
+/// Append-only operational lifecycle transitions (Phase 4.2).
+model ItemStateHistory {
+  id               String   @id @default(uuid())
+  itemId           String
+  oldState         String
+  newState         String
+  reason           String?
+  userId           String?
+  username         String?
+  referenceType    String?
+  referenceId      String?
+  createdAt        DateTime @default(now())
+
+  item Item @relation(fields: [itemId], references: [id])
+
+  @@index([itemId])
+  @@index([newState])
+  @@index([createdAt])
+  @@index([referenceType, referenceId])
 }
 
 model ItemMedia {
