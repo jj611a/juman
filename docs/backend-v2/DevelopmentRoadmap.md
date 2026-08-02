@@ -6,7 +6,7 @@
 | 1 | Foundation | Nest + Prisma + SQLite + `/health` |
 | 2 | Identity & Security | Auth + audit remediation |
 | 3 | Core Business | **3.1–3.5 DONE** (shared → customers → media → cert → barcode) |
-| 4 | Inventory Engine | Dresses / inventory |
+| 4 | Inventory Engine | **4.1 Catalog DONE** — availability/rentals later |
 | 5 | Rental Engine | Reservations → returns |
 | 6 | Financial Engine | Sales, settlements, payments |
 | 7 | Reports & Analytics | Operational + financial |
@@ -16,10 +16,10 @@
 
 ## Current milestone
 
-**Phase 3.5 Barcode Platform complete.**  
-Doc: `BarcodePlatform.md`. Prior: Phase 3.4 cert (85 PASS WITH WARNINGS).
+**Phase 4.1 Inventory Catalog Engine complete.**  
+Doc: `InventoryDesign.md`.
 
-**Next (requires approval):** Inventory Engine (Phase 4) — still no rentals/sales/label printing/scanners.
+**Next (requires approval):** inventory availability / rental workflows — still no reservations, calendar, laundry, inspection, or sales.
 
 ## Completion rule
 

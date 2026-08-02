@@ -197,6 +197,7 @@ model MediaFile {
   updatedBy        String?
 
   references MediaReference[]
+  itemMedia  ItemMedia[]
 
   @@index([sha256Hash])
   @@index([kind])
@@ -246,6 +247,7 @@ model Barcode {
   updatedAt   DateTime  @updatedAt
   createdBy   String?
   updatedBy   String?
+  itemBarcodes ItemBarcode[]
 
   @@index([prefix])
   @@index([status])
@@ -317,4 +319,175 @@ model Customer {
   @@index([createdAt])
   @@index([updatedAt])
   @@index([status, phoneNormalized, deletedAt])
+}
+
+/// Catalog taxonomy: tree-ready via optional parentId (Phase 4.1).
+model Category {
+  id          String    @id @default(uuid())
+  name        String
+  nameEn      String?
+  description String?
+  parentId    String?
+  sortOrder   Int       @default(0)
+  isActive    Boolean   @default(true)
+  deletedAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  createdBy   String?
+  updatedBy   String?
+  deletedBy   String?
+
+  parent   Category?  @relation("CategoryTree", fields: [parentId], references: [id])
+  children Category[] @relation("CategoryTree")
+  items    Item[]
+
+  @@index([name])
+  @@index([parentId])
+  @@index([isActive])
+  @@index([deletedAt])
+  @@index([sortOrder])
+}
+
+model Brand {
+  id          String    @id @default(uuid())
+  name        String
+  description String?
+  isActive    Boolean   @default(true)
+  deletedAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  createdBy   String?
+  updatedBy   String?
+  deletedBy   String?
+
+  items Item[]
+
+  @@index([name])
+  @@index([isActive])
+  @@index([deletedAt])
+}
+
+model Color {
+  id          String    @id @default(uuid())
+  name        String
+  hexCode     String?
+  isActive    Boolean   @default(true)
+  deletedAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  createdBy   String?
+  updatedBy   String?
+  deletedBy   String?
+
+  items Item[]
+
+  @@index([name])
+  @@index([hexCode])
+  @@index([isActive])
+  @@index([deletedAt])
+}
+
+model Size {
+  id          String    @id @default(uuid())
+  name        String
+  sortOrder   Int       @default(0)
+  isActive    Boolean   @default(true)
+  deletedAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  createdBy   String?
+  updatedBy   String?
+  deletedBy   String?
+
+  items Item[]
+
+  @@index([name])
+  @@index([sortOrder])
+  @@index([isActive])
+  @@index([deletedAt])
+}
+
+/// Generic catalog item (frontend may label as Dress; backend stays type-agnostic).
+model Item {
+  id            String    @id @default(uuid())
+  internalCode  String    @unique
+  displayName   String
+  categoryId    String?
+  brandId       String?
+  colorId       String?
+  sizeId        String?
+  purchasePrice Int       @default(0)
+  rentalPrice   Int       @default(0)
+  salePrice     Int       @default(0)
+  condition     String?
+  status        String    @default("draft")
+  description   String?
+  deletedAt     DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  createdBy     String?
+  updatedBy     String?
+  deletedBy     String?
+
+  category Category? @relation(fields: [categoryId], references: [id])
+  brand    Brand?    @relation(fields: [brandId], references: [id])
+  color    Color?    @relation(fields: [colorId], references: [id])
+  size     Size?     @relation(fields: [sizeId], references: [id])
+  media    ItemMedia[]
+  barcodes ItemBarcode[]
+
+  @@index([displayName])
+  @@index([internalCode])
+  @@index([categoryId])
+  @@index([brandId])
+  @@index([colorId])
+  @@index([sizeId])
+  @@index([status])
+  @@index([condition])
+  @@index([deletedAt])
+  @@index([createdAt])
+  @@index([updatedAt])
+  @@index([status, deletedAt])
+}
+
+model ItemMedia {
+  id           String    @id @default(uuid())
+  itemId       String
+  mediaFileId  String
+  purpose      String    @default("gallery")
+  displayOrder Int       @default(0)
+  isPrimary    Boolean   @default(false)
+  deletedAt    DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  createdBy    String?
+  updatedBy    String?
+
+  item      Item      @relation(fields: [itemId], references: [id])
+  mediaFile MediaFile @relation(fields: [mediaFileId], references: [id])
+
+  @@index([itemId])
+  @@index([mediaFileId])
+  @@index([purpose])
+  @@index([deletedAt])
+  @@unique([itemId, mediaFileId, purpose])
+}
+
+model ItemBarcode {
+  id         String    @id @default(uuid())
+  itemId     String
+  barcodeId  String    @unique
+  isPrimary  Boolean   @default(true)
+  deletedAt  DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  createdBy  String?
+  updatedBy  String?
+
+  item    Item    @relation(fields: [itemId], references: [id])
+  barcode Barcode @relation(fields: [barcodeId], references: [id])
+
+  @@index([itemId])
+  @@index([barcodeId])
+  @@index([deletedAt])
 }

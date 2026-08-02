@@ -1,6 +1,6 @@
 # Backend V2 Architecture
 
-**Status:** Phase 3.5 Barcode Platform  
+**Status:** Phase 4.1 Inventory Catalog Engine  
 **Branch:** `backend-v2`  
 **Spec source:** `backend-python/` (read-only Python FastAPI stack)
 
@@ -70,6 +70,7 @@ src/
   media/          MediaFile + HTTP /media
   barcode/        reusable platform + HTTP /barcodes
   customers/      Customer domain
+  inventory/      Catalog engine (Item + taxonomy)
 ```
 
 ## Auth / RBAC
@@ -84,7 +85,8 @@ src/
 ## What is not in V2 (yet)
 
 - Users/roles admin HTTP CRUD (beyond unlock)
-- Inventory / rentals / sales / reports workflows
+- Reservations / rentals / availability calendar / penalties
+- Laundry / inspection / sales workflows
 - Barcode hardware adapters / label printing
 - Electron process management / installer Nest packaging
 
@@ -113,3 +115,7 @@ Reusable `MediaModule` is the only blob store. Domain modules attach via `MediaR
 ## Barcode platform (Phase 3.5)
 
 Reusable `BarcodeModule` is the only barcode authority. Domains bind via `activate(entityType, entityId)`; HTTP is generic registry only (`/barcodes`). Status: reserved → activated → reserved (release) or retired. Values are globally unique for life. Hardware ports are design-only. Docs: `BarcodePlatform.md`.
+
+## Inventory catalog (Phase 4.1)
+
+Generic Item Catalog in `src/inventory` — not a dress-specific engine. Taxonomy: Category (tree-ready), Brand, Color, Size. Items bind barcodes/media via platforms + `ItemBarcode`/`ItemMedia`. Catalog statuses only (draft/active/inactive/archived/retired). Docs: `InventoryDesign.md`.

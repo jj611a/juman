@@ -18,6 +18,10 @@ export interface SettingSeed {
 }
 
 export const DEFAULT_APP_SETTINGS: readonly SettingSeed[] = [
+  { key: 'inventory.item.prefix', value: 'ITM', valueType: SETTING_VALUE_TYPE.STRING, category: 'catalog', description: 'Inventory item internal-code prefix', isEditable: true },
+  { key: 'inventory.item.separator', value: '-', valueType: SETTING_VALUE_TYPE.STRING, category: 'catalog', description: 'Inventory item internal-code separator', isEditable: true },
+  { key: 'inventory.item.padding', value: '8', valueType: SETTING_VALUE_TYPE.INTEGER, category: 'catalog', description: 'Inventory item internal-code zero-pad width', isEditable: true },
+
   {
     key: 'company.name',
     value: 'جمان',

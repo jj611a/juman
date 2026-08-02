@@ -12,6 +12,7 @@ import { validateEnvironment } from './config/env.validation';
 import { CustomersModule } from './customers/customers.module';
 import { PrismaModule } from './database/prisma.module';
 import { HealthModule } from './health/health.module';
+import { InventoryModule } from './inventory/inventory.module';
 import { LoggerModule } from './logging/logger.module';
 import { MediaModule } from './media/media.module';
 import { PermissionsModule } from './permissions/permissions.module';
@@ -38,6 +39,7 @@ import { UsersModule } from './users/users.module';
     UsersModule,
     AuthModule,
     CustomersModule,
+    InventoryModule,
     HealthModule,
   ],
   providers: [

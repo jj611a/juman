@@ -2,7 +2,7 @@
 
 **Product:** جمان (Juman) — Arabic RTL dress rental & sales desktop system  
 **Version:** Roadmap doc `1.0.0` · Backend `1.0.0` · Frontend workspace `@juman/frontend@1.0.0`  
-**Last updated:** 2026-07-30  
+**Last updated:** 2026-08-02
 **Overall progress:** **~98%** (v1.0.0 release prep docs + Setup artifact built; store ship blocked on operator RC VM/hardware matrix)  
 **Current phase:** Frontend — residual / deferred  
 **Current step:** Notifications (deferred; backend absent)  
@@ -294,6 +294,21 @@ Backend APIs largely ready; ship module-by-module on IPC + DS:
 ---
 
 ## Completed this phase (append-only log)
+
+### 2026-08-02 ? Backend v2 Phase 4.1 Inventory Catalog Engine
+
+**Completed work**
+
+- Added generic inventory catalog taxonomy (categories, brands, colors, sizes) and item CRUD, soft-delete/restore, search/filtering, integer-fils prices, internal-code allocation, barcode binding, and media references.
+- Wired RBAC/seed settings, Prisma catalog migration constraints, inventory module, and inventory Vitest configuration.
+- Verified `pnpm prisma generate`, `pnpm build`, and 9 focused unit/integration tests.
+
+**Position**
+
+- Backend v2 Phase 4.1 implementation and focused tests are present, but its configured coverage gate is not yet satisfied. Rentals, reservations, availability, laundry, inspections, and sales remain explicitly out of scope.
+
+---
+
 
 ### 2026-07-30 — Phase 10 Production Release Preparation
 

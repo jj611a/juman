@@ -116,3 +116,11 @@
 - **Context:** Inventory and other modules will need barcodes; embedding generation in inventory would fork symbology, uniqueness, and hardware concerns.
 - **Decision:** Extend Phase 3.1 `Barcode` into a dedicated platform: configurable types (Code-128 default, Code-39, EAN-13/8, UPC-A, QR-ready), lifetime-unique `code`, statuses reserved/activated/retired, service API (generate/reserve/activate/release/retire/validate/find/exists/normalize), generic HTTP `/barcodes`, RBAC `barcode.*`, audit events, hardware port interfaces only. No inventory workflows.
 - **Consequences:** Domains call `activate` to bind entities. Never recycle retired values. Coverage gate `pnpm test:cov:barcode` ≥95%. Label printers/scanners remain future adapters.
+
+## ADR-V2-016 - Inventory catalog engine (Phase 4.1)
+
+- **Date:** 2026-08-02
+- **Status:** Accepted
+- **Context:** Need inventory foundation without freezing a dress-only model or embedding rental availability.
+- **Decision:** Implement a reusable Item Catalog (Category/Brand/Color/Size/Item) with catalog-only statuses, soft delete/restore, `ItemMedia`/`ItemBarcode` joins that reference Media/Barcode platforms (no local generation or blobs). Frontend may keep “Dress” terminology; backend entity type remains `item`.
+- **Consequences:** Reservations/rentals/calendar remain blocked. Coverage gate `pnpm test:cov:inventory` ≥95%. Future item types extend taxonomy without redesigning Item.
