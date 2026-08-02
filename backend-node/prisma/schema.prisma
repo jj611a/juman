@@ -309,6 +309,7 @@ model Customer {
   deletedBy       String?
 
   rentals Rental[]
+  reservations Reservation[]
 
   @@index([fullName])
   @@index([phoneNormalized])
@@ -440,6 +441,7 @@ model Item {
   barcodes ItemBarcode[]
   stateHistory ItemStateHistory[]
   rentalItems RentalItem[]
+  reservationItems ReservationItem[]
 
   @@index([displayName])
   @@index([internalCode])
@@ -502,6 +504,7 @@ model Rental {
   id                  String    @id @default(uuid())
   rentalNumber        String    @unique
   customerId          String
+  reservationId       String?   @unique
   rentalDate          DateTime
   expectedReturnDate  DateTime
   actualReturnDate    DateTime?
@@ -515,10 +518,12 @@ model Rental {
   deletedBy           String?
 
   customer      Customer               @relation(fields: [customerId], references: [id])
+  reservation   Reservation?           @relation(fields: [reservationId], references: [id])
   items         RentalItem[]
   statusHistory RentalStatusHistory[]
 
   @@index([customerId])
+  @@index([reservationId])
   @@index([rentalNumber])
   @@index([status])
   @@index([rentalDate])
@@ -561,6 +566,77 @@ model RentalStatusHistory {
   rental Rental @relation(fields: [rentalId], references: [id])
 
   @@index([rentalId])
+  @@index([newStatus])
+  @@index([createdAt])
+}
+
+/// Reservation document (Phase 5.2) — independent from Rental; checkout materializes a Rental.
+model Reservation {
+  id                   String    @id @default(uuid())
+  reservationNumber    String    @unique
+  customerId           String
+  startDate            DateTime
+  expectedCheckoutDate DateTime
+  expectedReturnDate   DateTime
+  status               String    @default("draft")
+  notes                String?
+  deletedAt            DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+  createdBy            String?
+  updatedBy            String?
+  deletedBy            String?
+
+  customer      Customer                   @relation(fields: [customerId], references: [id])
+  items         ReservationItem[]
+  statusHistory ReservationStatusHistory[]
+  rental        Rental?
+
+  @@index([customerId])
+  @@index([reservationNumber])
+  @@index([status])
+  @@index([startDate])
+  @@index([expectedCheckoutDate])
+  @@index([expectedReturnDate])
+  @@index([deletedAt])
+  @@index([createdAt])
+  @@index([status, deletedAt])
+  @@index([startDate, expectedReturnDate])
+}
+
+model ReservationItem {
+  id                 String   @id @default(uuid())
+  reservationId      String
+  itemId             String
+  barcodeValue       String?
+  agreedRentalPrice  Int      @default(0)
+  notes              String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  createdBy          String?
+
+  reservation Reservation @relation(fields: [reservationId], references: [id])
+  item        Item        @relation(fields: [itemId], references: [id])
+
+  @@unique([reservationId, itemId])
+  @@index([reservationId])
+  @@index([itemId])
+  @@index([barcodeValue])
+}
+
+model ReservationStatusHistory {
+  id            String   @id @default(uuid())
+  reservationId String
+  oldStatus     String
+  newStatus     String
+  reason        String?
+  userId        String?
+  username      String?
+  createdAt     DateTime @default(now())
+
+  reservation Reservation @relation(fields: [reservationId], references: [id])
+
+  @@index([reservationId])
   @@index([newStatus])
   @@index([createdAt])
 }

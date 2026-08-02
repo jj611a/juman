@@ -303,6 +303,111 @@ export class RentalsService {
     return toRentalPublic(updated);
   }
 
+  /**
+   * Materialize an active rental from a confirmed reservation inside an outer TX.
+   * Inventory transitions go through LifecycleService only.
+   */
+  async materializeActiveFromReservation(
+    input: {
+      reservationId: string;
+      customerId: string;
+      rentalDate: Date;
+      expectedReturnDate: Date;
+      notes?: string | null;
+      items: Array<{
+        itemId: string;
+        barcodeValue?: string | null;
+        agreedRentalPrice: number;
+        notes?: string | null;
+      }>;
+      reason?: string | null;
+    },
+    tx: Prisma.TransactionClient,
+    actor?: AuthPrincipal,
+  ): Promise<RentalWithRelations> {
+    const rentalNumber = await this.allocateNumberInTx(tx);
+    const draft = await this.repo.createInTx(
+      tx,
+      {
+        rentalNumber,
+        customerId: input.customerId,
+        reservationId: input.reservationId,
+        rentalDate: input.rentalDate,
+        expectedReturnDate: input.expectedReturnDate,
+        status: RENTAL_STATUS.DRAFT,
+        notes: input.notes ?? null,
+        createdBy: actor?.userId ?? null,
+        updatedBy: actor?.userId ?? null,
+      },
+      input.items.map((i) => ({
+        itemId: i.itemId,
+        barcodeValue: i.barcodeValue ?? null,
+        agreedRentalPrice: i.agreedRentalPrice,
+        notes: i.notes ?? null,
+        createdBy: actor?.userId ?? null,
+      })),
+      { userId: actor?.userId, username: actor?.username },
+    );
+
+    const ref = {
+      referenceType: RENTAL_REFERENCE_TYPE,
+      referenceId: draft.id,
+    };
+    const reason = input.reason?.trim() || 'reservation_checkout';
+
+    for (const line of input.items) {
+      await this.lifecycle.transition(
+        line.itemId,
+        {
+          newState: ITEM_LIFECYCLE.RESERVED,
+          expectedState: ITEM_LIFECYCLE.AVAILABLE,
+          reason,
+          ...ref,
+        },
+        actor,
+        { tx, skipAudit: true },
+      );
+      await this.lifecycle.transition(
+        line.itemId,
+        {
+          newState: ITEM_LIFECYCLE.RENTED,
+          expectedState: ITEM_LIFECYCLE.RESERVED,
+          reason,
+          ...ref,
+        },
+        actor,
+        { tx, skipAudit: true },
+      );
+    }
+
+    const checkedOut = await this.repo.transitionStatus({
+      rentalId: draft.id,
+      from: RENTAL_STATUS.DRAFT,
+      to: RENTAL_STATUS.CHECKED_OUT,
+      reason: 'checkout',
+      userId: actor?.userId ?? null,
+      username: actor?.username ?? null,
+      tx,
+    });
+    if (!checkedOut) {
+      throw BusinessException.conflict('Concurrent rental checkout rejected');
+    }
+
+    const active = await this.repo.transitionStatus({
+      rentalId: draft.id,
+      from: RENTAL_STATUS.CHECKED_OUT,
+      to: RENTAL_STATUS.ACTIVE,
+      reason: 'handover_complete',
+      userId: actor?.userId ?? null,
+      username: actor?.username ?? null,
+      tx,
+    });
+    if (!active) {
+      throw BusinessException.conflict('Concurrent rental activation rejected');
+    }
+    return active;
+  }
+
   async cancel(id: string, reason?: string, actor?: AuthPrincipal) {
     const rental = await this.requireLive(id);
     if (!canCancel(rental.status)) {
@@ -516,6 +621,12 @@ export class RentalsService {
   }
 
   private async allocateNumber(): Promise<string> {
+    return this.allocateNumberInTx();
+  }
+
+  private async allocateNumberInTx(
+    tx?: Prisma.TransactionClient,
+  ): Promise<string> {
     const prefix = (
       await this.settings.getString(
         RENTAL_NUMBER_SETTING.PREFIX,
@@ -541,7 +652,7 @@ export class RentalsService {
       throw BusinessException.validation('Invalid rental number settings');
     }
     for (let i = 0; i < 25; i += 1) {
-      const seq = await this.repo.nextSequence(`rental:${prefix}`);
+      const seq = await this.repo.nextSequence(`rental:${prefix}`, tx);
       const number = `${prefix}${separator}${String(seq).padStart(padding, '0')}`;
       if (!(await this.repo.findAnyNumber(number))) return number;
     }

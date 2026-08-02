@@ -30,6 +30,14 @@ export type RentalWithRelations = Prisma.RentalGetPayload<{
   include: typeof rentalInclude;
 }>;
 
+type RentalLineInput = {
+  itemId: string;
+  barcodeValue?: string | null;
+  agreedRentalPrice: number;
+  notes?: string | null;
+  createdBy?: string | null;
+};
+
 @Injectable()
 export class RentalsRepository {
   constructor(private readonly prisma: PrismaService) {}
@@ -40,43 +48,46 @@ export class RentalsRepository {
 
   create(
     data: Prisma.RentalUncheckedCreateInput,
-    items: Array<{
-      itemId: string;
-      barcodeValue?: string | null;
-      agreedRentalPrice: number;
-      notes?: string | null;
-      createdBy?: string | null;
-    }>,
+    items: RentalLineInput[],
     actor?: { userId?: string | null; username?: string | null },
   ): Promise<RentalWithRelations> {
-    return this.prisma.$transaction(async (tx) => {
-      const rental = await tx.rental.create({
-        data: {
-          ...data,
-          items: {
-            create: items.map((i) => ({
-              itemId: i.itemId,
-              barcodeValue: i.barcodeValue ?? null,
-              agreedRentalPrice: i.agreedRentalPrice,
-              notes: i.notes ?? null,
-              createdBy: i.createdBy ?? null,
-            })),
-          },
-          statusHistory: {
-            create: {
-              oldStatus: RENTAL_STATUS.DRAFT,
-              newStatus: data.status ?? RENTAL_STATUS.DRAFT,
-              reason: 'created',
-              userId: actor?.userId ?? null,
-              username: actor?.username ?? null,
-            },
+    return this.prisma.$transaction(async (tx) =>
+      this.createInTx(tx, data, items, actor),
+    );
+  }
+
+  async createInTx(
+    tx: Prisma.TransactionClient,
+    data: Prisma.RentalUncheckedCreateInput,
+    items: RentalLineInput[],
+    actor?: { userId?: string | null; username?: string | null },
+  ): Promise<RentalWithRelations> {
+    const rental = await tx.rental.create({
+      data: {
+        ...data,
+        items: {
+          create: items.map((i) => ({
+            itemId: i.itemId,
+            barcodeValue: i.barcodeValue ?? null,
+            agreedRentalPrice: i.agreedRentalPrice,
+            notes: i.notes ?? null,
+            createdBy: i.createdBy ?? null,
+          })),
+        },
+        statusHistory: {
+          create: {
+            oldStatus: RENTAL_STATUS.DRAFT,
+            newStatus: data.status ?? RENTAL_STATUS.DRAFT,
+            reason: 'created',
+            userId: actor?.userId ?? null,
+            username: actor?.username ?? null,
           },
         },
-      });
-      return tx.rental.findUniqueOrThrow({
-        where: { id: rental.id },
-        include: rentalInclude,
-      });
+      },
+    });
+    return tx.rental.findUniqueOrThrow({
+      where: { id: rental.id },
+      include: rentalInclude,
     });
   }
 
@@ -117,20 +128,25 @@ export class RentalsRepository {
     return { rows, total };
   }
 
-  async nextSequence(prefix: string): Promise<number> {
-    return this.prisma.$transaction(async (tx) => {
-      const e = await tx.sequenceCounter.findUnique({ where: { prefix } });
+  async nextSequence(
+    prefix: string,
+    tx?: Prisma.TransactionClient,
+  ): Promise<number> {
+    const run = async (client: Prisma.TransactionClient) => {
+      const e = await client.sequenceCounter.findUnique({ where: { prefix } });
       if (!e) {
-        await tx.sequenceCounter.create({ data: { prefix, lastValue: 1 } });
+        await client.sequenceCounter.create({ data: { prefix, lastValue: 1 } });
         return 1;
       }
       return (
-        await tx.sequenceCounter.update({
+        await client.sequenceCounter.update({
           where: { prefix },
           data: { lastValue: e.lastValue + 1 },
         })
       ).lastValue;
-    });
+    };
+    if (tx) return run(tx);
+    return this.prisma.$transaction(run);
   }
 
   async transitionStatus(input: {

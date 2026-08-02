@@ -18,7 +18,8 @@
     "test:cov:media": "vitest run --coverage --config vitest.media.config.ts",
     "test:cov:barcode": "vitest run --coverage --config vitest.barcode.config.ts",
     "test:cov:inventory": "vitest run --coverage --config vitest.inventory.config.ts",
-    "test:cov:rentals": "vitest run --coverage --config vitest.rentals.config.ts"
+    "test:cov:rentals": "vitest run --coverage --config vitest.rentals.config.ts",
+    "test:cov:reservations": "vitest run --coverage --config vitest.reservations.config.ts"
   },
   "dependencies": {
     "@nestjs/common": "11.1.28",

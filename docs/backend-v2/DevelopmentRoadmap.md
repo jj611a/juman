@@ -7,7 +7,7 @@
 | 2 | Identity & Security | Auth + audit remediation |
 | 3 | Core Business | **3.1–3.5 DONE** |
 | 4 | Inventory Engine | **4.1–4.4 DONE** |
-| 5 | Rental Engine | **5.1 DONE** (workflow core) — reservations/fees later |
+| 5 | Rental Engine | **5.1–5.2 DONE** (workflow + reservations) — fees/settlement later |
 | 6 | Financial Engine | Sales, settlements, payments |
 | 7 | Reports & Analytics | Operational + financial |
 | 8 | Desktop Integration | Electron + Nest sidecar |
@@ -16,10 +16,10 @@
 
 ## Current milestone
 
-**Phase 5.1 Rental Workflow Core complete.**  
-Doc: `RentalDesign.md`.
+**Phase 5.2 Reservation Engine complete.**  
+Docs: `ReservationDesign.md`, `RentalDesign.md`.
 
-**STOP:** Do **not** implement reservations, late fees, penalties, financial settlement, or reports until approved.
+**STOP:** Do **not** implement payments, late fees, penalties, financial settlement, or reports until approved.
 
 ## Completion rule
 

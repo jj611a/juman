@@ -172,4 +172,28 @@ export const DEFAULT_APP_SETTINGS: readonly SettingSeed[] = [
     description: 'Rental number zero-pad width',
     isEditable: true,
   },
+  {
+    key: 'reservations.number.prefix',
+    value: 'RSV',
+    valueType: SETTING_VALUE_TYPE.STRING,
+    category: 'reservations',
+    description: 'Reservation number prefix',
+    isEditable: true,
+  },
+  {
+    key: 'reservations.number.separator',
+    value: '-',
+    valueType: SETTING_VALUE_TYPE.STRING,
+    category: 'reservations',
+    description: 'Reservation number separator',
+    isEditable: true,
+  },
+  {
+    key: 'reservations.number.padding',
+    value: '8',
+    valueType: SETTING_VALUE_TYPE.INTEGER,
+    category: 'reservations',
+    description: 'Reservation number zero-pad width',
+    isEditable: true,
+  },
 ];

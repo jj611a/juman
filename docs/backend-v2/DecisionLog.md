@@ -156,3 +156,11 @@
 - **Context:** Inventory integrity gate cleared; need a rental workflow foundation without payments/settlements.
 - **Decision:** Introduce `Rental` / `RentalItem` / `RentalStatusHistory` with closed status graph. Checkout/return/cancel mutate inventory **only** through `LifecycleService.transition` inside shared Prisma transactions. No reservations, fees, or settlements in this phase.
 - **Consequences:** Walk-in path uses inventory `available→reserved→rented`. Return stops at `return_pending`. Coverage gate `pnpm test:cov:rentals` ≥95%. Docs: `RentalDesign.md`.
+
+## ADR-V2-021 - Reservation engine (Phase 5.2)
+
+- **Date:** 2026-08-02
+- **Status:** Accepted
+- **Context:** Need date-window holds before physical handover without folding reservations into rentals.
+- **Decision:** Independent `Reservation` documents with closed status graph; `AvailabilityService` detects reservation/rental overlaps; checkout materializes a `Rental` and inventory transitions only through `LifecycleService` in one TX. Expire is service/HTTP foundation without a scheduler.
+- **Consequences:** Calendar module can reuse AvailabilityService. No payments/fees/settlement in this phase. Coverage gate `pnpm test:cov:reservations` ≥95%. Docs: `ReservationDesign.md`.

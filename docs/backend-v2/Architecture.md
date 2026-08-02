@@ -72,6 +72,7 @@ src/
   customers/      Customer domain
   inventory/      Catalog engine (Item + taxonomy + lifecycle)
   rentals/        Rental workflow core (Phase 5.1)
+  reservations/   Reservation engine + AvailabilityService (Phase 5.2)
 ```
 
 ## Auth / RBAC
@@ -86,7 +87,7 @@ src/
 ## What is not in V2 (yet)
 
 - Users/roles admin HTTP CRUD (beyond unlock)
-- Reservations / availability calendar / late fees / penalties / settlements
+- Availability calendar UI / late fees / penalties / settlements
 - Laundry / inspection / sales workflows
 - Barcode hardware adapters / label printing
 - Electron process management / installer Nest packaging
@@ -131,4 +132,8 @@ Non-feature gate then remediation: `PHASE_4_ENGINEERING_CERTIFICATION.md` → `P
 
 ## Rental workflow core (Phase 5.1)
 
-`RentalsModule` owns rental documents (`Rental` / `RentalItem` / `RentalStatusHistory`). Inventory lifecycle mutations go **only** through `LifecycleService` inside shared transactions. No reservations, payments, or settlements. Docs: `RentalDesign.md`.
+`RentalsModule` owns rental documents (`Rental` / `RentalItem` / `RentalStatusHistory`). Inventory lifecycle mutations go **only** through `LifecycleService` inside shared transactions. No payments or settlements. Docs: `RentalDesign.md`.
+
+## Reservation engine (Phase 5.2)
+
+`ReservationsModule` + reusable `AvailabilityService`. Reservations are independent until checkout materializes a `Rental`. Docs: `ReservationDesign.md`.
