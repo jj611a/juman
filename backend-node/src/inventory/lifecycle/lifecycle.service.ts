@@ -97,12 +97,9 @@ export class LifecycleService {
     actor?: AuthPrincipal,
   ) {
     const item = await this.requireLive(itemId);
-    if (
-      item.status === ITEM_STATUS.ARCHIVED ||
-      item.status === ITEM_STATUS.RETIRED
-    ) {
+    if (item.status !== ITEM_STATUS.ACTIVE) {
       throw BusinessException.conflict(
-        'Cannot transition lifecycle for archived or catalog-retired items',
+        'Only active catalog items can enter operational lifecycle transitions',
       );
     }
 

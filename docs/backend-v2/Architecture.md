@@ -118,7 +118,7 @@ Reusable `BarcodeModule` is the only barcode authority. Domains bind via `activa
 
 ## Inventory catalog (Phase 4.1)
 
-Generic Item Catalog in `src/inventory` — not a dress-specific engine. Taxonomy: Category (tree-ready), Brand, Color, Size. Items bind barcodes/media via platforms + `ItemBarcode`/`ItemMedia`. Catalog statuses only (draft/active/inactive/archived/retired). Docs: `InventoryDesign.md`.
+Generic Item Catalog in `src/inventory` — not a dress-specific engine. Taxonomy: Category (tree-ready), Brand, Color, Size. Items bind barcodes via `ItemBarcode` and media via platform **MediaReference only** (no `ItemMedia`). Catalog statuses only (draft/active/inactive/archived/retired). Soft-delete/restore and create binding are transactional; operational lifecycle delete is guarded. Docs: `InventoryDesign.md`, `PHASE_4_REMEDIATION_REPORT.md`.
 
 ## Inventory lifecycle (Phase 4.2)
 

@@ -90,4 +90,21 @@ export class MediaRepository {
       data: softDeleteData(),
     });
   }
+
+  async restoreReferencesForEntity(
+    moduleName: string,
+    entityType: string,
+    entityId: string,
+  ): Promise<number> {
+    const result = await this.prisma.mediaReference.updateMany({
+      where: {
+        moduleName,
+        entityType,
+        entityId,
+        deletedAt: { not: null },
+      },
+      data: restoreSoftDeleteData(),
+    });
+    return result.count;
+  }
 }

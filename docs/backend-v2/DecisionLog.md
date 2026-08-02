@@ -140,3 +140,11 @@
 - **Context:** Catalog + lifecycle shipped; entering rentals without a gate would freeze integrity defects.
 - **Decision:** Run logical/functional/API/DB/perf/security/architecture/TS/coverage review; publish `PHASE_4_ENGINEERING_CERTIFICATION.md` with score **78 PASS WITH WARNINGS**. No rentals/reservations/calendar/sales in this commit. Harness: `scripts/cert-phase43.cjs` → `cert_p43_harness.json`.
 - **Consequences:** Rental Engine blocked until Must-Fix items (soft-delete mid-lifecycle, barcode release, transactional bind, restore status, draft transitions, media dual-write) are remediated and re-probed.
+
+## ADR-V2-019 - Inventory integrity remediation (Phase 4.4)
+
+- **Date:** 2026-08-02
+- **Status:** Accepted
+- **Context:** Phase 4.3 certification blocked rentals on six Must-Fix integrity defects.
+- **Decision:** (1) Reject soft-delete in mid-ops lifecycle states; (2) release barcodes + soft-delete `ItemBarcode`/`MediaReference` on delete and reverse on restore; (3) atomic create (`createAtomic`) for item+barcode+media+history; (4) restore prior catalog status via `statusBeforeDelete`; (5) LifecycleService transitions require catalog `active` only; (6) **MediaReference-only** attachments — drop `ItemMedia`.
+- **Consequences:** Integrity score raised to **88**. Rental Engine still requires explicit approval before implementation. Report: `PHASE_4_REMEDIATION_REPORT.md`.

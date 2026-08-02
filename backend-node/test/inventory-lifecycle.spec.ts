@@ -59,7 +59,7 @@ describe('lifecycle.rules', () => {
         status: ITEM_STATUS.DRAFT,
         lifecycleState: ITEM_LIFECYCLE.AVAILABLE,
       }),
-    ).toBe(true);
+    ).toBe(false);
     expect(
       isOperational({
         deletedAt: null,
@@ -199,6 +199,14 @@ describe('LifecycleService', () => {
     repo.findLiveItem.mockResolvedValue({
       ...item,
       status: ITEM_STATUS.ARCHIVED,
+    });
+    await expect(
+      service.transition('i1', { newState: ITEM_LIFECYCLE.RESERVED }),
+    ).rejects.toBeInstanceOf(BusinessException);
+
+    repo.findLiveItem.mockResolvedValue({
+      ...item,
+      status: ITEM_STATUS.DRAFT,
     });
     await expect(
       service.transition('i1', { newState: ITEM_LIFECYCLE.RESERVED }),

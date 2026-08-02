@@ -23,7 +23,7 @@ export function toItemPublic(row: ItemWithRelations) {
       value: x.barcode.code,
       isPrimary: x.isPrimary,
     })),
-    media: row.media.map((x) => ({
+    media: (row.media ?? []).map((x) => ({
       id: x.id,
       mediaFileId: x.mediaFileId,
       purpose: x.purpose,

@@ -59,6 +59,16 @@ export const ITEM_LIFECYCLE_VALUES = Object.values(ITEM_LIFECYCLE);
 
 export const ITEM_LIFECYCLE_DEFAULT = ITEM_LIFECYCLE.AVAILABLE;
 
+/** Soft-delete rejected while item is mid operational flow. */
+export const ITEM_LIFECYCLE_SOFT_DELETE_BLOCKED: readonly ItemLifecycleState[] = [
+  ITEM_LIFECYCLE.RESERVED,
+  ITEM_LIFECYCLE.RENTED,
+  ITEM_LIFECYCLE.RETURN_PENDING,
+  ITEM_LIFECYCLE.INSPECTION,
+  ITEM_LIFECYCLE.CLEANING,
+  ITEM_LIFECYCLE.MAINTENANCE,
+];
+
 /**
  * Allowed transitions. Future modules MUST use LifecycleService —
  * never invent parallel state machines.

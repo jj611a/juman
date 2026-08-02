@@ -197,7 +197,6 @@ model MediaFile {
   updatedBy        String?
 
   references MediaReference[]
-  itemMedia  ItemMedia[]
 
   @@index([sha256Hash])
   @@index([kind])
@@ -422,6 +421,8 @@ model Item {
   condition     String?
   status        String    @default("draft")
   lifecycleState String   @default("available")
+  /** Catalog status captured at soft-delete; restored on undelete. */
+  statusBeforeDelete String?
   description   String?
   deletedAt     DateTime?
   createdAt     DateTime  @default(now())
@@ -434,7 +435,6 @@ model Item {
   brand    Brand?    @relation(fields: [brandId], references: [id])
   color    Color?    @relation(fields: [colorId], references: [id])
   size     Size?     @relation(fields: [sizeId], references: [id])
-  media    ItemMedia[]
   barcodes ItemBarcode[]
   stateHistory ItemStateHistory[]
 
@@ -473,29 +473,6 @@ model ItemStateHistory {
   @@index([newState])
   @@index([createdAt])
   @@index([referenceType, referenceId])
-}
-
-model ItemMedia {
-  id           String    @id @default(uuid())
-  itemId       String
-  mediaFileId  String
-  purpose      String    @default("gallery")
-  displayOrder Int       @default(0)
-  isPrimary    Boolean   @default(false)
-  deletedAt    DateTime?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
-  createdBy    String?
-  updatedBy    String?
-
-  item      Item      @relation(fields: [itemId], references: [id])
-  mediaFile MediaFile @relation(fields: [mediaFileId], references: [id])
-
-  @@index([itemId])
-  @@index([mediaFileId])
-  @@index([purpose])
-  @@index([deletedAt])
-  @@unique([itemId, mediaFileId, purpose])
 }
 
 model ItemBarcode {

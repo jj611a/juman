@@ -36,7 +36,7 @@ export function isOperational(input: {
   lifecycleState: string;
 }): boolean {
   if (input.deletedAt) return false;
-  if (input.status !== ITEM_STATUS.ACTIVE && input.status !== ITEM_STATUS.DRAFT) {
+  if (input.status !== ITEM_STATUS.ACTIVE) {
     return false;
   }
   return (

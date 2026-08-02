@@ -40,6 +40,10 @@ retire              → retired (terminal; historically valid)
 
 `activate` is **service-only** (no HTTP) so domains own assignment.
 
+### Inventory binding (Phase 4.4)
+
+When inventory soft-deletes an item, it **releases** activated barcodes back to `reserved` and soft-deletes `ItemBarcode`. Restore re-activates the same barcode onto the item. Lifetime uniqueness is never broken; values are not recycled.
+
 ## Service API
 
 `normalize` · `validate` · `exists` · `generate` · `reserve` · `activate` · `release` · `retire` · `find` / `findByValue` / `findMany`

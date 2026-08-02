@@ -1,5 +1,6 @@
 import { Type } from 'class-transformer';
 import {
+  IsArray,
   IsBoolean,
   IsIn,
   IsInt,
@@ -7,8 +8,27 @@ import {
   IsString,
   MaxLength,
   Min,
+  ValidateNested,
 } from 'class-validator';
 import { ITEM_CONDITION, ITEM_STATUS } from '../../inventory.constants';
+
+export class AttachItemMediaDto {
+  @IsString()
+  mediaFileId!: string;
+
+  @IsOptional()
+  @IsString()
+  purpose?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  isPrimary?: boolean;
+
+  @IsOptional()
+  @IsInt()
+  displayOrder?: number;
+}
+
 export class CreateItemDto {
   @IsString()
   @MaxLength(200)
@@ -67,23 +87,12 @@ export class CreateItemDto {
   @IsOptional()
   @IsBoolean()
   generateBarcode?: boolean;
-}
-
-export class AttachItemMediaDto {
-  @IsString()
-  mediaFileId!: string;
 
   @IsOptional()
-  @IsString()
-  purpose?: string;
-
-  @IsOptional()
-  @IsBoolean()
-  isPrimary?: boolean;
-
-  @IsOptional()
-  @IsInt()
-  displayOrder?: number;
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => AttachItemMediaDto)
+  media?: AttachItemMediaDto[];
 }
 
 export class ListItemsDto {

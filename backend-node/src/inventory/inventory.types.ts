@@ -4,12 +4,12 @@ import type {
   Color,
   Item,
   ItemBarcode,
-  ItemMedia,
   MediaFile,
   Prisma,
   Size,
 } from '@prisma/client';
 import type { PaginationInput } from '../shared/pagination/pagination';
+import type { ItemMediaAttachment } from './items/items.repository';
 
 export type TaxonomyKind = 'category' | 'brand' | 'color' | 'size';
 
@@ -71,6 +71,13 @@ export interface ItemPayload {
   description?: string;
   barcode?: string;
   generateBarcode?: boolean;
+  /** Optional media bindings created atomically with the item (MediaReference only). */
+  media?: Array<{
+    mediaFileId: string;
+    purpose?: string;
+    isPrimary?: boolean;
+    displayOrder?: number;
+  }>;
 }
 
 export interface AttachItemMediaPayload {
@@ -86,5 +93,7 @@ export type ItemWithRelations = Item & {
   color: Color | null;
   size: Size | null;
   barcodes: (ItemBarcode & { barcode: { code: string } })[];
-  media: (ItemMedia & { mediaFile: Pick<MediaFile, 'id' | 'originalFilename' | 'mimeType' | 'relativePath'> })[];
+  media?: ItemMediaAttachment[];
 };
+
+export type { ItemMediaAttachment, MediaFile };

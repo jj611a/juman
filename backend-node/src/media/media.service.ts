@@ -305,6 +305,28 @@ export class MediaService implements OnModuleInit {
     return this.repo.softDeleteReference(id);
   }
 
+  async softDeleteAttachmentsForEntity(
+    moduleName: string,
+    entityType: string,
+    entityId: string,
+  ): Promise<number> {
+    const refs = await this.listAttachments(moduleName, entityType, entityId);
+    await Promise.all(refs.map((r) => this.repo.softDeleteReference(r.id)));
+    return refs.length;
+  }
+
+  async restoreAttachmentsForEntity(
+    moduleName: string,
+    entityType: string,
+    entityId: string,
+  ): Promise<number> {
+    return this.repo.restoreReferencesForEntity(
+      moduleName.toLowerCase(),
+      entityType.toLowerCase(),
+      entityId,
+    );
+  }
+
   /** @deprecated Prefer storage.buildRelativePath with category. Kept for tests/compat. */
   buildRelativePath(extension: string, now = new Date()): string {
     const ext = extension.replace(/^\./, '').toLowerCase() || 'bin';

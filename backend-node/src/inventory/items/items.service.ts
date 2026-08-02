@@ -23,9 +23,11 @@ import {
   ITEM_DEFAULT_SEPARATOR,
   ITEM_ENTITY,
   ITEM_LIFECYCLE_DEFAULT,
+  ITEM_LIFECYCLE_SOFT_DELETE_BLOCKED,
   ITEM_SORT_FIELDS,
   ITEM_STATUS,
   INVENTORY_MODULE,
+  type ItemLifecycleState,
 } from '../inventory.constants';
 import type {
   AttachItemMediaPayload,
@@ -36,8 +38,8 @@ import type {
 } from '../inventory.types';
 import { toItemPublic } from './items.mapper';
 import { ItemsRepository } from './items.repository';
-import { LifecycleService } from '../lifecycle/lifecycle.service';
 import { isEditable } from '../lifecycle/lifecycle.rules';
+
 @Injectable()
 export class ItemsService {
   constructor(
@@ -46,25 +48,40 @@ export class ItemsService {
     private readonly audit: AuditService,
     private readonly barcode: BarcodeService,
     private readonly media: MediaService,
-    private readonly lifecycle: LifecycleService,
   ) {}
+
   async create(dto: ItemPayload, actor?: AuthPrincipal) {
-    const item = await this.repo.create(
-      (await this.data(dto, actor, true)) as Prisma.ItemUncheckedCreateInput,
-    );
+    const itemData = (await this.data(
+      dto,
+      actor,
+      true,
+    )) as Prisma.ItemUncheckedCreateInput;
+
+    let barcodeId: string | null = null;
+    if (dto.barcode?.trim() || dto.generateBarcode) {
+      const b = dto.barcode?.trim()
+        ? await this.barcode.reserve(
+            { value: dto.barcode, createdBy: actor?.userId },
+            actor,
+          )
+        : await this.barcode.generate({ createdBy: actor?.userId }, actor);
+      barcodeId = b.id;
+    }
+
+    const mediaPlan = await this.planMedia(dto, actor);
+
     try {
-      if (dto.barcode?.trim() || dto.generateBarcode) {
-        const b = dto.barcode?.trim()
-          ? await this.barcode.reserve(
-              { value: dto.barcode, createdBy: actor?.userId },
-              actor,
-            )
-          : await this.barcode.generate({ createdBy: actor?.userId }, actor);
-        await this.barcode.activate(b.id, ITEM_ENTITY, item.id, actor);
-        await this.repo.createBarcode(item.id, b.id, true, actor?.userId);
+      const created = await this.repo.createAtomic({
+        item: itemData,
+        barcodeId,
+        media: mediaPlan,
+        actorId: actor?.userId ?? null,
+        username: actor?.username ?? null,
+      });
+      if (!created) {
+        throw BusinessException.invariant('Item create did not persist');
       }
-      await this.lifecycle.recordCreated(item.id, actor);
-      const row = await this.getById(item.id);
+      const row = await this.withMedia(created);
       await this.audit.recordCreate(
         INVENTORY_MODULE,
         ITEM_ENTITY,
@@ -74,10 +91,11 @@ export class ItemsService {
       );
       return toItemPublic(row);
     } catch (e) {
-      await this.repo.softDelete(item.id, actor?.userId);
+      // Binding TX rolled back; reserved barcode (if any) remains unbound — not activated.
       throw e;
     }
   }
+
   async update(id: string, dto: ItemPayload, actor?: AuthPrincipal) {
     const old = await this.live(id);
     if (
@@ -95,19 +113,31 @@ export class ItemsService {
       id,
       (await this.data(dto, actor, false)) as Prisma.ItemUncheckedUpdateInput,
     );
+    const enriched = await this.withMedia(row);
     await this.audit.recordUpdate(
       INVENTORY_MODULE,
       ITEM_ENTITY,
       id,
       this.snapshot(old),
-      this.snapshot(row),
+      this.snapshot(enriched),
       { userId: actor?.userId, username: actor?.username },
     );
-    return toItemPublic(row);
+    return toItemPublic(enriched);
   }
+
   async softDelete(id: string, actor?: AuthPrincipal) {
     const old = await this.live(id);
-    const row = await this.repo.softDelete(id, actor?.userId);
+    const state = old.lifecycleState as ItemLifecycleState;
+    if (
+      (ITEM_LIFECYCLE_SOFT_DELETE_BLOCKED as readonly string[]).includes(state)
+    ) {
+      throw BusinessException.conflict(
+        `Cannot soft-delete item while lifecycle is ${state}`,
+      );
+    }
+    const row = await this.repo.softDeleteCascade(id, actor?.userId);
+    if (!row) throw BusinessException.notFound('Item not found');
+    const enriched = await this.withMedia(row);
     await this.audit.recordSoftDelete(
       INVENTORY_MODULE,
       ITEM_ENTITY,
@@ -115,35 +145,42 @@ export class ItemsService {
       this.snapshot(old),
       { userId: actor?.userId, username: actor?.username },
     );
-    return toItemPublic(row);
+    return toItemPublic(enriched);
   }
+
   async restore(id: string, actor?: AuthPrincipal) {
     const old = await this.repo.findById(id, true);
     if (!old) throw BusinessException.notFound('Item not found');
     if (!old.deletedAt) throw BusinessException.conflict('Item is not deleted');
-    const row = await this.repo.restore(id, actor?.userId);
+    const row = await this.repo.restoreCascade(id, actor?.userId);
+    if (!row) throw BusinessException.notFound('Item not found');
+    const enriched = await this.withMedia(row);
     await this.audit.record({
       module: INVENTORY_MODULE,
       entityType: ITEM_ENTITY,
       entityId: id,
       action: AUDIT_ACTION.RESTORE,
       oldValues: this.snapshot(old),
-      newValues: this.snapshot(row),
+      newValues: this.snapshot(enriched),
       actor: { userId: actor?.userId, username: actor?.username },
     });
-    return toItemPublic(row);
+    return toItemPublic(enriched);
   }
+
   async getById(id: string) {
-    return this.live(id);
+    return this.withMedia(await this.live(id));
   }
+
   async getPublicById(id: string) {
-    return toItemPublic(await this.live(id));
+    return toItemPublic(await this.getById(id));
   }
+
   async getByInternalCode(code: string) {
     const r = await this.repo.findByCode(code.trim().toUpperCase());
     if (!r) throw BusinessException.notFound('Item not found');
-    return toItemPublic(r);
+    return toItemPublic(await this.withMedia(r));
   }
+
   async list(query: ListItemsQuery) {
     const page = normalizePagination(query);
     const sort = normalizeSort(
@@ -158,14 +195,27 @@ export class ItemsService {
       offset: page.offset,
       limit: page.limit,
     });
-    return paginated(rows.map(toItemPublic), total, page);
+    const mediaMap = await this.repo.listMediaForItems(rows.map((r) => r.id));
+    return paginated(
+      rows.map((r) =>
+        toItemPublic({ ...r, media: mediaMap.get(r.id) ?? [] }),
+      ),
+      total,
+      page,
+    );
   }
+
   async search(q: ListItemsQuery) {
     if (!normalizeSearchQuery(q.q))
       throw BusinessException.validation('Search query q is required');
     return this.list(q);
   }
-  async attachMedia(id: string, dto: AttachItemMediaPayload, actor?: AuthPrincipal) {
+
+  async attachMedia(
+    id: string,
+    dto: AttachItemMediaPayload,
+    actor?: AuthPrincipal,
+  ) {
     await this.live(id);
     await this.media.find(dto.mediaFileId);
     await this.media.attach({
@@ -178,15 +228,38 @@ export class ItemsService {
       isPrimary: dto.isPrimary ?? false,
       createdBy: actor?.userId,
     });
-    return this.repo.createMedia({
-      itemId: id,
-      mediaFileId: dto.mediaFileId,
-      purpose: dto.purpose ?? 'gallery',
-      displayOrder: dto.displayOrder ?? 0,
-      isPrimary: dto.isPrimary ?? false,
-      createdBy: actor?.userId ?? null,
-    });
+    return this.getPublicById(id);
   }
+
+  private async planMedia(dto: ItemPayload, actor?: AuthPrincipal) {
+    const list = dto.media ?? [];
+    const planned: Array<{
+      mediaFileId: string;
+      purpose: string;
+      displayOrder: number;
+      isPrimary: boolean;
+      createdBy?: string | null;
+    }> = [];
+    for (const m of list) {
+      await this.media.find(m.mediaFileId);
+      planned.push({
+        mediaFileId: m.mediaFileId,
+        purpose: (m.purpose ?? 'gallery').toLowerCase(),
+        displayOrder: m.displayOrder ?? 0,
+        isPrimary: m.isPrimary ?? false,
+        createdBy: actor?.userId ?? null,
+      });
+    }
+    return planned;
+  }
+
+  private async withMedia(
+    row: NonNullable<Awaited<ReturnType<ItemsRepository['findById']>>>,
+  ): Promise<ItemWithRelations> {
+    const media = await this.repo.listMediaForItem(row.id);
+    return { ...row, media };
+  }
+
   private where(q: ListItemsQuery): Prisma.ItemWhereInput {
     const w: Prisma.ItemWhereInput = {
       deletedAt:
@@ -224,14 +297,16 @@ export class ItemsService {
       };
     return w;
   }
+
   private async data(
     d: ItemPayload,
     a: AuthPrincipal | undefined,
     create: boolean,
   ): Promise<Prisma.ItemUncheckedCreateInput | Prisma.ItemUncheckedUpdateInput> {
-    const x: Prisma.ItemUncheckedCreateInput | Prisma.ItemUncheckedUpdateInput = {
-      updatedBy: a?.userId ?? null,
-    };
+    const x: Prisma.ItemUncheckedCreateInput | Prisma.ItemUncheckedUpdateInput =
+      {
+        updatedBy: a?.userId ?? null,
+      };
     if (create) {
       x.internalCode = await this.code();
       x.displayName = this.name(d.displayName);
@@ -246,12 +321,14 @@ export class ItemsService {
       x.createdBy = a?.userId ?? null;
     } else {
       if (d.displayName !== undefined) x.displayName = this.name(d.displayName);
-      if (d.description !== undefined) x.description = d.description.trim() || null;
+      if (d.description !== undefined)
+        x.description = d.description.trim() || null;
       if (d.purchasePrice !== undefined)
         x.purchasePrice = this.money(d.purchasePrice, 'purchasePrice');
       if (d.rentalPrice !== undefined)
         x.rentalPrice = this.money(d.rentalPrice, 'rentalPrice');
-      if (d.salePrice !== undefined) x.salePrice = this.money(d.salePrice, 'salePrice');
+      if (d.salePrice !== undefined)
+        x.salePrice = this.money(d.salePrice, 'salePrice');
       if (d.status !== undefined) x.status = this.status(d.status);
       if (d.condition !== undefined) x.condition = this.condition(d.condition);
     }
@@ -261,7 +338,10 @@ export class ItemsService {
       colorId: 'color',
       sizeId: 'size',
     } as const;
-    for (const [field, kind] of Object.entries(taxonomies) as [keyof typeof taxonomies, TaxonomyKind][]) {
+    for (const [field, kind] of Object.entries(taxonomies) as [
+      keyof typeof taxonomies,
+      TaxonomyKind,
+    ][]) {
       const value = d[field];
       if (value !== undefined) {
         Object.assign(x, { [field]: value || null });
@@ -273,20 +353,24 @@ export class ItemsService {
     }
     return x;
   }
+
   private name(v: unknown) {
     const s = String(v ?? '').trim();
     if (!s) throw BusinessException.validation('displayName is required');
     return s;
   }
+
   private money(v: unknown, f: string) {
     return assertNonNegativeFils(assertFils(v, f), f);
   }
+
   private status(v: string) {
     const x = v.toLowerCase();
     if (!Object.values(ITEM_STATUS).includes(x as never))
       throw BusinessException.validation('Invalid item status');
     return x;
   }
+
   private condition(v: unknown) {
     if (v == null || v === '') return null;
     const x = String(v).toLowerCase();
@@ -294,6 +378,7 @@ export class ItemsService {
       throw BusinessException.validation('Invalid item condition');
     return x;
   }
+
   private async code() {
     const prefix = (
       await this.settings.getString(
@@ -333,11 +418,13 @@ export class ItemsService {
 
     throw BusinessException.invariant('Unable to allocate item code');
   }
+
   private async live(id: string) {
     const r = await this.repo.findById(id);
     if (!r) throw BusinessException.notFound('Item not found');
     return r;
   }
+
   private snapshot(r: ItemWithRelations) {
     return {
       id: r.id,
