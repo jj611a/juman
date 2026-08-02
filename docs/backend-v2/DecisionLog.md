@@ -188,3 +188,11 @@
 - **Context:** Need an accounting foundation before settlement/reports without polluting rental/inventory with balances.
 - **Decision:** Introduce `FinanceModule` as sole money owner: `FinancialAccount` (per customer), `FinancialTransaction`, `Payment`, `MoneyMovement`, `FinancialAudit`. IQD integer fils via `Money` value object. Rentals call `createCharge` / `registerDeposit` only. Outstanding is computed. No settlement, late fees, invoices, or reports in this phase.
 - **Consequences:** Checkout creates idempotent rental charges. Coverage gate `pnpm test:cov:finance` ≥95%. Docs: `FinancialDesign.md`.
+
+## ADR-V2-025 - Settlement engine (Phase 6.2)
+
+- **Date:** 2026-08-02
+- **Status:** Accepted
+- **Context:** Ledger outstanding alone must not decide rental financial completion; rental must not compute balances.
+- **Decision:** Introduce `SettlementService` as sole financial-completion authority. Models: `RentalSettlement` (1:1 rental), `SettlementHistory`. Checkout creates settlement; payments applied via settlement update balances with CAS; rental `complete` requires status ∈ {paid, closed}. Settlement never mutates Payment rows — it calls `FinanceService.registerPaymentInTx`.
+- **Consequences:** Dual payment paths (`/finance/payments` vs `/settlements/:id/payment`) remain a documented debt until unified. No late fees/penalties/invoices/reports. Docs: `SettlementDesign.md`. Coverage via `pnpm test:cov:finance`.

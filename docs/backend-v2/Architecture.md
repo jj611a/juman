@@ -74,7 +74,7 @@ src/
   rentals/        Rental workflow core (Phase 5.1)
   reservations/   Reservation engine (Phase 5.2)
   availability/   Sole calendar allocator (Phase 5.4)
-  finance/        Financial core — Money + ledger (Phase 6.1)
+  finance/        Financial core + settlement (Phase 6.1–6.2)
 ```
 
 ## Auth / RBAC
@@ -89,7 +89,7 @@ src/
 ## What is not in V2 (yet)
 
 - Users/roles admin HTTP CRUD (beyond unlock)
-- Availability calendar UI / late fees / penalties / settlements
+- Availability calendar UI / late fees / penalties / invoices / reports
 - Laundry / inspection / sales workflows
 - Barcode hardware adapters / label printing
 - Electron process management / installer Nest packaging

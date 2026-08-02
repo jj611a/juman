@@ -522,6 +522,7 @@ model Rental {
   reservation   Reservation?           @relation(fields: [reservationId], references: [id])
   items         RentalItem[]
   statusHistory RentalStatusHistory[]
+  settlement    RentalSettlement?
 
   @@index([customerId])
   @@index([reservationId])
@@ -661,6 +662,7 @@ model FinancialAccount {
   transactions FinancialTransaction[]
   payments     Payment[]
   movements    MoneyMovement[]
+  settlements  RentalSettlement[]
 
   @@unique([customerId])
   @@index([accountNumber])
@@ -769,5 +771,65 @@ model FinancialAudit {
   @@index([entityType, entityId])
   @@index([action])
   @@index([userId])
+  @@index([createdAt])
+}
+
+/// Per-rental financial obligation tracker (Phase 6.2). SettlementService alone decides completion.
+model RentalSettlement {
+  id               String    @id @default(uuid())
+  settlementNumber String    @unique
+  rentalId         String    @unique
+  accountId        String
+  customerId       String
+  /// Original obligation in fils (charge − deposit applied at create).
+  totalFils        Int
+  paidFils         Int       @default(0)
+  remainingFils    Int
+  status           String    @default("open")
+  currency         String    @default("IQD")
+  notes            String?
+  closedAt         DateTime?
+  cancelledAt      DateTime?
+  deletedAt        DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  createdBy        String?
+  updatedBy        String?
+  deletedBy        String?
+
+  rental   Rental              @relation(fields: [rentalId], references: [id])
+  account  FinancialAccount    @relation(fields: [accountId], references: [id])
+  history  SettlementHistory[]
+
+  @@index([settlementNumber])
+  @@index([rentalId])
+  @@index([accountId])
+  @@index([customerId])
+  @@index([status])
+  @@index([deletedAt])
+  @@index([createdAt])
+  @@index([status, deletedAt])
+}
+
+/// Append-only settlement status / payment application history.
+model SettlementHistory {
+  id           String   @id @default(uuid())
+  settlementId String
+  oldStatus    String
+  newStatus    String
+  action       String
+  amountFils   Int?
+  paymentId    String?
+  reason       String?
+  userId       String?
+  username     String?
+  createdAt    DateTime @default(now())
+
+  settlement RentalSettlement @relation(fields: [settlementId], references: [id])
+
+  @@index([settlementId])
+  @@index([action])
+  @@index([paymentId])
+  @@index([newStatus])
   @@index([createdAt])
 }

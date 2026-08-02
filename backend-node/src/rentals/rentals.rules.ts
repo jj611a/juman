@@ -47,3 +47,7 @@ export function canCancel(status: string): boolean {
 export function canCheckout(status: string): boolean {
   return status === RENTAL_STATUS.DRAFT;
 }
+
+export function canComplete(status: string): boolean {
+  return status === RENTAL_STATUS.RETURN_PENDING;
+}

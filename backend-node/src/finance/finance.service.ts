@@ -317,78 +317,10 @@ export class FinanceService {
 
   /** Register a completed cash (or method) payment against an account. */
   async registerPayment(dto: CreatePaymentDto, actor?: AuthPrincipal) {
-    const money = Money.ofNonNegativeFils(dto.amountFils);
-    if (money.isZero()) {
-      throw BusinessException.validation('Payment amount must be greater than zero');
-    }
-
     const paymentNumber = await this.allocatePaymentNumber();
-
-    const result = await this.repo.client.$transaction(async (tx) => {
-      const account = await tx.financialAccount.findFirst({
-        where: { id: dto.accountId, deletedAt: null },
-      });
-      if (!account) {
-        throw BusinessException.notFound('Financial account not found');
-      }
-      if (account.status !== FINANCIAL_ACCOUNT_STATUS.OPEN) {
-        throw BusinessException.conflict('Financial account is not open');
-      }
-      await this.repo.lockAccount(tx, account.id);
-
-      const pending = await this.repo.createPayment(tx, {
-        paymentNumber,
-        accountId: account.id,
-        amountFils: money.amountFils,
-        status: PAYMENT_STATUS.PENDING,
-        method: dto.method?.trim() || 'cash',
-        notes: dto.notes?.trim() || null,
-        createdBy: actor?.userId ?? null,
-        updatedBy: actor?.userId ?? null,
-      });
-
-      const txn = await this.repo.createTransaction(tx, {
-        accountId: account.id,
-        type: FINANCIAL_TX_TYPE.PAYMENT,
-        amountFils: money.amountFils,
-        status: FINANCIAL_TX_STATUS.POSTED,
-        referenceType: 'payment',
-        referenceId: pending.id,
-        description: 'payment',
-        createdBy: actor?.userId ?? null,
-        updatedBy: actor?.userId ?? null,
-      });
-
-      const completed = await this.repo.updatePayment(tx, pending.id, {
-        status: PAYMENT_STATUS.COMPLETED,
-        transactionId: txn.id,
-        completedAt: new Date(),
-        updatedBy: actor?.userId ?? null,
-      });
-
-      await this.repo.createMovement(tx, {
-        accountId: account.id,
-        paymentId: completed.id,
-        transactionId: txn.id,
-        direction: MONEY_MOVEMENT_DIRECTION.IN,
-        amountFils: money.amountFils,
-        currency: FINANCE_CURRENCY,
-        kind: MONEY_MOVEMENT_KIND.PAYMENT,
-        createdBy: actor?.userId ?? null,
-      });
-
-      await this.repo.createAudit(tx, {
-        entityType: FINANCE_ENTITY_PAYMENT,
-        entityId: completed.id,
-        action: 'payment',
-        newValues: JSON.stringify(toPaymentPublic(completed)),
-        userId: actor?.userId ?? null,
-        username: actor?.username ?? null,
-        message: 'register_payment',
-      });
-
-      return completed;
-    });
+    const result = await this.repo.client.$transaction(async (tx) =>
+      this.registerPaymentInTx(tx, dto, paymentNumber, actor),
+    );
 
     await this.audit.record({
       module: FINANCE_MODULE,
@@ -400,6 +332,99 @@ export class FinanceService {
     });
 
     return toPaymentPublic(result);
+  }
+
+  /**
+   * Payment registration inside an outer TX (used by SettlementService).
+   * Does not write settlement rows — Settlement never edits Payment either.
+   */
+  async registerPaymentInTx(
+    tx: Prisma.TransactionClient,
+    dto: CreatePaymentDto,
+    paymentNumber: string,
+    actor?: AuthPrincipal,
+  ) {
+    const money = Money.ofNonNegativeFils(dto.amountFils);
+    if (money.isZero()) {
+      throw BusinessException.validation('Payment amount must be greater than zero');
+    }
+
+    const account = await tx.financialAccount.findFirst({
+      where: { id: dto.accountId, deletedAt: null },
+    });
+    if (!account) {
+      throw BusinessException.notFound('Financial account not found');
+    }
+    if (account.status !== FINANCIAL_ACCOUNT_STATUS.OPEN) {
+      throw BusinessException.conflict('Financial account is not open');
+    }
+    await this.repo.lockAccount(tx, account.id);
+
+    const pending = await this.repo.createPayment(tx, {
+      paymentNumber,
+      accountId: account.id,
+      amountFils: money.amountFils,
+      status: PAYMENT_STATUS.PENDING,
+      method: dto.method?.trim() || 'cash',
+      notes: dto.notes?.trim() || null,
+      createdBy: actor?.userId ?? null,
+      updatedBy: actor?.userId ?? null,
+    });
+
+    const txn = await this.repo.createTransaction(tx, {
+      accountId: account.id,
+      type: FINANCIAL_TX_TYPE.PAYMENT,
+      amountFils: money.amountFils,
+      status: FINANCIAL_TX_STATUS.POSTED,
+      referenceType: 'payment',
+      referenceId: pending.id,
+      description: 'payment',
+      createdBy: actor?.userId ?? null,
+      updatedBy: actor?.userId ?? null,
+    });
+
+    const completed = await this.repo.updatePayment(tx, pending.id, {
+      status: PAYMENT_STATUS.COMPLETED,
+      transactionId: txn.id,
+      completedAt: new Date(),
+      updatedBy: actor?.userId ?? null,
+    });
+
+    await this.repo.createMovement(tx, {
+      accountId: account.id,
+      paymentId: completed.id,
+      transactionId: txn.id,
+      direction: MONEY_MOVEMENT_DIRECTION.IN,
+      amountFils: money.amountFils,
+      currency: FINANCE_CURRENCY,
+      kind: MONEY_MOVEMENT_KIND.PAYMENT,
+      createdBy: actor?.userId ?? null,
+    });
+
+    await this.repo.createAudit(tx, {
+      entityType: FINANCE_ENTITY_PAYMENT,
+      entityId: completed.id,
+      action: 'payment',
+      newValues: JSON.stringify(toPaymentPublic(completed)),
+      userId: actor?.userId ?? null,
+      username: actor?.username ?? null,
+      message: 'register_payment',
+    });
+
+    return completed;
+  }
+
+  /** Ensure customer ledger exists; used by SettlementService on checkout. */
+  async ensureAccountForCustomer(customerId: string, actor?: AuthPrincipal) {
+    await this.requireActiveCustomer(customerId);
+    return this.repo.client.$transaction((tx) =>
+      this.ensureAccountInTx(tx, customerId, actor),
+    );
+  }
+
+  /** Allocate payment number for callers composing outer transactions. */
+  async allocatePaymentNumberPublic() {
+    return this.allocatePaymentNumber();
   }
 
   async outstandingForAccount(accountId: string): Promise<number> {

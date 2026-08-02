@@ -1,14 +1,16 @@
-# Backend V2 Financial Design (Phase 6.1)
+# Backend V2 Financial Design (Phase 6.1 + 6.2)
 
 **Branch:** `backend-v2`  
 **Module:** `backend-node/src/finance`  
-**Role:** Accounting foundation — charges, deposits, payments, outstanding balance.
+**Role:** Accounting foundation + settlement completion authority.
 
 ## Scope
 
-**In scope:** FinancialAccount, FinancialTransaction, Payment, MoneyMovement, FinancialAudit; Money value object (IQD fils); createCharge / registerDeposit / registerPayment; outstanding; HTTP foundation; RBAC; rental checkout integration.
+**In scope:** FinancialAccount, FinancialTransaction, Payment, MoneyMovement, FinancialAudit; Money value object (IQD fils); createCharge / registerDeposit / registerPayment; outstanding; Settlement (`RentalSettlement`, `SettlementHistory`); HTTP foundation; RBAC; rental checkout + complete integration.
 
-**Out of scope:** Settlement, late fees, penalties, invoices, reports, export, notifications, refunds beyond foundation type.
+**Out of scope:** Late fees, penalties, invoices, reports, export, notifications.
+
+See also: `SettlementDesign.md` (Phase 6.2).
 
 ## Architecture rules
 
@@ -16,9 +18,10 @@
 2. Rental **never** stores balances.
 3. Inventory **never** stores balances.
 4. Payments **never** mutate rental rows.
-5. `RentalsService` requests `FinanceService.createCharge` / `registerDeposit`.
-6. `FinanceService` owns all money mutations.
-7. Balances are **computed**, never denormalized on the account row.
+5. `RentalsService` requests `FinanceService.createCharge` / `registerDeposit` and `SettlementService.createForRental`.
+6. `FinanceService` owns ledger money mutations; `SettlementService` owns financial **completion**.
+7. Account outstanding is **computed**; settlement remaining is maintained with CAS under SettlementService.
+8. Settlement never edits Payment rows.
 
 ## Money
 
@@ -49,6 +52,9 @@ Immutable trail: `in` / `out` with kind charge|deposit|payment|refund|adjustment
 ### FinancialAudit
 Append-only finance-domain audit (complements platform `AuditService`).
 
+### RentalSettlement / SettlementHistory
+See `SettlementDesign.md`. One settlement per rental; status decides financial completion.
+
 ## FinancialService API
 
 | Method | Effect |
@@ -56,20 +62,24 @@ Append-only finance-domain audit (complements platform `AuditService`).
 | `createCharge` | Post rental_charge; +outstanding |
 | `registerDeposit` | Post deposit; −outstanding |
 | `registerPayment` | Complete payment + post payment txn; −outstanding |
+| `registerPaymentInTx` | Same inside outer TX (used by Settlement) |
 | `outstandingForAccount` / `getOutstanding` | Sum posted deltas |
 | list accounts / transactions / payments | Read models |
 
-Allocation of numbers + account lock serialize concurrent payments on SQLite.
-
 ## Rental integration
 
-On rental (and reservation→rental) checkout:
+On checkout:
 
 1. Inventory/lifecycle TX completes
-2. `RentalsService.syncCheckoutFinance` → `createCharge(sum agreedRentalPrice)`
-3. Optional `depositAmountFils` → `registerDeposit`
+2. `syncCheckoutFinance` → `createCharge` (+ optional `registerDeposit`)
+3. `SettlementService.createForRental` (total = charge − deposit)
 
-Charges are idempotent per `(rental_charge, rental, rentalId)`.
+On complete (`return_pending → completed`):
+
+1. `SettlementService.assertFinanciallyComplete(rentalId)`
+2. Only then transition rental to `completed`
+
+Rental operational close ≠ financial completion unless Settlement says so.
 
 ## HTTP
 
@@ -80,10 +90,15 @@ Charges are idempotent per `(rental_charge, rental, rentalId)`.
 | GET | `/finance/payments` | finance.view |
 | POST | `/finance/payments` | finance.payment |
 | GET | `/finance/outstanding` | finance.view |
+| GET | `/settlements` | finance.settlement.view |
+| GET | `/settlements/:id` | finance.settlement.view |
+| POST | `/settlements/:id/payment` | finance.settlement.manage |
+| POST | `/settlements/:id/close` | finance.settlement.manage |
+| POST | `/settlements/:id/cancel` | finance.settlement.manage |
 
 ## RBAC
 
-`finance.view` · `finance.payment` · `finance.adjustment` (seeded; adjustment HTTP deferred)
+`finance.view` · `finance.payment` · `finance.adjustment` · `finance.settlement.view` · `finance.settlement.manage`
 
 ## Coverage
 

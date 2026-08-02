@@ -6,6 +6,7 @@ import {
 import {
   canCancel,
   canCheckout,
+  canComplete,
   canInitiateReturn,
   canTransitionRentalStatus,
   assertRentalTransition,
@@ -34,6 +35,8 @@ describe('rentals.rules', () => {
     expect(isRentalStatus('nope')).toBe(false);
     expect(canCheckout(RENTAL_STATUS.DRAFT)).toBe(true);
     expect(canCheckout(RENTAL_STATUS.ACTIVE)).toBe(false);
+    expect(canComplete(RENTAL_STATUS.RETURN_PENDING)).toBe(true);
+    expect(canComplete(RENTAL_STATUS.ACTIVE)).toBe(false);
     expect(canInitiateReturn(RENTAL_STATUS.ACTIVE)).toBe(true);
     expect(canInitiateReturn(RENTAL_STATUS.DRAFT)).toBe(false);
     expect(canCancel(RENTAL_STATUS.DRAFT)).toBe(true);

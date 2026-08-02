@@ -82,6 +82,10 @@ describe('RentalsService', () => {
     createCharge: vi.fn(),
     registerDeposit: vi.fn(),
   };
+  const settlements = {
+    createForRental: vi.fn(),
+    assertFinanciallyComplete: vi.fn(),
+  };
   let service: RentalsService;
 
   beforeEach(() => {
@@ -96,6 +100,7 @@ describe('RentalsService', () => {
       audit as never,
       availability as never,
       finance as never,
+      settlements as never,
     );
     customers.getById.mockResolvedValue({ id: 'c1', status: 'active' });
     items.getById.mockResolvedValue(itemRow);
@@ -116,13 +121,16 @@ describe('RentalsService', () => {
     );
     finance.createCharge.mockResolvedValue({ id: 'tx1' });
     finance.registerDeposit.mockResolvedValue({ id: 'tx2' });
-    repo.client.$transaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) =>
-      fn({}),
-    );
-    repo.transitionStatus.mockImplementation(async (input: { to: string; from: string }) => ({
+    settlements.createForRental.mockResolvedValue({ id: 's1', status: 'open' });
+    settlements.assertFinanciallyComplete.mockResolvedValue(undefined);
+    repo.transitionStatus.mockReset();
+    repo.transitionStatus.mockImplementation(async (input: { to: string }) => ({
       ...draftRental,
       status: input.to,
     }));
+    repo.client.$transaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) =>
+      fn({}),
+    );
     lifecycle.transition.mockResolvedValue({ lifecycleState: ITEM_LIFECYCLE.RENTED });
   });
 
@@ -204,6 +212,7 @@ describe('RentalsService', () => {
     );
     expect(result.status).toBe(RENTAL_STATUS.ACTIVE);
     expect(finance.createCharge).toHaveBeenCalled();
+    expect(settlements.createForRental).toHaveBeenCalled();
     expect(audit.record).toHaveBeenCalledWith(
       expect.objectContaining({ action: 'checkout' }),
     );
@@ -240,6 +249,32 @@ describe('RentalsService', () => {
     expect(audit.record).toHaveBeenCalledWith(
       expect.objectContaining({ action: 'cancel' }),
     );
+  });
+
+  it('completes only when settlement is financially complete', async () => {
+    const pending = { ...draftRental, status: RENTAL_STATUS.RETURN_PENDING };
+    const done = { ...pending, status: RENTAL_STATUS.COMPLETED };
+    repo.findById.mockResolvedValueOnce(pending).mockResolvedValueOnce(done);
+
+    await service.complete('r1', 'done', { userId: 'u' } as never);
+    expect(settlements.assertFinanciallyComplete).toHaveBeenCalledWith('r1');
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'complete' }),
+    );
+
+    repo.findById.mockResolvedValueOnce(draftRental);
+    await expect(service.complete('r1')).rejects.toBeInstanceOf(BusinessException);
+
+    repo.findById.mockResolvedValueOnce(pending);
+    settlements.assertFinanciallyComplete.mockRejectedValueOnce(
+      BusinessException.conflict('Settlement open'),
+    );
+    await expect(service.complete('r1')).rejects.toBeInstanceOf(BusinessException);
+
+    repo.findById.mockResolvedValueOnce(pending);
+    settlements.assertFinanciallyComplete.mockResolvedValueOnce(undefined);
+    repo.transitionStatus.mockResolvedValueOnce(null);
+    await expect(service.complete('r1')).rejects.toBeInstanceOf(BusinessException);
   });
 
   it('lists and gets by id', async () => {

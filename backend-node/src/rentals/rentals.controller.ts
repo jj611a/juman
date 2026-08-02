@@ -63,6 +63,17 @@ export class RentalsController {
     return this.rentals.initiateReturn(id, body.reason, user);
   }
 
+  @Post(':id/complete')
+  @HttpCode(200)
+  @RequirePermissions(RENTAL_PERMISSION.RETURN)
+  complete(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: RentalActionDto,
+    @CurrentUser() user: AuthPrincipal,
+  ) {
+    return this.rentals.complete(id, body.reason, user);
+  }
+
   @Post(':id/cancel')
   @HttpCode(200)
   @RequirePermissions(RENTAL_PERMISSION.CANCEL)

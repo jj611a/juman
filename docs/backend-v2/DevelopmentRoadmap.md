@@ -8,7 +8,7 @@
 | 3 | Core Business | **3.1–3.5 DONE** |
 | 4 | Inventory Engine | **4.1–4.4 DONE** |
 | 5 | Rental Engine | **5.1–5.4 DONE** |
-| 6 | Financial Engine | **6.1 DONE** (core ledger) — settlement/reports later |
+| 6 | Financial Engine | **6.1–6.2 DONE** (core + settlement) — late fees/reports later |
 | 7 | Reports & Analytics | Operational + financial |
 | 8 | Desktop Integration | Electron + Nest sidecar |
 | 9 | Testing & Hardening | Parity suites |
@@ -16,10 +16,10 @@
 
 ## Current milestone
 
-**Phase 6.1 Financial Core complete.**  
-Docs: `FinancialDesign.md`.
+**Phase 6.2 Settlement Engine complete.**  
+Docs: `FinancialDesign.md`, `SettlementDesign.md`.
 
-**STOP:** Do **not** implement settlement, late fees, penalties, invoices, reports, or export until approved.
+**STOP:** Do **not** implement late fees, penalties, invoices, reports, or export until approved.
 
 ## Completion rule
 

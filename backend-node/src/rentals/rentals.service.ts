@@ -7,6 +7,7 @@ import { CustomersService } from '../customers/customers.service';
 import { CUSTOMER_STATUS } from '../customers/customers.constants';
 import { FinanceService } from '../finance/finance.service';
 import { FINANCE_REFERENCE_RENTAL } from '../finance/finance.constants';
+import { SettlementService } from '../finance/settlement/settlement.service';
 import { ItemsService } from '../inventory/items/items.service';
 import { ITEM_LIFECYCLE, ITEM_STATUS } from '../inventory/inventory.constants';
 import { LifecycleService } from '../inventory/lifecycle/lifecycle.service';
@@ -44,6 +45,7 @@ import {
 import {
   canCancel,
   canCheckout,
+  canComplete,
   canInitiateReturn,
   canTransitionRentalStatus,
   isRentalStatus,
@@ -65,6 +67,7 @@ export class RentalsService {
     private readonly audit: AuditService,
     private readonly availability: AvailabilityService,
     private readonly finance: FinanceService,
+    private readonly settlements: SettlementService,
   ) {}
 
   async create(dto: CreateRentalDto, actor?: AuthPrincipal) {
@@ -294,11 +297,12 @@ export class RentalsService {
         actor,
       );
     }
-    if (depositAmountFils != null && depositAmountFils > 0) {
+    const deposit = depositAmountFils ?? 0;
+    if (deposit > 0) {
       await this.finance.registerDeposit(
         {
           customerId: rental.customerId,
-          amountFils: depositAmountFils,
+          amountFils: deposit,
           referenceType: FINANCE_REFERENCE_RENTAL,
           referenceId: rental.id,
           description: `Rental deposit ${rental.rentalNumber}`,
@@ -306,6 +310,15 @@ export class RentalsService {
         actor,
       );
     }
+    await this.settlements.createForRental(
+      {
+        rentalId: rental.id,
+        customerId: rental.customerId,
+        chargeFils,
+        depositFils: deposit,
+      },
+      actor,
+    );
   }
 
   /** Foundation return: outbound → return_pending; inventory rented → return_pending. */
@@ -360,6 +373,43 @@ export class RentalsService {
       entityType: RENTAL_ENTITY,
       entityId: id,
       action: 'return_pending',
+      oldValues: this.snapshot(rental),
+      newValues: this.snapshot(updated),
+      actor: { userId: actor?.userId, username: actor?.username },
+    });
+    return toRentalPublic(updated);
+  }
+
+  /**
+   * Close rental (return_pending → completed).
+   * Financial completion is decided only by SettlementService.
+   */
+  async complete(id: string, reason?: string, actor?: AuthPrincipal) {
+    const rental = await this.requireLive(id);
+    if (!canComplete(rental.status)) {
+      throw BusinessException.conflict(
+        `Cannot complete rental in status ${rental.status}`,
+      );
+    }
+    await this.settlements.assertFinanciallyComplete(rental.id);
+
+    const updated = await this.repo.transitionStatus({
+      rentalId: rental.id,
+      from: RENTAL_STATUS.RETURN_PENDING,
+      to: RENTAL_STATUS.COMPLETED,
+      reason: reason?.trim() || 'completed',
+      userId: actor?.userId ?? null,
+      username: actor?.username ?? null,
+    });
+    if (!updated) {
+      throw BusinessException.conflict('Concurrent rental complete rejected');
+    }
+
+    await this.audit.record({
+      module: RENTAL_MODULE,
+      entityType: RENTAL_ENTITY,
+      entityId: id,
+      action: 'complete',
       oldValues: this.snapshot(rental),
       newValues: this.snapshot(updated),
       actor: { userId: actor?.userId, username: actor?.username },
