@@ -88,3 +88,10 @@ Single transaction:
 ```bash
 pnpm test:cov:reservations
 ```
+
+## Known limitations (Phase 5.3 cert)
+
+- Concurrent create is TOCTOU-vulnerable (two overlapping confirms can both win) — Must-Fix before Financial.
+- Walk-in rentals do not consult this service yet — asymmetric conflict policy until remediations.
+- Expire has no scheduler; ops/jobs must call HTTP/service.
+- Full cert: `PHASE_5_ENGINEERING_CERTIFICATION.md`.

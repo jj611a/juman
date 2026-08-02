@@ -1,0 +1,212 @@
+{
+  "generatedAt": "2026-08-02T09:23:16.158Z",
+  "migrateMs": 4706,
+  "startupMs": 2973,
+  "memRssMbAfterBoot": 127,
+  "timings": {
+    "health": 36,
+    "login_bootstrap": 1249,
+    "seed_customer_catalog": 484,
+    "rental_create": 46,
+    "rental_checkout": 75,
+    "rental_history": 18,
+    "rental_return": 53,
+    "reservation_create": 88,
+    "availability_lookup": 2,
+    "reservation_conflict": 17,
+    "reservation_checkout": 88,
+    "reservation_cancel_confirmed": 138,
+    "reservation_expire": 147,
+    "walkin_vs_reservation_gap": 419,
+    "concurrent_reservation": 310,
+    "rental_lookup": 24,
+    "reservation_lookup": 14,
+    "lifecycle_still_owner": 71
+  },
+  "security": [
+    {
+      "name": "unauthenticated /rentals → 401",
+      "ok": true,
+      "detail": "status=401"
+    },
+    {
+      "name": "unauthenticated /reservations → 401",
+      "ok": true,
+      "detail": "status=401"
+    },
+    {
+      "name": "unauthenticated rental checkout → 401",
+      "ok": true,
+      "detail": "status=401"
+    },
+    {
+      "name": "unauthenticated reservation cancel → 401",
+      "ok": true,
+      "detail": "status=401"
+    },
+    {
+      "name": "reservation overlap → 409",
+      "ok": true,
+      "detail": "status=409"
+    },
+    {
+      "name": "reservation checkout blocked after steal",
+      "ok": true,
+      "detail": "status=409"
+    },
+    {
+      "name": "concurrent reservation create",
+      "ok": true,
+      "detail": "ok=2 fail=0 (ideal 1/1; dual-ok = TOCTOU debt)"
+    },
+    {
+      "name": "checkout non-draft rental → 409",
+      "ok": true,
+      "detail": "status=409"
+    },
+    {
+      "name": "cancel checked_out reservation → 409",
+      "ok": true,
+      "detail": "status=409"
+    }
+  ],
+  "api": [
+    {
+      "name": "GET /health",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "auth bootstrap",
+      "ok": true,
+      "detail": "password changed + re-login"
+    },
+    {
+      "name": "seed customer+items",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "rental create draft",
+      "ok": true,
+      "detail": "status=draft"
+    },
+    {
+      "name": "rental checkout → active",
+      "ok": true,
+      "detail": "active"
+    },
+    {
+      "name": "rental history embedded",
+      "ok": true,
+      "detail": "statusHistory=3"
+    },
+    {
+      "name": "rental return → return_pending",
+      "ok": true,
+      "detail": "return_pending"
+    },
+    {
+      "name": "reservation create → confirmed",
+      "ok": true,
+      "detail": "confirmed"
+    },
+    {
+      "name": "availability finds self reservation",
+      "ok": true,
+      "detail": "n=1"
+    },
+    {
+      "name": "reservation checkout",
+      "ok": true,
+      "detail": "status=checked_out rental=9bc8b354-2d88-4a04-8840-161d17188b00 nested=true"
+    },
+    {
+      "name": "reservation cancel",
+      "ok": true,
+      "detail": "cancelled"
+    },
+    {
+      "name": "reservation expire",
+      "ok": true,
+      "detail": "expired"
+    },
+    {
+      "name": "rental list",
+      "ok": true,
+      "detail": "total=3"
+    },
+    {
+      "name": "reservation list",
+      "ok": true,
+      "detail": "total=6"
+    },
+    {
+      "name": "rental validation rejects bad body",
+      "ok": true,
+      "detail": "status=400"
+    }
+  ],
+  "architecture": [
+    {
+      "name": "checkout uses lifecycle rented",
+      "ok": true,
+      "detail": "rented"
+    },
+    {
+      "name": "rental status history rows",
+      "ok": true,
+      "detail": "db=3"
+    },
+    {
+      "name": "reservation materializes active rental",
+      "ok": true,
+      "detail": "active"
+    },
+    {
+      "name": "DEBT: rental DTO omits reservationId",
+      "ok": true,
+      "detail": "reservationId=undefined"
+    },
+    {
+      "name": "reservation checkout → item rented",
+      "ok": true,
+      "detail": "rented"
+    },
+    {
+      "name": "DEBT: walk-in rental create ignores reservation window",
+      "ok": true,
+      "detail": "status=201 (expected 201 = gap present)"
+    },
+    {
+      "name": "DEBT: walk-in checkout steals reserved window",
+      "ok": true,
+      "detail": "status=200"
+    },
+    {
+      "name": "RentalsService has no direct lifecycleState write",
+      "ok": true,
+      "detail": "static review + checkout path uses LifecycleService"
+    },
+    {
+      "name": "concurrent reservation one-wins ideal",
+      "ok": false,
+      "detail": "ok=2 fail=0"
+    },
+    {
+      "name": "LifecycleService remains sole mutator API",
+      "ok": true,
+      "detail": "transition ok"
+    }
+  ],
+  "database": {
+    "rentals": 3,
+    "rentalItems": 3,
+    "rentalHistory": 10,
+    "reservations": 6,
+    "reservationItems": 6,
+    "reservationHistory": 15,
+    "itemStateHistory": 12
+  },
+  "errors": []
+}

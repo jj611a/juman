@@ -164,3 +164,11 @@
 - **Context:** Need date-window holds before physical handover without folding reservations into rentals.
 - **Decision:** Independent `Reservation` documents with closed status graph; `AvailabilityService` detects reservation/rental overlaps; checkout materializes a `Rental` and inventory transitions only through `LifecycleService` in one TX. Expire is service/HTTP foundation without a scheduler.
 - **Consequences:** Calendar module can reuse AvailabilityService. No payments/fees/settlement in this phase. Coverage gate `pnpm test:cov:reservations` ≥95%. Docs: `ReservationDesign.md`.
+
+## ADR-V2-022 - Phase 5 engineering certification gate
+
+- **Date:** 2026-08-02
+- **Status:** Accepted
+- **Context:** Rental + Reservation foundations shipped; Financial must not start on unverified integrity.
+- **Decision:** Phase 5.3 is verification-only. Certify workflow foundations with explicit Must-Fix blockers before Phase 6: (1) walk-in rentals must use `AvailabilityService`, (2) concurrent reservation create must be single-winner, (3) restore `pnpm test:cov:rentals` thresholds. Overall score **76** — PASS WITH WARNINGS. Financial readiness = **NO**.
+- **Consequences:** No Feature work in 5.3. Remediation required before Financial. Report: `PHASE_5_ENGINEERING_CERTIFICATION.md`. Harness: `scripts/cert-phase53.cjs`.

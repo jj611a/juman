@@ -93,3 +93,10 @@ Sets `actualReturnDate`. No inspection/cleaning yet.
 ```bash
 pnpm test:cov:rentals
 ```
+
+## Known limitations (Phase 5.3 cert)
+
+- Create/checkout do **not** yet call `AvailabilityService` — walk-in can overlap a confirmed reservation (Must-Fix before Financial).
+- Public DTO omits `reservationId` (High).
+- `overdue` and `return_pending → completed` are transition-map foundations only (no HTTP yet).
+- Module coverage gate regressed after reservation materialize path landed — see `PHASE_5_ENGINEERING_CERTIFICATION.md`.

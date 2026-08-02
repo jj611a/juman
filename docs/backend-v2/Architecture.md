@@ -137,3 +137,8 @@ Non-feature gate then remediation: `PHASE_4_ENGINEERING_CERTIFICATION.md` → `P
 ## Reservation engine (Phase 5.2)
 
 `ReservationsModule` + reusable `AvailabilityService`. Reservations are independent until checkout materializes a `Rental`. Docs: `ReservationDesign.md`.
+
+## Phase 5 engineering certification (5.3)
+
+Non-feature gate: `PHASE_5_ENGINEERING_CERTIFICATION.md` (overall **76**, **PASS WITH WARNINGS**).  
+**Financial (Phase 6) is blocked** until Must-Fix items are cleared — especially walk-in rentals must reuse `AvailabilityService`, concurrent reservation TOCTOU, and `pnpm test:cov:rentals` gate restoration.
