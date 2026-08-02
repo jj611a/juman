@@ -60,6 +60,10 @@ Rejects path traversal, hidden names, double dangerous extensions, executables, 
 pnpm test:cov:media
 ```
 
+## Restore contract
+
+Soft-delete cascades soft-delete of `MediaReference` rows. **Restore of a `MediaFile` does not automatically revive those references** ? callers must re-attach.
+
 ## Known limitations
 
 - Thumbnails / camera / cloud providers not implemented (architecture reserved).

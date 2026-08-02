@@ -1,0 +1,167 @@
+{
+  "generatedAt": "2026-08-02T07:40:36.583Z",
+  "startupMs": 746,
+  "migrateMs": 2845,
+  "memRssMbAfterBoot": 122,
+  "timings": {
+    "health": 19,
+    "login_unknown": 371,
+    "login_bootstrap": 211,
+    "change_password": 542,
+    "login_new_password": 204,
+    "auth_me": 10,
+    "auth_session": 9,
+    "customer_create": 23,
+    "customer_duplicate": 11,
+    "customer_search": 15,
+    "customer_list_filter": 12,
+    "customer_soft_delete_restore": 42,
+    "media_upload": 28,
+    "media_integrity": 12,
+    "media_restore_cycle": 26,
+    "logout": 22
+  },
+  "security": [
+    {
+      "name": "unknown username returns 401",
+      "ok": true,
+      "detail": "status=401"
+    },
+    {
+      "name": "invalid JWT rejected",
+      "ok": true,
+      "detail": "status=401"
+    },
+    {
+      "name": "admin has customer.view",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "admin has media.upload",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "phone normalized",
+      "ok": true,
+      "detail": "9647701110001"
+    },
+    {
+      "name": "duplicate active phone 409",
+      "ok": true,
+      "detail": "status=409"
+    },
+    {
+      "name": "media integrity ok",
+      "ok": true,
+      "detail": "{\"ok\":true,\"expectedChecksum\":\"c414cd0e204de974f73753c7e28d7638e7b3691bb8b1a2bab6b25bb7fed7ce77\",\"actualChecksum\":\"c414cd0e204de974f73753c7e28d7638e7b3691bb8b1a2bab6b25bb7fed7ce77\"}"
+    },
+    {
+      "name": "executable upload rejected",
+      "ok": true,
+      "detail": "status=400"
+    },
+    {
+      "name": "MIME spoof rejected",
+      "ok": true,
+      "detail": "status=400"
+    },
+    {
+      "name": "oversized upload rejected",
+      "ok": true,
+      "detail": "status=400"
+    },
+    {
+      "name": "unauthenticated customers blocked",
+      "ok": true,
+      "detail": "status=401"
+    },
+    {
+      "name": "revoked/logged-out JWT rejected",
+      "ok": true,
+      "detail": "status=401"
+    },
+    {
+      "name": "transaction rollback works",
+      "ok": true,
+      "detail": "null"
+    },
+    {
+      "name": "storage categories present",
+      "ok": true,
+      "detail": "C:\\Users\\moham\\AppData\\Local\\Temp\\juman-cert-gouBzk\\storage"
+    }
+  ],
+  "api": [
+    {
+      "name": "GET /health",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "POST /auth/login",
+      "ok": true,
+      "detail": "token issued"
+    },
+    {
+      "name": "GET /auth/me permissions",
+      "ok": true,
+      "detail": "count=76"
+    },
+    {
+      "name": "POST /customers",
+      "ok": true,
+      "detail": "CUS-00000001"
+    },
+    {
+      "name": "GET /customers/search pagination",
+      "ok": true,
+      "detail": "total=1"
+    },
+    {
+      "name": "GET /customers filter",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "customer soft-delete+restore",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "POST /media",
+      "ok": true,
+      "detail": "checksum=c414cd0e"
+    }
+  ],
+  "database": {
+    "tableCount": 18,
+    "tables": [
+      "AppMeta",
+      "AppSetting",
+      "AuditLog",
+      "Barcode",
+      "Customer",
+      "LoginHistory",
+      "LoginSession",
+      "MediaFile",
+      "MediaReference",
+      "PasswordHistory",
+      "Permission",
+      "RefreshToken",
+      "Role",
+      "RolePermission",
+      "SequenceCounter",
+      "User",
+      "_prisma_migrations",
+      "sqlite_sequence"
+    ],
+    "indexCount": 53,
+    "foreignKeysEnabled": true,
+    "customerCount": 1,
+    "mediaCount": 1,
+    "auditCount": 6
+  },
+  "errors": []
+}

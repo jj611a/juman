@@ -100,3 +100,11 @@
 - **Context:** Every future module needs files; duplicating attachment tables or ad-hoc disk writes would freeze technical debt.
 - **Decision:** Extend Phase 3.1 `MediaModule` into the sole blob authority: typed storage categories under configured `storage/`, SHA-256 checksums, MIME/magic validation, soft-delete **keeping** blobs for restore, polymorphic `MediaReference` only. HTTP under `/media` without exposing absolute paths. No thumbnails/camera/cloud yet.
 - **Consequences:** Inventory/rentals must attach Media IDs. Coverage gate `pnpm test:cov:media` ?95%. Download streaming HTTP can follow without schema changes.
+
+## ADR-V2-014 - Phase 3 engineering certification
+
+- **Date:** 2026-08-02
+- **Status:** Accepted
+- **Context:** Features through Media shipped; need a non-feature gate before Phase 3.5.
+- **Decision:** Run logical/functional/API/DB/perf/security/architecture/TS/coverage/packaging/docs review; publish `PHASE_3_ENGINEERING_CERTIFICATION.md` with score **85 PASS WITH WARNINGS**. No barcode/inventory work in this commit.
+- **Consequences:** Phase 3.5 requires approval; tracked Medium/High debt must not be forgotten when multi-client or inventory starts.

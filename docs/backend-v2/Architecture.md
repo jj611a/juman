@@ -1,6 +1,6 @@
 # Backend V2 Architecture
 
-**Status:** Phase 3.3 Media & Attachments  
+**Status:** Phase 3.4 Engineering Certification  
 **Branch:** `backend-v2`  
 **Spec source:** `backend-python/` (read-only Python FastAPI stack)
 
