@@ -132,3 +132,11 @@
 - **Context:** Rentals/sales will mutate item availability; embedding ad-hoc status flags in those modules would fork state machines.
 - **Decision:** Add operational `lifecycleState` (separate from catalog `status`) with a closed transition graph, append-only `ItemStateHistory`, CAS transitions, `inventory.transition` RBAC, and availability predicates (`isOperational`/`isRentable`/`isSellable`/`isEditable`). No reservations/calendar/payments.
 - **Consequences:** All future domains must call `LifecycleService`. Invalid/concurrent transitions → 409. Lost/damaged supported without schema redesign.
+
+## ADR-V2-018 - Phase 4 inventory engineering certification
+
+- **Date:** 2026-08-02
+- **Status:** Accepted
+- **Context:** Catalog + lifecycle shipped; entering rentals without a gate would freeze integrity defects.
+- **Decision:** Run logical/functional/API/DB/perf/security/architecture/TS/coverage review; publish `PHASE_4_ENGINEERING_CERTIFICATION.md` with score **78 PASS WITH WARNINGS**. No rentals/reservations/calendar/sales in this commit. Harness: `scripts/cert-phase43.cjs` → `cert_p43_harness.json`.
+- **Consequences:** Rental Engine blocked until Must-Fix items (soft-delete mid-lifecycle, barcode release, transactional bind, restore status, draft transitions, media dual-write) are remediated and re-probed.

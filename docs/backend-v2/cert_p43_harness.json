@@ -1,0 +1,132 @@
+{
+  "generatedAt": "2026-08-02T08:32:58.879Z",
+  "migrateMs": 3027,
+  "startupMs": 830,
+  "memRssMbAfterBoot": 121,
+  "timings": {
+    "health": 21,
+    "login_bootstrap": 1105,
+    "taxonomy_create": 80,
+    "item_create_barcode": 65,
+    "catalog_search": 26,
+    "barcode_lookup": 33,
+    "lifecycle_transition": 51,
+    "history_retrieval": 13,
+    "concurrent_transitions": 22
+  },
+  "security": [
+    {
+      "name": "unauthenticated /items → 401",
+      "ok": true,
+      "detail": "status=401"
+    },
+    {
+      "name": "unauthenticated transition → 401",
+      "ok": true,
+      "detail": "status=401"
+    },
+    {
+      "name": "state skip rejected",
+      "ok": true,
+      "detail": "status=409"
+    },
+    {
+      "name": "edit while reserved blocked",
+      "ok": true,
+      "detail": "status=409"
+    },
+    {
+      "name": "concurrent CAS one-wins",
+      "ok": true,
+      "detail": "ok=1 fail=1"
+    },
+    {
+      "name": "deleted item get → 404",
+      "ok": true,
+      "detail": "status=404"
+    },
+    {
+      "name": "deleted item transition rejected",
+      "ok": true,
+      "detail": "status=404"
+    },
+    {
+      "name": "invalid payload → 400",
+      "ok": true,
+      "detail": "status=400"
+    },
+    {
+      "name": "DEBT soft-delete while reserved currently allowed",
+      "ok": true,
+      "detail": "observed_status=200 (expected until Must-Fix; documents debt)",
+      "debt": true
+    }
+  ],
+  "api": [
+    {
+      "name": "GET /health",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "auth bootstrap",
+      "ok": true,
+      "detail": "password changed + re-login"
+    },
+    {
+      "name": "taxonomy CRUD create",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "name": "item create + barcode",
+      "ok": true,
+      "detail": "code=ITM-00000001 barcodes=1"
+    },
+    {
+      "name": "catalog search/filter",
+      "ok": true,
+      "detail": "total=1"
+    },
+    {
+      "name": "barcode/internal code lookup",
+      "ok": true,
+      "detail": "ITM-00000001"
+    },
+    {
+      "name": "valid transition",
+      "ok": true,
+      "detail": "reserved"
+    },
+    {
+      "name": "history retrieval",
+      "ok": true,
+      "detail": "total=2"
+    },
+    {
+      "name": "soft delete",
+      "ok": true,
+      "detail": "deleted"
+    },
+    {
+      "name": "restore",
+      "ok": true,
+      "detail": "restored"
+    },
+    {
+      "name": "schema inventory tables",
+      "ok": true,
+      "detail": "{\"tableCount\":25,\"indexCount\":103,\"foreignKeys\":false,\"hasItem\":true,\"hasItemStateHistory\":true,\"hasItemMedia\":true,\"hasItemBarcode\":true}"
+    }
+  ],
+  "database": {
+    "tableCount": 25,
+    "indexCount": 103,
+    "foreignKeys": false,
+    "hasItem": true,
+    "hasItemStateHistory": true,
+    "hasItemMedia": true,
+    "hasItemBarcode": true
+  },
+  "errors": []
+}

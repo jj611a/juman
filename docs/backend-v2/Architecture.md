@@ -1,6 +1,6 @@
 # Backend V2 Architecture
 
-**Status:** Phase 4.2 Inventory Lifecycle Foundation  
+**Status:** Phase 4.3 Inventory Engineering Certification  
 **Branch:** `backend-v2`  
 **Spec source:** `backend-python/` (read-only Python FastAPI stack)
 
@@ -123,3 +123,7 @@ Generic Item Catalog in `src/inventory` — not a dress-specific engine. Taxonom
 ## Inventory lifecycle (Phase 4.2)
 
 Authoritative operational `lifecycleState` on `Item` with `ItemStateHistory` and `LifecycleService.transition` (CAS + audit). Availability predicates (`isRentable` / `isSellable` / …) only — no reservations or calendar. Docs: `InventoryDesign.md`.
+
+## Inventory certification (Phase 4.3)
+
+Non-feature gate: `PHASE_4_ENGINEERING_CERTIFICATION.md` — overall **78 PASS WITH WARNINGS**. **Rental Engine blocked** until Must-Fix soft-delete/barcode/media integrity items are remediated.
