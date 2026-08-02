@@ -13,9 +13,10 @@ Phase 5  Rental Engine                   DONE (5.1–5.4)
 Phase 6  Financial
          6.1 Financial core              DONE
          6.2 Settlement engine           DONE
-         6.3 Integrity remediation       DONE (score 92)
-         Late fees / penalties / reports WAITING APPROVAL
-Phase 7+ Reports / Desktop               WAITING
+         6.3 Integrity remediation       DONE
+         6.4 Engineering certification   DONE (score 80 · Reports NO-GO)
+Phase 7+ Reports / Desktop               WAITING — Reports blocked until Must-Fix
 ```
 
-**YOU ARE HERE:** After Phase 6.3 financial integrity remediation. Do **not** implement late fees, penalty engine, invoices, refunds, or reports until approved.
+**YOU ARE HERE:** After Phase 6.4 financial certification (**PASS WITH WARNINGS**, overall **80**).  
+**Reports:** **NO-GO** until atomic checkout finance, deposit idempotency, and rental↔settlement cancel policy are fixed.

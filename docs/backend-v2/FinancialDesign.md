@@ -102,8 +102,10 @@ Rental operational close ≠ financial completion unless Settlement says so.
 
 `finance.view` · `finance.payment` · `finance.adjustment` · `finance.settlement.view` · `finance.settlement.manage`
 
-## Coverage
+## Coverage / certification
 
 ```bash
 pnpm test:cov:finance
 ```
+
+Phase 6.4 certification: `PHASE_6_ENGINEERING_CERTIFICATION.md` — overall **80**, **Reports NO-GO** until Must-Fix (atomic checkout finance, deposit idempotency, rental↔settlement cancel).

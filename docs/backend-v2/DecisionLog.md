@@ -204,3 +204,11 @@
 - **Context:** Phase 6.2 left a dual payment path: ledger payments could zero outstanding while settlements stayed open.
 - **Decision:** Settlement is the only owner of rental financial state. `registerPayment` rejects accounts with open/partial settlements. Settlement continues to publish ledger via `registerPaymentInTx`. Outstanding HTTP uses settlement remaining when settlements exist (`balanceSource`). Invariant helpers enforce balance and status integrity. No late fees/refunds/reports in this phase.
 - **Consequences:** Integrity score **92**. Remaining risks: non-atomic checkout finance, future refunds must reuse the gate. Report: `PHASE_6_FINANCIAL_REMEDIATION.md`.
+
+## ADR-V2-027 - Financial engineering certification (Phase 6.4)
+
+- **Date:** 2026-08-02
+- **Status:** Accepted
+- **Context:** Need a formal GO/NO-GO before Reports, after 6.1–6.3 delivered settlement ownership and dual-path closure.
+- **Decision:** Certify financial **foundation** as **PASS WITH WARNINGS (overall 80)**. **NO-GO for Reports** until Must-Fix: (1) atomic checkout finance TX, (2) deposit/charge reference uniqueness + idempotency, (3) rental cancel ↔ settlement coupling policy. Payment idempotency keys and refund/adjustment remain High/Medium debt, not Reports blockers only if Reports stay unbuilt.
+- **Consequences:** Do not start Phase 7 Reports, late fees, invoices, or refunds without remediation approval. Report: `PHASE_6_ENGINEERING_CERTIFICATION.md`.
