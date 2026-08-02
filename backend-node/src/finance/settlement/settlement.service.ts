@@ -43,6 +43,7 @@ import {
   isSettlementStatus,
   statusAfterPayment,
 } from './settlement.rules';
+import { assertSettlementBalanceInvariant } from './settlement.integrity';
 
 export type CreateSettlementInput = {
   rentalId: string;
@@ -250,6 +251,7 @@ export class SettlementService {
       if (!updated) {
         throw BusinessException.conflict('Concurrent settlement payment rejected');
       }
+      assertSettlementBalanceInvariant(updated);
       return { updated, payment };
     });
 

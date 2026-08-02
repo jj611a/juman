@@ -68,7 +68,10 @@ export type RegisterDepositInput = {
 };
 
 /**
- * Sole owner of money mutations. Rentals/inventory must never write balances.
+ * Append-only ledger publisher (charges, deposits, payments, movements).
+ * Rental balances and financial completion are owned by SettlementService —
+ * never treat ledger outstanding as rental source of truth when settlements exist.
+ * Standalone POST /finance/payments is rejected while open/partial settlements exist.
  */
 @Injectable()
 export class FinanceService {
@@ -163,7 +166,11 @@ export class FinanceService {
 
   async getOutstanding(query: OutstandingQueryDto) {
     const account = await this.resolveAccount(query.accountId, query.customerId);
-    const outstandingFils = await this.outstandingForAccount(account.id);
+    const settlementOwned = await this.repo.settlementOutstandingFils(account.id);
+    const outstandingFils =
+      settlementOwned !== null
+        ? settlementOwned
+        : await this.ledgerOutstandingForAccount(account.id);
     return {
       accountId: account.id,
       accountNumber: account.accountNumber,
@@ -171,6 +178,7 @@ export class FinanceService {
       currency: FINANCE_CURRENCY,
       outstandingFils,
       outstandingMajor: Money.ofFils(outstandingFils).toMajorString(),
+      balanceSource: settlementOwned !== null ? 'settlement' : 'ledger',
     };
   }
 
@@ -315,12 +323,16 @@ export class FinanceService {
     return toTransactionPublic(result);
   }
 
-  /** Register a completed cash (or method) payment against an account. */
+  /**
+   * Standalone ledger payment — rejected when any open/partial settlement exists.
+   * Rental obligations must use SettlementService.applyPayment.
+   */
   async registerPayment(dto: CreatePaymentDto, actor?: AuthPrincipal) {
     const paymentNumber = await this.allocatePaymentNumber();
-    const result = await this.repo.client.$transaction(async (tx) =>
-      this.registerPaymentInTx(tx, dto, paymentNumber, actor),
-    );
+    const result = await this.repo.client.$transaction(async (tx) => {
+      await this.assertStandalonePaymentAllowed(dto.accountId, tx);
+      return this.registerPaymentInTx(tx, dto, paymentNumber, actor);
+    });
 
     await this.audit.record({
       module: FINANCE_MODULE,
@@ -335,8 +347,9 @@ export class FinanceService {
   }
 
   /**
-   * Payment registration inside an outer TX (used by SettlementService).
-   * Does not write settlement rows — Settlement never edits Payment either.
+   * Payment registration inside an outer TX (used by SettlementService only).
+   * Publishes Payment + ledger TX + MoneyMovement. Does not touch settlement balances.
+   * Callers that skip assertStandalonePaymentAllowed must be SettlementService.
    */
   async registerPaymentInTx(
     tx: Prisma.TransactionClient,
@@ -427,9 +440,33 @@ export class FinanceService {
     return this.allocatePaymentNumber();
   }
 
+  /**
+   * Authoritative outstanding: Settlement remaining when settlements exist;
+   * otherwise ledger-computed (non-rental / pre-settlement accounts only).
+   */
   async outstandingForAccount(accountId: string): Promise<number> {
+    const settlementOwned = await this.repo.settlementOutstandingFils(accountId);
+    if (settlementOwned !== null) return settlementOwned;
     const rows = await this.repo.listPostedTransactions(accountId);
     return computeOutstandingFils(rows);
+  }
+
+  /** Ledger-only reconstruction (audit/invariants) — not rental source of truth. */
+  async ledgerOutstandingForAccount(accountId: string): Promise<number> {
+    const rows = await this.repo.listPostedTransactions(accountId);
+    return computeOutstandingFils(rows);
+  }
+
+  private async assertStandalonePaymentAllowed(
+    accountId: string,
+    tx?: Prisma.TransactionClient,
+  ): Promise<void> {
+    const blocking = await this.repo.countBlockingSettlements(accountId, tx);
+    if (blocking > 0) {
+      throw BusinessException.conflict(
+        'Open rental settlement exists — pay via POST /settlements/:id/payment',
+      );
+    }
   }
 
   private async resolveAccount(accountId?: string, customerId?: string) {

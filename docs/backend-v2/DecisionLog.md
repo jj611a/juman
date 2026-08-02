@@ -196,3 +196,11 @@
 - **Context:** Ledger outstanding alone must not decide rental financial completion; rental must not compute balances.
 - **Decision:** Introduce `SettlementService` as sole financial-completion authority. Models: `RentalSettlement` (1:1 rental), `SettlementHistory`. Checkout creates settlement; payments applied via settlement update balances with CAS; rental `complete` requires status ∈ {paid, closed}. Settlement never mutates Payment rows — it calls `FinanceService.registerPaymentInTx`.
 - **Consequences:** Dual payment paths (`/finance/payments` vs `/settlements/:id/payment`) remain a documented debt until unified. No late fees/penalties/invoices/reports. Docs: `SettlementDesign.md`. Coverage via `pnpm test:cov:finance`.
+
+## ADR-V2-026 - Financial integrity remediation (Phase 6.3)
+
+- **Date:** 2026-08-02
+- **Status:** Accepted
+- **Context:** Phase 6.2 left a dual payment path: ledger payments could zero outstanding while settlements stayed open.
+- **Decision:** Settlement is the only owner of rental financial state. `registerPayment` rejects accounts with open/partial settlements. Settlement continues to publish ledger via `registerPaymentInTx`. Outstanding HTTP uses settlement remaining when settlements exist (`balanceSource`). Invariant helpers enforce balance and status integrity. No late fees/refunds/reports in this phase.
+- **Consequences:** Integrity score **92**. Remaining risks: non-atomic checkout finance, future refunds must reuse the gate. Report: `PHASE_6_FINANCIAL_REMEDIATION.md`.

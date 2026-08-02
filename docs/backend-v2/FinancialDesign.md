@@ -19,9 +19,11 @@ See also: `SettlementDesign.md` (Phase 6.2).
 3. Inventory **never** stores balances.
 4. Payments **never** mutate rental rows.
 5. `RentalsService` requests `FinanceService.createCharge` / `registerDeposit` and `SettlementService.createForRental`.
-6. `FinanceService` owns ledger money mutations; `SettlementService` owns financial **completion**.
-7. Account outstanding is **computed**; settlement remaining is maintained with CAS under SettlementService.
-8. Settlement never edits Payment rows.
+6. `SettlementService` owns rental **balances** and **financial completion**.
+7. `FinanceService` publishes append-only ledger entries (charge, deposit, payment, movement).
+8. Ledger never owns rental balances — outstanding for accounts with settlements is Settlement remaining.
+9. Standalone `POST /finance/payments` is rejected while open/partial settlements exist.
+10. Settlement never edits Payment rows; it calls `registerPaymentInTx` to publish ledger history.
 
 ## Money
 

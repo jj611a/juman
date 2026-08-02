@@ -37,6 +37,10 @@ describe('FinanceRepository', () => {
     },
     moneyMovement: { create: vi.fn() },
     financialAudit: { create: vi.fn() },
+    rentalSettlement: {
+      count: vi.fn(),
+      findMany: vi.fn(),
+    },
   };
   let repo: FinanceRepository;
 
@@ -138,6 +142,18 @@ describe('FinanceRepository', () => {
       action: 'payment',
     } as never);
     expect(repo.client).toBe(prisma);
+
+    prisma.rentalSettlement.count.mockResolvedValue(2);
+    expect(await repo.countBlockingSettlements('a1')).toBe(2);
+    expect(await repo.countBlockingSettlements('a1', prisma as never)).toBe(2);
+
+    prisma.rentalSettlement.findMany.mockResolvedValue([]);
+    expect(await repo.settlementOutstandingFils('a1')).toBeNull();
+    prisma.rentalSettlement.findMany.mockResolvedValue([
+      { remainingFils: 1000 },
+      { remainingFils: 500 },
+    ]);
+    expect(await repo.settlementOutstandingFils('a1')).toBe(1500);
   });
 });
 

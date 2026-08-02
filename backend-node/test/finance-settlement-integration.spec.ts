@@ -305,4 +305,84 @@ describe('Settlement engine integration (Phase 6.2)', () => {
       .send({})
       .expect(409);
   });
+
+  it('rejects ledger bypass; paid/closed/cancelled reject further payments', async () => {
+    const rentalId = await checkoutRental({ daysOffset: 80, price: 4000 });
+    const list = await request(app.getHttpServer())
+      .get('/settlements')
+      .query({ rentalId })
+      .set(auth())
+      .expect(200);
+    const settlement = list.body.items[0];
+    const accountId = settlement.accountId as string;
+
+    await request(app.getHttpServer())
+      .post('/finance/payments')
+      .set(auth())
+      .send({ accountId, amountFils: 100 })
+      .expect(409);
+
+    // Double-click style: two identical payments when remaining allows — both succeed deterministically
+    const twin = await Promise.all([
+      request(app.getHttpServer())
+        .post(`/settlements/${settlement.id}/payment`)
+        .set(auth())
+        .send({ amountFils: 1000 }),
+      request(app.getHttpServer())
+        .post(`/settlements/${settlement.id}/payment`)
+        .set(auth())
+        .send({ amountFils: 1000 }),
+    ]);
+    expect(twin.filter((r) => r.status === 200).length).toBe(2);
+
+    await request(app.getHttpServer())
+      .post(`/settlements/${settlement.id}/payment`)
+      .set(auth())
+      .send({ amountFils: 2000 })
+      .expect(200);
+
+    const paid = await request(app.getHttpServer())
+      .get(`/settlements/${settlement.id}`)
+      .set(auth())
+      .expect(200);
+    expect(paid.body.status).toBe('paid');
+    expect(paid.body.remainingFils).toBe(0);
+
+    await request(app.getHttpServer())
+      .post(`/settlements/${settlement.id}/payment`)
+      .set(auth())
+      .send({ amountFils: 1 })
+      .expect(409);
+
+    await request(app.getHttpServer())
+      .post(`/settlements/${settlement.id}/close`)
+      .set(auth())
+      .send({})
+      .expect(200);
+
+    await request(app.getHttpServer())
+      .post(`/settlements/${settlement.id}/payment`)
+      .set(auth())
+      .send({ amountFils: 1 })
+      .expect(409);
+
+    // Cancelled rejects payments (separate settlement)
+    const cancelRental = await checkoutRental({ daysOffset: 100, price: 1200 });
+    const cancelList = await request(app.getHttpServer())
+      .get('/settlements')
+      .query({ rentalId: cancelRental })
+      .set(auth())
+      .expect(200);
+    const cancelId = cancelList.body.items[0].id as string;
+    await request(app.getHttpServer())
+      .post(`/settlements/${cancelId}/cancel`)
+      .set(auth())
+      .send({})
+      .expect(200);
+    await request(app.getHttpServer())
+      .post(`/settlements/${cancelId}/payment`)
+      .set(auth())
+      .send({ amountFils: 100 })
+      .expect(409);
+  });
 });

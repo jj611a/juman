@@ -65,6 +65,8 @@ describe('FinanceService', () => {
     updatePayment: vi.fn(),
     createMovement: vi.fn(),
     createAudit: vi.fn(),
+    countBlockingSettlements: vi.fn(),
+    settlementOutstandingFils: vi.fn(),
   };
   const customers = { getById: vi.fn() };
   const settings = {
@@ -112,6 +114,8 @@ describe('FinanceService', () => {
     repo.lockAccount.mockResolvedValue(undefined);
     repo.createAudit.mockResolvedValue({});
     repo.createMovement.mockResolvedValue({});
+    repo.countBlockingSettlements.mockResolvedValue(0);
+    repo.settlementOutstandingFils.mockResolvedValue(null);
     repo.client.$transaction.mockImplementation(
       async (fn: (tx: unknown) => Promise<unknown>) => fn({}),
     );
@@ -255,6 +259,20 @@ describe('FinanceService', () => {
     repo.findAccountById.mockResolvedValue(account);
     const out = await service.getOutstanding({ accountId: 'a1' });
     expect(out.outstandingFils).toBe(2000);
+    expect(out.balanceSource).toBe('ledger');
+
+    repo.settlementOutstandingFils.mockResolvedValueOnce(1500);
+    const fromSettlement = await service.getOutstanding({ accountId: 'a1' });
+    expect(fromSettlement.outstandingFils).toBe(1500);
+    expect(fromSettlement.balanceSource).toBe('settlement');
+  });
+
+  it('rejects standalone payment when open settlement exists', async () => {
+    repo.countBlockingSettlements.mockResolvedValueOnce(1);
+    await expect(
+      service.registerPayment({ accountId: 'a1', amountFils: 100 }),
+    ).rejects.toBeInstanceOf(BusinessException);
+    expect(repo.createPayment).not.toHaveBeenCalled();
   });
 
   it('rejects payment on missing account', async () => {

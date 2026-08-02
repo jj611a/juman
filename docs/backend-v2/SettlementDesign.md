@@ -86,7 +86,9 @@ Platform audit + settlement history for: created, payment_applied, closed, cance
 
 ## Technical debt (do not ignore)
 
-**Ledger payment vs settlement payment.** `POST /finance/payments` still mutates account outstanding without updating `RentalSettlement`. Rental financial completion ignores ledger outstanding and reads Settlement only. Until a later phase unifies this (e.g. block ledger payments while an open settlement exists, or require `settlementId` on payment), operators must use `/settlements/:id/payment` for rental obligations. Leaving both paths unconstrained will produce silent balance drift.
+**Resolved in Phase 6.3:** Dual payment paths closed. `POST /finance/payments` is rejected while any open/partial settlement exists on the account. Rental payments must use `POST /settlements/:id/payment`. Outstanding HTTP prefers Settlement remaining (`balanceSource: settlement`).
+
+**Remaining:** Checkout charge/deposit/settlement are not yet one atomic TX with inventory. Refunds/adjustments (when added) must reuse the settlement gate. Payment idempotency keys are not yet implemented.
 
 ## Coverage
 

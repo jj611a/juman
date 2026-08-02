@@ -74,7 +74,7 @@ src/
   rentals/        Rental workflow core (Phase 5.1)
   reservations/   Reservation engine (Phase 5.2)
   availability/   Sole calendar allocator (Phase 5.4)
-  finance/        Financial core + settlement (Phase 6.1–6.2)
+  finance/        Financial core + settlement + integrity (Phase 6.1–6.3)
 ```
 
 ## Auth / RBAC

@@ -218,4 +218,47 @@ export class FinanceRepository {
     const client = tx ?? this.prisma;
     return client.financialAudit.create({ data });
   }
+
+  /**
+   * Settlements that still accept payment — block standalone ledger payments.
+   */
+  async countBlockingSettlements(
+    accountId: string,
+    tx?: Prisma.TransactionClient,
+  ): Promise<number> {
+    // Prefer TX client when it exposes rentalSettlement (real Prisma TX);
+    // fall back to root client for unit-test stubs / read-committed peek.
+    const client =
+      tx &&
+      typeof (tx as { rentalSettlement?: unknown }).rentalSettlement ===
+        'object'
+        ? tx
+        : this.prisma;
+    return client.rentalSettlement.count({
+      where: {
+        accountId,
+        deletedAt: null,
+        status: { in: ['open', 'partially_paid'] },
+      },
+    });
+  }
+
+  /**
+   * Settlement-owned outstanding: sum remaining across non-cancelled settlements.
+   * Returns null when the account has no settlement obligation (ledger-only legacy).
+   */
+  async settlementOutstandingFils(
+    accountId: string,
+  ): Promise<number | null> {
+    const rows = await this.prisma.rentalSettlement.findMany({
+      where: {
+        accountId,
+        deletedAt: null,
+        status: { not: 'cancelled' },
+      },
+      select: { remainingFils: true },
+    });
+    if (rows.length === 0) return null;
+    return rows.reduce((sum, row) => sum + row.remainingFils, 0);
+  }
 }

@@ -8,8 +8,12 @@ import { AppModule } from '../src/app.module';
 import { createGlobalValidationPipe } from '../src/validation/create-validation-pipe';
 import { prepareTestDatabase } from './helpers/test-db';
 import { PrismaService } from '../src/database/prisma.service';
+import {
+  assertLedgerMatchesSettlement,
+  assertSettlementBalanceInvariant,
+} from '../src/finance/settlement/settlement.integrity';
 
-describe('Finance core integration (Phase 6.1)', () => {
+describe('Finance core integration (Phase 6.1/6.3)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let dir = '';
@@ -75,7 +79,7 @@ describe('Finance core integration (Phase 6.1)', () => {
 
   const auth = () => ({ Authorization: `Bearer ${token}` });
 
-  it('rental checkout creates charge+deposit; payments reduce outstanding', async () => {
+  it('checkout creates settlement; rental pay via settlement; ledger pay blocked', async () => {
     await request(app.getHttpServer()).get('/finance/accounts').expect(401);
 
     const rental = await request(app.getHttpServer())
@@ -108,17 +112,32 @@ describe('Finance core integration (Phase 6.1)', () => {
       .query({ accountId })
       .set(auth())
       .expect(200);
-    // 5000 charge - 1000 deposit = 4000
     expect(outstandingAfterCharge.body.outstandingFils).toBe(4000);
+    expect(outstandingAfterCharge.body.balanceSource).toBe('settlement');
 
-    const payment = await request(app.getHttpServer())
+    // Dual-path blocked
+    await request(app.getHttpServer())
       .post('/finance/payments')
       .set(auth())
       .send({ accountId, amountFils: 1500, method: 'cash' })
-      .expect(201);
+      .expect(409);
 
-    expect(payment.body.status).toBe('completed');
-    expect(payment.body.paymentNumber).toMatch(/^PAY-\d{8}$/);
+    const settlements = await request(app.getHttpServer())
+      .get('/settlements')
+      .query({ rentalId: rental.body.id })
+      .set(auth())
+      .expect(200);
+    const settlementId = settlements.body.items[0].id as string;
+
+    const payment = await request(app.getHttpServer())
+      .post(`/settlements/${settlementId}/payment`)
+      .set(auth())
+      .send({ amountFils: 1500, method: 'cash' })
+      .expect(200);
+
+    expect(payment.body.paidFils).toBe(1500);
+    expect(payment.body.remainingFils).toBe(2500);
+    assertSettlementBalanceInvariant(payment.body);
 
     const afterPay = await request(app.getHttpServer())
       .get('/finance/outstanding')
@@ -141,11 +160,27 @@ describe('Finance core integration (Phase 6.1)', () => {
       .expect(200);
     expect(pays.body.meta.total).toBeGreaterThanOrEqual(1);
 
+    const detail = await request(app.getHttpServer())
+      .get(`/settlements/${settlementId}`)
+      .set(auth())
+      .expect(200);
+    const applied = detail.body.history
+      .filter((h: { action: string }) => h.action === 'payment_applied')
+      .reduce((s: number, h: { amountFils: number }) => s + (h.amountFils ?? 0), 0);
+    assertLedgerMatchesSettlement({
+      chargeFils: 5000,
+      depositFils: 1000,
+      settlementTotalFils: detail.body.totalFils,
+      settlementPaidFils: detail.body.paidFils,
+      settlementRemainingFils: detail.body.remainingFils,
+      appliedPaymentFils: applied,
+    });
+
     const audits = await prisma.financialAudit.count();
     expect(audits).toBeGreaterThanOrEqual(3);
   });
 
-  it('supports concurrent payments without losing balance integrity', async () => {
+  it('supports concurrent settlement payments without losing balance integrity', async () => {
     const item = await request(app.getHttpServer())
       .post('/items')
       .set(auth())
@@ -174,46 +209,57 @@ describe('Finance core integration (Phase 6.1)', () => {
       .send({})
       .expect(200);
 
-    const accounts = await request(app.getHttpServer())
-      .get('/finance/accounts')
-      .query({ customerId })
+    const settlements = await request(app.getHttpServer())
+      .get('/settlements')
+      .query({ rentalId: rental.body.id })
       .set(auth())
       .expect(200);
-    const accountId = accounts.body.items[0].id;
-
-    const before = (
-      await request(app.getHttpServer())
-        .get('/finance/outstanding')
-        .query({ accountId })
-        .set(auth())
-    ).body.outstandingFils as number;
+    const settlementId = settlements.body.items[0].id as string;
+    const before = settlements.body.items[0].remainingFils as number;
 
     const results = await Promise.all([
       request(app.getHttpServer())
-        .post('/finance/payments')
+        .post(`/settlements/${settlementId}/payment`)
         .set(auth())
-        .send({ accountId, amountFils: 1000 }),
+        .send({ amountFils: 1000 }),
       request(app.getHttpServer())
-        .post('/finance/payments')
+        .post(`/settlements/${settlementId}/payment`)
         .set(auth())
-        .send({ accountId, amountFils: 1000 }),
+        .send({ amountFils: 1000 }),
     ]);
-    expect(results.every((r) => r.status === 201)).toBe(true);
+    expect(results.every((r) => r.status === 200)).toBe(true);
 
-    const after = (
-      await request(app.getHttpServer())
-        .get('/finance/outstanding')
-        .query({ accountId })
-        .set(auth())
-    ).body.outstandingFils as number;
-    expect(after).toBe(before - 2000);
+    const after = await request(app.getHttpServer())
+      .get(`/settlements/${settlementId}`)
+      .set(auth())
+      .expect(200);
+    expect(after.body.remainingFils).toBe(before - 2000);
+    assertSettlementBalanceInvariant(after.body);
+
+    const outstanding = await request(app.getHttpServer())
+      .get('/finance/outstanding')
+      .query({ customerId })
+      .set(auth())
+      .expect(200);
+    // Sum of remaining across all non-cancelled settlements for this customer account
+    expect(outstanding.body.balanceSource).toBe('settlement');
   });
 
-  it('rolls back payment when account is closed', async () => {
+  it('rolls back payment when account is closed (no open settlement)', async () => {
     const account = await prisma.financialAccount.findFirst({
       where: { customerId, deletedAt: null },
     });
     expect(account).toBeTruthy();
+
+    // Clear blocking settlements so standalone path can evaluate account status
+    await prisma.rentalSettlement.updateMany({
+      where: {
+        accountId: account!.id,
+        status: { in: ['open', 'partially_paid'] },
+      },
+      data: { status: 'cancelled', cancelledAt: new Date() },
+    });
+
     await prisma.financialAccount.update({
       where: { id: account!.id },
       data: { status: 'closed' },
