@@ -49,55 +49,74 @@ export class ReservationsRepository {
       createdBy?: string | null;
     }>;
     actor?: { userId?: string | null; username?: string | null };
+    tx?: Prisma.TransactionClient;
   }): Promise<ReservationWithRelations> {
-    return this.prisma.$transaction(async (tx) => {
-      const created = await tx.reservation.create({
-        data: {
-          ...input.data,
-          status: RESERVATION_STATUS.DRAFT,
-          items: {
-            create: input.items.map((i) => ({
-              itemId: i.itemId,
-              barcodeValue: i.barcodeValue ?? null,
-              agreedRentalPrice: i.agreedRentalPrice,
-              notes: i.notes ?? null,
-              createdBy: i.createdBy ?? null,
-            })),
-          },
-          statusHistory: {
-            create: {
-              oldStatus: RESERVATION_STATUS.DRAFT,
-              newStatus: RESERVATION_STATUS.DRAFT,
-              reason: 'created',
-              userId: input.actor?.userId ?? null,
-              username: input.actor?.username ?? null,
-            },
-          },
-        },
-      });
+    if (input.tx) {
+      return this.createConfirmedInTx(input.tx, input);
+    }
+    return this.prisma.$transaction((tx) => this.createConfirmedInTx(tx, input));
+  }
 
-      await tx.reservation.update({
-        where: { id: created.id },
-        data: {
-          status: RESERVATION_STATUS.CONFIRMED,
-          updatedBy: input.actor?.userId ?? null,
+  async createConfirmedInTx(
+    tx: Prisma.TransactionClient,
+    input: {
+      data: Prisma.ReservationUncheckedCreateInput;
+      items: Array<{
+        itemId: string;
+        barcodeValue?: string | null;
+        agreedRentalPrice: number;
+        notes?: string | null;
+        createdBy?: string | null;
+      }>;
+      actor?: { userId?: string | null; username?: string | null };
+    },
+  ): Promise<ReservationWithRelations> {
+    const created = await tx.reservation.create({
+      data: {
+        ...input.data,
+        status: RESERVATION_STATUS.DRAFT,
+        items: {
+          create: input.items.map((i) => ({
+            itemId: i.itemId,
+            barcodeValue: i.barcodeValue ?? null,
+            agreedRentalPrice: i.agreedRentalPrice,
+            notes: i.notes ?? null,
+            createdBy: i.createdBy ?? null,
+          })),
         },
-      });
-      await tx.reservationStatusHistory.create({
-        data: {
-          reservationId: created.id,
-          oldStatus: RESERVATION_STATUS.DRAFT,
-          newStatus: RESERVATION_STATUS.CONFIRMED,
-          reason: 'confirmed',
-          userId: input.actor?.userId ?? null,
-          username: input.actor?.username ?? null,
+        statusHistory: {
+          create: {
+            oldStatus: RESERVATION_STATUS.DRAFT,
+            newStatus: RESERVATION_STATUS.DRAFT,
+            reason: 'created',
+            userId: input.actor?.userId ?? null,
+            username: input.actor?.username ?? null,
+          },
         },
-      });
+      },
+    });
 
-      return tx.reservation.findUniqueOrThrow({
-        where: { id: created.id },
-        include: reservationInclude,
-      });
+    await tx.reservation.update({
+      where: { id: created.id },
+      data: {
+        status: RESERVATION_STATUS.CONFIRMED,
+        updatedBy: input.actor?.userId ?? null,
+      },
+    });
+    await tx.reservationStatusHistory.create({
+      data: {
+        reservationId: created.id,
+        oldStatus: RESERVATION_STATUS.DRAFT,
+        newStatus: RESERVATION_STATUS.CONFIRMED,
+        reason: 'confirmed',
+        userId: input.actor?.userId ?? null,
+        username: input.actor?.username ?? null,
+      },
+    });
+
+    return tx.reservation.findUniqueOrThrow({
+      where: { id: created.id },
+      include: reservationInclude,
     });
   }
 

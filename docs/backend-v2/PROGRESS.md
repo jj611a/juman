@@ -1,7 +1,7 @@
 # Backend V2 Progress Canvas
 
 **Live canvas:** `juman-backend-v2-roadmap.canvas.tsx`  
-**Branch:** `backend-v2` — **Updated:** 2026-08-02 — **Overall ~72%**
+**Branch:** `backend-v2` — **Updated:** 2026-08-02 — **Overall ~74%**
 
 ```
 Phase 0  Architecture                    DONE
@@ -13,9 +13,9 @@ Phase 5  Rental Engine
          5.1 Workflow core               DONE
          5.2 Reservation engine          DONE
          5.3 Engineering certification   DONE (76 · PASS WITH WARNINGS)
-         Fees / settlement               BLOCKED (Must-Fix)
-Phase 6  Financial                       BLOCKED
+         5.4 Integrity remediation       DONE (integrity 90)
+Phase 6  Financial                       WAITING APPROVAL
 Phase 7+ Reports / Desktop               WAITING
 ```
 
-**YOU ARE HERE:** After Phase 5.3 certification. Financial readiness = **NO**. Do **not** implement payments, late fees, penalties, settlement, or reports until Must-Fix items in `PHASE_5_ENGINEERING_CERTIFICATION.md` are remediated and approved.
+**YOU ARE HERE:** After Phase 5.4 integrity remediation. Must-Fix cleared. Financial readiness still requires **explicit approval** before any Phase 6 work.

@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
+import { AvailabilityService } from '../availability/availability.service';
 import { BarcodeService } from '../barcode/barcode.service';
 import { CustomersService } from '../customers/customers.service';
 import { CUSTOMER_STATUS } from '../customers/customers.constants';
@@ -60,6 +61,7 @@ export class RentalsService {
     private readonly barcodes: BarcodeService,
     private readonly settings: SettingsService,
     private readonly audit: AuditService,
+    private readonly availability: AvailabilityService,
   ) {}
 
   async create(dto: CreateRentalDto, actor?: AuthPrincipal) {
@@ -78,26 +80,35 @@ export class RentalsService {
     const prepared = await this.prepareItems(dto.items);
     const rentalNumber = await this.allocateNumber();
 
-    const row = await this.repo.create(
-      {
-        rentalNumber,
-        customerId: dto.customerId,
+    const row = await this.availability.runExclusive(async (tx) => {
+      await this.availability.assertItemsAvailable(
+        prepared.map((p) => p.itemId),
         rentalDate,
         expectedReturnDate,
-        status: RENTAL_STATUS.DRAFT,
-        notes: dto.notes?.trim() || null,
-        createdBy: actor?.userId ?? null,
-        updatedBy: actor?.userId ?? null,
-      },
-      prepared.map((p) => ({
-        itemId: p.itemId,
-        barcodeValue: p.barcodeValue,
-        agreedRentalPrice: p.agreedRentalPrice,
-        notes: p.notes,
-        createdBy: actor?.userId ?? null,
-      })),
-      { userId: actor?.userId, username: actor?.username },
-    );
+        { tx },
+      );
+      return this.repo.createInTx(
+        tx,
+        {
+          rentalNumber,
+          customerId: dto.customerId,
+          rentalDate,
+          expectedReturnDate,
+          status: RENTAL_STATUS.DRAFT,
+          notes: dto.notes?.trim() || null,
+          createdBy: actor?.userId ?? null,
+          updatedBy: actor?.userId ?? null,
+        },
+        prepared.map((p) => ({
+          itemId: p.itemId,
+          barcodeValue: p.barcodeValue,
+          agreedRentalPrice: p.agreedRentalPrice,
+          notes: p.notes,
+          createdBy: actor?.userId ?? null,
+        })),
+        { userId: actor?.userId, username: actor?.username },
+      );
+    });
 
     await this.audit.recordCreate(
       RENTAL_MODULE,
@@ -154,66 +165,69 @@ export class RentalsService {
       referenceId: rental.id,
     };
 
-    try {
-      await this.repo.client.$transaction(async (tx) => {
-        for (const line of rental.items) {
-          await this.lifecycle.transition(
-            line.itemId,
-            {
-              newState: ITEM_LIFECYCLE.RESERVED,
-              expectedState: ITEM_LIFECYCLE.AVAILABLE,
-              reason: reason?.trim() || 'rental_checkout',
-              ...ref,
-            },
-            actor,
-            { tx, skipAudit: true },
-          );
-          await this.lifecycle.transition(
-            line.itemId,
-            {
-              newState: ITEM_LIFECYCLE.RENTED,
-              expectedState: ITEM_LIFECYCLE.RESERVED,
-              reason: reason?.trim() || 'rental_checkout',
-              ...ref,
-            },
-            actor,
-            { tx, skipAudit: true },
-          );
-        }
+    await this.availability.runExclusive(async (tx) => {
+      await this.availability.assertItemsAvailable(
+        rental.items.map((i) => i.itemId),
+        rental.rentalDate,
+        rental.expectedReturnDate,
+        { excludeRentalId: rental.id, tx },
+      );
 
-        const afterCheckout = await this.repo.transitionStatus({
-          rentalId: rental.id,
-          from: RENTAL_STATUS.DRAFT,
-          to: RENTAL_STATUS.CHECKED_OUT,
-          reason: reason?.trim() || 'checkout',
-          userId: actor?.userId ?? null,
-          username: actor?.username ?? null,
-          tx,
-        });
-        if (!afterCheckout) {
-          throw BusinessException.conflict(
-            'Concurrent rental checkout rejected',
-          );
-        }
+      for (const line of rental.items) {
+        await this.lifecycle.transition(
+          line.itemId,
+          {
+            newState: ITEM_LIFECYCLE.RESERVED,
+            expectedState: ITEM_LIFECYCLE.AVAILABLE,
+            reason: reason?.trim() || 'rental_checkout',
+            ...ref,
+          },
+          actor,
+          { tx, skipAudit: true },
+        );
+        await this.lifecycle.transition(
+          line.itemId,
+          {
+            newState: ITEM_LIFECYCLE.RENTED,
+            expectedState: ITEM_LIFECYCLE.RESERVED,
+            reason: reason?.trim() || 'rental_checkout',
+            ...ref,
+          },
+          actor,
+          { tx, skipAudit: true },
+        );
+      }
 
-        const afterActive = await this.repo.transitionStatus({
-          rentalId: rental.id,
-          from: RENTAL_STATUS.CHECKED_OUT,
-          to: RENTAL_STATUS.ACTIVE,
-          reason: 'handover_complete',
-          userId: actor?.userId ?? null,
-          username: actor?.username ?? null,
-          tx,
-        });
-        if (!afterActive) {
-          throw BusinessException.conflict(
-            'Concurrent rental activation rejected',
-          );
-        }
+      const afterCheckout = await this.repo.transitionStatus({
+        rentalId: rental.id,
+        from: RENTAL_STATUS.DRAFT,
+        to: RENTAL_STATUS.CHECKED_OUT,
+        reason: reason?.trim() || 'checkout',
+        userId: actor?.userId ?? null,
+        username: actor?.username ?? null,
+        tx,
       });
-    } catch (e) {
-      throw e;
-    }
+      if (!afterCheckout) {
+        throw BusinessException.conflict(
+          'Concurrent rental checkout rejected',
+        );
+      }
+
+      const afterActive = await this.repo.transitionStatus({
+        rentalId: rental.id,
+        from: RENTAL_STATUS.CHECKED_OUT,
+        to: RENTAL_STATUS.ACTIVE,
+        reason: 'handover_complete',
+        userId: actor?.userId ?? null,
+        username: actor?.username ?? null,
+        tx,
+      });
+      if (!afterActive) {
+        throw BusinessException.conflict(
+          'Concurrent rental activation rejected',
+        );
+      }
+    });
 
     // Audit inventory transitions after successful TX (no partial rental left).
     for (const line of rental.items) {

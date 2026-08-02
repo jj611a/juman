@@ -54,6 +54,7 @@ const draftRental = {
 describe('RentalsService', () => {
   const repo = {
     create: vi.fn(),
+    createInTx: vi.fn(),
     findById: vi.fn(),
     findAnyNumber: vi.fn(),
     nextSequence: vi.fn(),
@@ -73,6 +74,10 @@ describe('RentalsService', () => {
     recordCreate: vi.fn(),
     record: vi.fn(),
   };
+  const availability = {
+    runExclusive: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn({})),
+    assertItemsAvailable: vi.fn(),
+  };
   let service: RentalsService;
 
   beforeEach(() => {
@@ -85,6 +90,7 @@ describe('RentalsService', () => {
       barcodes as never,
       settings as never,
       audit as never,
+      availability as never,
     );
     customers.getById.mockResolvedValue({ id: 'c1', status: 'active' });
     items.getById.mockResolvedValue(itemRow);
@@ -96,8 +102,13 @@ describe('RentalsService', () => {
     repo.nextSequence.mockResolvedValue(1);
     repo.findAnyNumber.mockResolvedValue(null);
     repo.create.mockResolvedValue(draftRental);
+    repo.createInTx.mockResolvedValue(draftRental);
     repo.findById.mockResolvedValue(draftRental);
     repo.list.mockResolvedValue({ rows: [draftRental], total: 1 });
+    availability.assertItemsAvailable.mockResolvedValue(undefined);
+    availability.runExclusive.mockImplementation(
+      async (fn: (tx: unknown) => Promise<unknown>) => fn({}),
+    );
     repo.client.$transaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) =>
       fn({}),
     );
@@ -119,8 +130,25 @@ describe('RentalsService', () => {
       { userId: 'u1', username: 'admin' } as never,
     );
     expect(created.status).toBe('draft');
-    expect(repo.create).toHaveBeenCalled();
+    expect(repo.createInTx).toHaveBeenCalled();
+    expect(availability.runExclusive).toHaveBeenCalled();
+    expect(availability.assertItemsAvailable).toHaveBeenCalled();
     expect(audit.recordCreate).toHaveBeenCalled();
+  });
+
+  it('rejects create when AvailabilityService reports conflict', async () => {
+    availability.assertItemsAvailable.mockRejectedValueOnce(
+      BusinessException.conflict('reserved window'),
+    );
+    await expect(
+      service.create({
+        customerId: 'c1',
+        rentalDate: '2026-08-01T00:00:00.000Z',
+        expectedReturnDate: '2026-08-03T00:00:00.000Z',
+        items: [{ itemId: 'i1' }],
+      }),
+    ).rejects.toBeInstanceOf(BusinessException);
+    expect(repo.createInTx).not.toHaveBeenCalled();
   });
 
   it('rejects inactive customer and non-rentable item', async () => {
@@ -161,6 +189,12 @@ describe('RentalsService', () => {
       username: 'admin',
     } as never);
     expect(lifecycle.transition).toHaveBeenCalled();
+    expect(availability.assertItemsAvailable).toHaveBeenCalledWith(
+      ['i1'],
+      draftRental.rentalDate,
+      draftRental.expectedReturnDate,
+      expect.objectContaining({ excludeRentalId: 'r1' }),
+    );
     expect(result.status).toBe(RENTAL_STATUS.ACTIVE);
     expect(audit.record).toHaveBeenCalledWith(
       expect.objectContaining({ action: 'checkout' }),
@@ -347,5 +381,94 @@ describe('RentalsService', () => {
       BusinessException,
     );
     await service.list({ q: 'Ali', rentalNumber: 'RENT', customerId: 'c1' });
+  });
+
+  it('materializes active rental from reservation inside outer TX', async () => {
+    const tx = {
+      sequenceCounter: {
+        findUnique: vi.fn().mockResolvedValue({ prefix: 'RENT', lastValue: 0 }),
+        update: vi.fn().mockResolvedValue({ lastValue: 1 }),
+        create: vi.fn(),
+      },
+    };
+    repo.nextSequence.mockResolvedValue(1);
+    // allocateNumberInTx uses repo.nextSequence with tx
+    repo.nextSequence = vi.fn().mockResolvedValue(1);
+    const active = {
+      ...draftRental,
+      reservationId: 'rs1',
+      status: RENTAL_STATUS.ACTIVE,
+    };
+    repo.createInTx.mockResolvedValue({ ...draftRental, reservationId: 'rs1' });
+    repo.transitionStatus
+      .mockResolvedValueOnce({ ...draftRental, status: RENTAL_STATUS.CHECKED_OUT })
+      .mockResolvedValueOnce(active);
+
+    const result = await service.materializeActiveFromReservation(
+      {
+        reservationId: 'rs1',
+        customerId: 'c1',
+        rentalDate: new Date('2026-08-01'),
+        expectedReturnDate: new Date('2026-08-03'),
+        items: [
+          {
+            itemId: 'i1',
+            barcodeValue: 'DR-00000001',
+            agreedRentalPrice: 2000,
+          },
+        ],
+        reason: 'reservation_checkout',
+      },
+      tx as never,
+      { userId: 'u1', username: 'admin' } as never,
+    );
+    expect(result.status).toBe(RENTAL_STATUS.ACTIVE);
+    expect(lifecycle.transition).toHaveBeenCalled();
+    expect(repo.createInTx).toHaveBeenCalledWith(
+      tx,
+      expect.objectContaining({ reservationId: 'rs1' }),
+      expect.any(Array),
+      expect.anything(),
+    );
+  });
+
+  it('rejects materialize when concurrent status transition loses', async () => {
+    const tx = {};
+    repo.nextSequence.mockResolvedValue(1);
+    repo.createInTx.mockResolvedValue({ ...draftRental, reservationId: 'rs1' });
+    repo.transitionStatus.mockResolvedValueOnce(null);
+    await expect(
+      service.materializeActiveFromReservation(
+        {
+          reservationId: 'rs1',
+          customerId: 'c1',
+          rentalDate: new Date('2026-08-01'),
+          expectedReturnDate: new Date('2026-08-03'),
+          items: [{ itemId: 'i1', agreedRentalPrice: 1 }],
+        },
+        tx as never,
+      ),
+    ).rejects.toBeInstanceOf(BusinessException);
+  });
+
+  it('rejects materialize when activation CAS loses', async () => {
+    const tx = {};
+    repo.nextSequence.mockResolvedValue(1);
+    repo.createInTx.mockResolvedValue({ ...draftRental, reservationId: 'rs1' });
+    repo.transitionStatus
+      .mockResolvedValueOnce({ ...draftRental, status: RENTAL_STATUS.CHECKED_OUT })
+      .mockResolvedValueOnce(null);
+    await expect(
+      service.materializeActiveFromReservation(
+        {
+          reservationId: 'rs1',
+          customerId: 'c1',
+          rentalDate: new Date('2026-08-01'),
+          expectedReturnDate: new Date('2026-08-03'),
+          items: [{ itemId: 'i1', agreedRentalPrice: 1 }],
+        },
+        tx as never,
+      ),
+    ).rejects.toBeInstanceOf(BusinessException);
   });
 });

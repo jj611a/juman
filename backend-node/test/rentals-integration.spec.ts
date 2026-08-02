@@ -9,7 +9,6 @@ import { createGlobalValidationPipe } from '../src/validation/create-validation-
 import { prepareTestDatabase } from './helpers/test-db';
 import { PrismaService } from '../src/database/prisma.service';
 import { LifecycleService } from '../src/inventory/lifecycle/lifecycle.service';
-import { RentalsService } from '../src/rentals/rentals.service';
 
 describe('Rentals workflow integration (Phase 5.1)', () => {
   let app: INestApplication;
@@ -210,7 +209,7 @@ describe('Rentals workflow integration (Phase 5.1)', () => {
     expect(released.lifecycleState).toBe('available');
   });
 
-  it('rejects checkout when item not rentable and validates concurrency', async () => {
+  it('rejects overlapping draft create and concurrent checkout of same rental', async () => {
     const item = await request(app.getHttpServer())
       .post('/items')
       .set('Authorization', `Bearer ${token}`)
@@ -221,45 +220,46 @@ describe('Rentals workflow integration (Phase 5.1)', () => {
       })
       .expect(201);
 
+    const window = {
+      rentalDate: new Date().toISOString(),
+      expectedReturnDate: new Date(Date.now() + 86400000).toISOString(),
+    };
+
     const draftA = await request(app.getHttpServer())
       .post('/rentals')
       .set('Authorization', `Bearer ${token}`)
       .send({
         customerId,
-        rentalDate: new Date().toISOString(),
-        expectedReturnDate: new Date(Date.now() + 86400000).toISOString(),
+        ...window,
         items: [{ itemId: item.body.id }],
       })
       .expect(201);
-    const draftB = await request(app.getHttpServer())
+
+    await request(app.getHttpServer())
       .post('/rentals')
       .set('Authorization', `Bearer ${token}`)
       .send({
         customerId,
-        rentalDate: new Date().toISOString(),
-        expectedReturnDate: new Date(Date.now() + 86400000).toISOString(),
+        ...window,
         items: [{ itemId: item.body.id }],
       })
-      .expect(201);
-
-    await request(app.getHttpServer())
-      .post(`/rentals/${draftA.body.id}/checkout`)
-      .set('Authorization', `Bearer ${token}`)
-      .send({})
-      .expect(200);
-
-    await request(app.getHttpServer())
-      .post(`/rentals/${draftB.body.id}/checkout`)
-      .set('Authorization', `Bearer ${token}`)
-      .send({})
       .expect(409);
 
-    const rentals = app.get(RentalsService);
+    const results = await Promise.all([
+      request(app.getHttpServer())
+        .post(`/rentals/${draftA.body.id}/checkout`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({}),
+      request(app.getHttpServer())
+        .post(`/rentals/${draftA.body.id}/checkout`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({}),
+    ]);
+    expect(results.filter((r) => r.status === 200)).toHaveLength(1);
+    expect(results.filter((r) => r.status === 409)).toHaveLength(1);
+
     const lifecycle = app.get(LifecycleService);
     expect(lifecycle.canTransition('available', 'reserved')).toBe(true);
-    await expect(
-      rentals.checkout(draftB.body.id),
-    ).rejects.toBeTruthy();
   });
 
   it('rejects draft lifecycle misuse and bad create payloads', async () => {

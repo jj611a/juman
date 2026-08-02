@@ -1,6 +1,6 @@
 import 'reflect-metadata';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { AvailabilityService } from '../src/reservations/availability/availability.service';
+import { AvailabilityService } from '../src/availability/availability.service';
 import { ReservationsService } from '../src/reservations/reservations.service';
 import { BusinessException } from '../src/shared/errors/business.exception';
 import { RESERVATION_STATUS } from '../src/reservations/reservations.constants';
@@ -136,11 +136,42 @@ describe('AvailabilityService', () => {
     });
     expect(rentalConflicts.some((c) => c.kind === 'rental')).toBe(true);
   });
+
+  it('runExclusive acquires allocation lock then runs callback', async () => {
+    const tx = {
+      sequenceCounter: {
+        findUnique: vi.fn().mockResolvedValue(null),
+        create: vi.fn().mockResolvedValue({}),
+        update: vi.fn().mockResolvedValue({ lastValue: 1 }),
+      },
+      reservationItem: { findMany: vi.fn().mockResolvedValue([]) },
+      rentalItem: { findMany: vi.fn().mockResolvedValue([]) },
+    };
+    const prisma = {
+      $transaction: vi.fn(async (fn: (t: typeof tx) => Promise<unknown>) =>
+        fn(tx),
+      ),
+    };
+    const svc = new AvailabilityService(prisma as never);
+    const result = await svc.runExclusive(async (inner) => {
+      await svc.assertItemsAvailable(
+        ['i1'],
+        new Date('2026-09-01'),
+        new Date('2026-09-05'),
+        { tx: inner },
+      );
+      return 'ok';
+    });
+    expect(result).toBe('ok');
+    expect(tx.sequenceCounter.update).toHaveBeenCalled();
+    expect(tx.reservationItem.findMany).toHaveBeenCalled();
+  });
 });
 
 describe('ReservationsService', () => {
   const repo = {
     createConfirmed: vi.fn(),
+    createConfirmedInTx: vi.fn(),
     findById: vi.fn(),
     findAnyNumber: vi.fn(),
     nextSequence: vi.fn(),
@@ -152,6 +183,7 @@ describe('ReservationsService', () => {
     assertItemsAvailable: vi.fn(),
     assertAvailable: vi.fn(),
     findConflicts: vi.fn(),
+    runExclusive: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn({})),
   };
   const customers = { getById: vi.fn() };
   const items = { getById: vi.fn() };
@@ -185,10 +217,14 @@ describe('ReservationsService', () => {
     });
     repo.nextSequence.mockResolvedValue(1);
     repo.findAnyNumber.mockResolvedValue(null);
+    repo.createConfirmedInTx.mockResolvedValue(confirmed);
     repo.createConfirmed.mockResolvedValue(confirmed);
     repo.findById.mockResolvedValue(confirmed);
     repo.list.mockResolvedValue({ rows: [confirmed], total: 1 });
     availability.assertItemsAvailable.mockResolvedValue(undefined);
+    availability.runExclusive.mockImplementation(
+      async (fn: (tx: unknown) => Promise<unknown>) => fn({}),
+    );
     repo.client.$transaction.mockImplementation(
       async (fn: (tx: unknown) => Promise<unknown>) => fn({}),
     );
@@ -214,7 +250,9 @@ describe('ReservationsService', () => {
       { userId: 'u1' } as never,
     );
     expect(row.status).toBe('confirmed');
+    expect(availability.runExclusive).toHaveBeenCalled();
     expect(availability.assertItemsAvailable).toHaveBeenCalled();
+    expect(repo.createConfirmedInTx).toHaveBeenCalled();
     expect(audit.recordCreate).toHaveBeenCalled();
     expect(audit.record).toHaveBeenCalledWith(
       expect.objectContaining({ action: 'confirmed' }),

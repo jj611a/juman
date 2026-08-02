@@ -18,6 +18,10 @@ export interface AvailabilityConflict {
   readonly status: string;
 }
 
+export interface AvailabilityTxOptions {
+  readonly tx?: import('@prisma/client').Prisma.TransactionClient;
+}
+
 /** Half-open overlap: [start, end) intersects [otherStart, otherEnd). */
 export function rangesOverlap(
   start: Date,
@@ -25,5 +29,7 @@ export function rangesOverlap(
   otherStart: Date,
   otherEnd: Date,
 ): boolean {
-  return start.getTime() < otherEnd.getTime() && end.getTime() > otherStart.getTime();
+  return (
+    start.getTime() < otherEnd.getTime() && end.getTime() > otherStart.getTime()
+  );
 }

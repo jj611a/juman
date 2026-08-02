@@ -172,3 +172,11 @@
 - **Context:** Rental + Reservation foundations shipped; Financial must not start on unverified integrity.
 - **Decision:** Phase 5.3 is verification-only. Certify workflow foundations with explicit Must-Fix blockers before Phase 6: (1) walk-in rentals must use `AvailabilityService`, (2) concurrent reservation create must be single-winner, (3) restore `pnpm test:cov:rentals` thresholds. Overall score **76** — PASS WITH WARNINGS. Financial readiness = **NO**.
 - **Consequences:** No Feature work in 5.3. Remediation required before Financial. Report: `PHASE_5_ENGINEERING_CERTIFICATION.md`. Harness: `scripts/cert-phase53.cjs`.
+
+## ADR-V2-023 - Phase 5.4 rental integrity remediation
+
+- **Date:** 2026-08-02
+- **Status:** Accepted
+- **Context:** Phase 5.3 Must-Fix: walk-in skipped AvailabilityService, reservation TOCTOU, rentals coverage gate fail.
+- **Decision:** Extract shared `AvailabilityModule`. All allocation (walk-in create/checkout, reservation create/checkout) runs under `AvailabilityService.runExclusive` (write lock + assert + persist). Restore `pnpm test:cov:rentals` ≥95%. Integrity score **90**.
+- **Consequences:** No Financial in this phase. Product approval still required before Phase 6. Report: `PHASE_5_REMEDIATION_REPORT.md`.

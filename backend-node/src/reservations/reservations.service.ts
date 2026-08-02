@@ -19,7 +19,7 @@ import { normalizeSearchQuery } from '../shared/search/search';
 import { normalizeSort } from '../shared/sorting/sorting';
 import { parseOptionalBoolean } from '../shared/validation/parse-boolean';
 import type { AuthPrincipal } from '../shared/types';
-import { AvailabilityService } from './availability/availability.service';
+import { AvailabilityService } from '../availability/availability.service';
 import type {
   CreateReservationDto,
   CreateReservationItemDto,
@@ -74,32 +74,36 @@ export class ReservationsService {
     this.assertDateOrder(startDate, expectedCheckoutDate, expectedReturnDate);
 
     const prepared = await this.prepareItems(dto.items);
-    await this.availability.assertItemsAvailable(
-      prepared.map((p) => p.itemId),
-      startDate,
-      expectedReturnDate,
-    );
-
     const reservationNumber = await this.allocateNumber();
-    const row = await this.repo.createConfirmed({
-      data: {
-        reservationNumber,
-        customerId: dto.customerId,
+
+    // Availability assert + persistence are atomic under allocation lock (no TOCTOU).
+    const row = await this.availability.runExclusive(async (tx) => {
+      await this.availability.assertItemsAvailable(
+        prepared.map((p) => p.itemId),
         startDate,
-        expectedCheckoutDate,
         expectedReturnDate,
-        notes: dto.notes?.trim() || null,
-        createdBy: actor?.userId ?? null,
-        updatedBy: actor?.userId ?? null,
-      },
-      items: prepared.map((p) => ({
-        itemId: p.itemId,
-        barcodeValue: p.barcodeValue,
-        agreedRentalPrice: p.agreedRentalPrice,
-        notes: p.notes,
-        createdBy: actor?.userId ?? null,
-      })),
-      actor: { userId: actor?.userId, username: actor?.username },
+        { tx },
+      );
+      return this.repo.createConfirmedInTx(tx, {
+        data: {
+          reservationNumber,
+          customerId: dto.customerId,
+          startDate,
+          expectedCheckoutDate,
+          expectedReturnDate,
+          notes: dto.notes?.trim() || null,
+          createdBy: actor?.userId ?? null,
+          updatedBy: actor?.userId ?? null,
+        },
+        items: prepared.map((p) => ({
+          itemId: p.itemId,
+          barcodeValue: p.barcodeValue,
+          agreedRentalPrice: p.agreedRentalPrice,
+          notes: p.notes,
+          createdBy: actor?.userId ?? null,
+        })),
+        actor: { userId: actor?.userId, username: actor?.username },
+      });
     });
 
     await this.audit.recordCreate(
@@ -158,15 +162,15 @@ export class ReservationsService {
     for (const line of reservation.items) {
       await this.assertItemRentable(line.itemId, line.barcodeValue);
     }
-    await this.availability.assertItemsAvailable(
-      reservation.items.map((i) => i.itemId),
-      reservation.startDate,
-      reservation.expectedReturnDate,
-      { excludeReservationId: reservation.id },
-    );
-
     let rentalId = '';
-    await this.repo.client.$transaction(async (tx) => {
+    await this.availability.runExclusive(async (tx) => {
+      await this.availability.assertItemsAvailable(
+        reservation.items.map((i) => i.itemId),
+        reservation.startDate,
+        reservation.expectedReturnDate,
+        { excludeReservationId: reservation.id, tx },
+      );
+
       const rental = await this.rentals.materializeActiveFromReservation(
         {
           reservationId: reservation.id,

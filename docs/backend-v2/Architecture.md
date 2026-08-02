@@ -72,7 +72,8 @@ src/
   customers/      Customer domain
   inventory/      Catalog engine (Item + taxonomy + lifecycle)
   rentals/        Rental workflow core (Phase 5.1)
-  reservations/   Reservation engine + AvailabilityService (Phase 5.2)
+  reservations/   Reservation engine (Phase 5.2)
+  availability/   Sole calendar allocator (Phase 5.4)
 ```
 
 ## Auth / RBAC
@@ -141,4 +142,14 @@ Non-feature gate then remediation: `PHASE_4_ENGINEERING_CERTIFICATION.md` → `P
 ## Phase 5 engineering certification (5.3)
 
 Non-feature gate: `PHASE_5_ENGINEERING_CERTIFICATION.md` (overall **76**, **PASS WITH WARNINGS**).  
-**Financial (Phase 6) is blocked** until Must-Fix items are cleared — especially walk-in rentals must reuse `AvailabilityService`, concurrent reservation TOCTOU, and `pnpm test:cov:rentals` gate restoration.
+Must-Fix items remediations: `PHASE_5_REMEDIATION_REPORT.md` (integrity **90**).
+
+## Availability / allocation (Phase 5.4)
+
+`AvailabilityModule` (`src/availability`) is the **sole** calendar conflict allocator.  
+Walk-in rentals, reservation create/checkout (and future transfers) must call `AvailabilityService` inside `runExclusive` (assert + persist, no TOCTOU).  
+Inventory mutations remain exclusive to `LifecycleService`.
+
+## Financial (Phase 6)
+
+**Blocked pending explicit approval** after Phase 5.4 integrity remediation.

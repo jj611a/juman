@@ -6,6 +6,7 @@ import { AuthModule } from './auth/auth.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { PasswordChangeGuard } from './auth/guards/password-change.guard';
 import { PermissionsGuard } from './auth/guards/permissions.guard';
+import { AvailabilityModule } from './availability/availability.module';
 import { BarcodeModule } from './barcode/barcode.module';
 import { configuration } from './config/configuration';
 import { validateEnvironment } from './config/env.validation';
@@ -42,6 +43,7 @@ import { UsersModule } from './users/users.module';
     AuthModule,
     CustomersModule,
     InventoryModule,
+    AvailabilityModule,
     RentalsModule,
     ReservationsModule,
     HealthModule,

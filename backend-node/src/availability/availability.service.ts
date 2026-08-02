@@ -1,11 +1,13 @@
 import { Injectable } from '@nestjs/common';
-import { PrismaService } from '../../database/prisma.service';
-import { BusinessException } from '../../shared/errors/business.exception';
-import { RENTAL_STATUS } from '../../rentals/rentals.constants';
-import { RESERVATION_STATUS } from '../reservations.constants';
+import type { Prisma } from '@prisma/client';
+import { PrismaService } from '../database/prisma.service';
+import { RENTAL_STATUS } from '../rentals/rentals.constants';
+import { RESERVATION_STATUS } from '../reservations/reservations.constants';
+import { BusinessException } from '../shared/errors/business.exception';
 import {
   rangesOverlap,
   type AvailabilityConflict,
+  type AvailabilityTxOptions,
   type AvailabilityWindow,
 } from './availability.types';
 
@@ -25,22 +27,64 @@ const BLOCKING_RENTAL_STATUSES: readonly string[] = [
 ];
 
 /**
- * Reusable availability / conflict detector (calendar-ready).
+ * Sole allocator / conflict detector for item calendar windows.
+ * Walk-in rentals, reservation create/checkout, and future transfers must use this service.
  * Cancelled / expired / completed reservations and cancelled / completed rentals are ignored.
  */
 @Injectable()
 export class AvailabilityService {
+  /** Serializes all allocation mutations on SQLite (write-lock via SequenceCounter). */
+  static readonly ALLOCATION_LOCK_PREFIX = '__allocation_lock__';
+
   constructor(private readonly prisma: PrismaService) {}
+
+  private db(tx?: Prisma.TransactionClient) {
+    return tx ?? this.prisma;
+  }
+
+  /**
+   * Run allocation work under an exclusive write lock.
+   * Availability check + persistence must happen inside this callback (no TOCTOU).
+   */
+  async runExclusive<T>(
+    fn: (tx: Prisma.TransactionClient) => Promise<T>,
+  ): Promise<T> {
+    return this.prisma.$transaction(
+      async (tx) => {
+        await this.acquireAllocationLock(tx);
+        return fn(tx);
+      },
+      { maxWait: 10_000, timeout: 20_000 },
+    );
+  }
+
+  async acquireAllocationLock(tx: Prisma.TransactionClient): Promise<void> {
+    const prefix = AvailabilityService.ALLOCATION_LOCK_PREFIX;
+    const existing = await tx.sequenceCounter.findUnique({ where: { prefix } });
+    if (!existing) {
+      try {
+        await tx.sequenceCounter.create({ data: { prefix, lastValue: 0 } });
+      } catch {
+        // Concurrent first-time create — proceed to update.
+      }
+    }
+    await tx.sequenceCounter.update({
+      where: { prefix },
+      data: { lastValue: { increment: 1 } },
+    });
+  }
 
   async findConflicts(
     window: AvailabilityWindow,
+    opts?: AvailabilityTxOptions,
   ): Promise<AvailabilityConflict[]> {
     if (window.end.getTime() <= window.start.getTime()) {
       return [];
     }
 
+    const client = this.db(opts?.tx);
     const [reservationRows, rentalRows] = await Promise.all([
-      this.prisma.reservationItem.findMany({
+      client.reservationItem.findMany({
         where: {
           itemId: window.itemId,
           reservation: {
@@ -63,7 +107,7 @@ export class AvailabilityService {
           },
         },
       }),
-      this.prisma.rentalItem.findMany({
+      client.rentalItem.findMany({
         where: {
           itemId: window.itemId,
           rental: {
@@ -137,8 +181,11 @@ export class AvailabilityService {
     return conflicts;
   }
 
-  async assertAvailable(window: AvailabilityWindow): Promise<void> {
-    const conflicts = await this.findConflicts(window);
+  async assertAvailable(
+    window: AvailabilityWindow,
+    opts?: AvailabilityTxOptions,
+  ): Promise<void> {
+    const conflicts = await this.findConflicts(window, opts);
     if (conflicts.length === 0) return;
     const first = conflicts[0];
     throw BusinessException.conflict(
@@ -156,16 +203,20 @@ export class AvailabilityService {
     opts?: {
       excludeReservationId?: string | null;
       excludeRentalId?: string | null;
+      tx?: Prisma.TransactionClient;
     },
   ): Promise<void> {
     for (const itemId of itemIds) {
-      await this.assertAvailable({
-        itemId,
-        start,
-        end,
-        excludeReservationId: opts?.excludeReservationId,
-        excludeRentalId: opts?.excludeRentalId,
-      });
+      await this.assertAvailable(
+        {
+          itemId,
+          start,
+          end,
+          excludeReservationId: opts?.excludeReservationId,
+          excludeRentalId: opts?.excludeRentalId,
+        },
+        { tx: opts?.tx },
+      );
     }
   }
 }

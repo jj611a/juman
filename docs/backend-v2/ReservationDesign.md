@@ -89,9 +89,9 @@ Single transaction:
 pnpm test:cov:reservations
 ```
 
-## Known limitations (Phase 5.3 cert)
+## Known limitations (post Phase 5.4)
 
-- Concurrent create is TOCTOU-vulnerable (two overlapping confirms can both win) — Must-Fix before Financial.
-- Walk-in rentals do not consult this service yet — asymmetric conflict policy until remediations.
+- Concurrent create is serialized via `AvailabilityService.runExclusive` (TOCTOU Must-Fix cleared).
+- Walk-in rentals share the same allocator (symmetry restored).
 - Expire has no scheduler; ops/jobs must call HTTP/service.
-- Full cert: `PHASE_5_ENGINEERING_CERTIFICATION.md`.
+- Full cert + remediation: `PHASE_5_ENGINEERING_CERTIFICATION.md`, `PHASE_5_REMEDIATION_REPORT.md`.

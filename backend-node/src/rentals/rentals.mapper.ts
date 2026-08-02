@@ -5,6 +5,7 @@ export function toRentalPublic(row: RentalWithRelations) {
     id: row.id,
     rentalNumber: row.rentalNumber,
     customerId: row.customerId,
+    reservationId: row.reservationId,
     customer: row.customer
       ? {
           id: row.customer.id,

@@ -20,7 +20,7 @@ export default defineConfig({
       provider: 'v8',
       reportsDirectory: './coverage-reservations',
       reporter: ['text', 'text-summary', 'json-summary'],
-      include: ['src/reservations/**/*.ts'],
+      include: ['src/reservations/**/*.ts', 'src/availability/**/*.ts'],
       exclude: ['**/*.module.ts', '**/dto/**'],
       thresholds: {
         lines: 95,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { rangesOverlap } from '../src/reservations/availability/availability.types';
+import { rangesOverlap } from '../src/availability/availability.types';
 import {
   RESERVATION_STATUS,
   RESERVATION_STATUS_TRANSITIONS,
