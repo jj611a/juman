@@ -12,6 +12,7 @@ import { configuration } from './config/configuration';
 import { validateEnvironment } from './config/env.validation';
 import { CustomersModule } from './customers/customers.module';
 import { PrismaModule } from './database/prisma.module';
+import { FinanceModule } from './finance/finance.module';
 import { HealthModule } from './health/health.module';
 import { InventoryModule } from './inventory/inventory.module';
 import { LoggerModule } from './logging/logger.module';
@@ -44,6 +45,7 @@ import { UsersModule } from './users/users.module';
     CustomersModule,
     InventoryModule,
     AvailabilityModule,
+    FinanceModule,
     RentalsModule,
     ReservationsModule,
     HealthModule,

@@ -71,11 +71,9 @@ Sets `actualReturnDate`. No inspection/cleaning yet.
 - Draft: status → cancelled (inventory untouched)
 - Outbound: inventory `rented → return_pending → inspection → available`, then rental cancelled
 
-## Create validation
+## Create validation / finance
 
-- Item exists, catalog `active`, `isRentable()`
-- Customer `active`
-- Barcode activated and bound to item (or primary barcode)
+On checkout, `RentalsService.syncCheckoutFinance` requests `FinanceService.createCharge` (sum of `agreedRentalPrice`) and optional `registerDeposit`. Rentals never write financial tables.
 
 ## HTTP
 

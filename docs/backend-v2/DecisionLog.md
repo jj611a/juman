@@ -180,3 +180,11 @@
 - **Context:** Phase 5.3 Must-Fix: walk-in skipped AvailabilityService, reservation TOCTOU, rentals coverage gate fail.
 - **Decision:** Extract shared `AvailabilityModule`. All allocation (walk-in create/checkout, reservation create/checkout) runs under `AvailabilityService.runExclusive` (write lock + assert + persist). Restore `pnpm test:cov:rentals` ≥95%. Integrity score **90**.
 - **Consequences:** No Financial in this phase. Product approval still required before Phase 6. Report: `PHASE_5_REMEDIATION_REPORT.md`.
+
+## ADR-V2-024 - Financial core (Phase 6.1)
+
+- **Date:** 2026-08-02
+- **Status:** Accepted
+- **Context:** Need an accounting foundation before settlement/reports without polluting rental/inventory with balances.
+- **Decision:** Introduce `FinanceModule` as sole money owner: `FinancialAccount` (per customer), `FinancialTransaction`, `Payment`, `MoneyMovement`, `FinancialAudit`. IQD integer fils via `Money` value object. Rentals call `createCharge` / `registerDeposit` only. Outstanding is computed. No settlement, late fees, invoices, or reports in this phase.
+- **Consequences:** Checkout creates idempotent rental charges. Coverage gate `pnpm test:cov:finance` ≥95%. Docs: `FinancialDesign.md`.

@@ -102,4 +102,11 @@ export class RentalActionDto {
   @IsString()
   @MaxLength(500)
   reason?: string;
+
+  /** Optional deposit in fils registered via FinancialService on checkout. */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  depositAmountFils?: number;
 }

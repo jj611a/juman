@@ -188,7 +188,10 @@ describe('ReservationsService', () => {
   const customers = { getById: vi.fn() };
   const items = { getById: vi.fn() };
   const barcodes = { findByValue: vi.fn() };
-  const rentals = { materializeActiveFromReservation: vi.fn() };
+  const rentals = {
+    materializeActiveFromReservation: vi.fn(),
+    syncCheckoutFinance: vi.fn(),
+  };
   const settings = {
     getString: vi.fn(async (_: string, f: string) => f),
     getInt: vi.fn(async (_: string, f: number) => f),
@@ -236,6 +239,7 @@ describe('ReservationsService', () => {
       id: 'r1',
       rentalNumber: 'RENT-1',
     });
+    rentals.syncCheckoutFinance.mockResolvedValue(undefined);
   });
 
   it('creates confirmed reservation with audits', async () => {

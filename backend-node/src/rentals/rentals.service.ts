@@ -5,6 +5,8 @@ import { AvailabilityService } from '../availability/availability.service';
 import { BarcodeService } from '../barcode/barcode.service';
 import { CustomersService } from '../customers/customers.service';
 import { CUSTOMER_STATUS } from '../customers/customers.constants';
+import { FinanceService } from '../finance/finance.service';
+import { FINANCE_REFERENCE_RENTAL } from '../finance/finance.constants';
 import { ItemsService } from '../inventory/items/items.service';
 import { ITEM_LIFECYCLE, ITEM_STATUS } from '../inventory/inventory.constants';
 import { LifecycleService } from '../inventory/lifecycle/lifecycle.service';
@@ -62,6 +64,7 @@ export class RentalsService {
     private readonly settings: SettingsService,
     private readonly audit: AuditService,
     private readonly availability: AvailabilityService,
+    private readonly finance: FinanceService,
   ) {}
 
   async create(dto: CreateRentalDto, actor?: AuthPrincipal) {
@@ -146,7 +149,12 @@ export class RentalsService {
    * Checkout: draft → checked_out → active, inventory available → reserved → rented.
    * Entire mutation runs in one Prisma transaction; failure rolls back completely.
    */
-  async checkout(id: string, reason?: string, actor?: AuthPrincipal) {
+  async checkout(
+    id: string,
+    reason?: string,
+    actor?: AuthPrincipal,
+    depositAmountFils?: number,
+  ) {
     const rental = await this.requireLive(id);
     if (!canCheckout(rental.status)) {
       throw BusinessException.conflict(
@@ -245,6 +253,8 @@ export class RentalsService {
       });
     }
 
+    await this.syncCheckoutFinance(id, depositAmountFils, actor);
+
     const updated = await this.requireLive(id);
     await this.audit.record({
       module: RENTAL_MODULE,
@@ -256,6 +266,46 @@ export class RentalsService {
       actor: { userId: actor?.userId, username: actor?.username },
     });
     return toRentalPublic(updated);
+  }
+
+  /**
+   * Request FinancialService for charge (+ optional deposit).
+   * Rentals never write balances or payment tables directly.
+   */
+  async syncCheckoutFinance(
+    rentalId: string,
+    depositAmountFils?: number,
+    actor?: AuthPrincipal,
+  ) {
+    const rental = await this.requireLive(rentalId);
+    const chargeFils = rental.items.reduce(
+      (sum, line) => sum + (line.agreedRentalPrice ?? 0),
+      0,
+    );
+    if (chargeFils > 0) {
+      await this.finance.createCharge(
+        {
+          customerId: rental.customerId,
+          amountFils: chargeFils,
+          referenceType: FINANCE_REFERENCE_RENTAL,
+          referenceId: rental.id,
+          description: `Rental charge ${rental.rentalNumber}`,
+        },
+        actor,
+      );
+    }
+    if (depositAmountFils != null && depositAmountFils > 0) {
+      await this.finance.registerDeposit(
+        {
+          customerId: rental.customerId,
+          amountFils: depositAmountFils,
+          referenceType: FINANCE_REFERENCE_RENTAL,
+          referenceId: rental.id,
+          description: `Rental deposit ${rental.rentalNumber}`,
+        },
+        actor,
+      );
+    }
   }
 
   /** Foundation return: outbound → return_pending; inventory rented → return_pending. */

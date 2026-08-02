@@ -78,6 +78,10 @@ describe('RentalsService', () => {
     runExclusive: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn({})),
     assertItemsAvailable: vi.fn(),
   };
+  const finance = {
+    createCharge: vi.fn(),
+    registerDeposit: vi.fn(),
+  };
   let service: RentalsService;
 
   beforeEach(() => {
@@ -91,6 +95,7 @@ describe('RentalsService', () => {
       settings as never,
       audit as never,
       availability as never,
+      finance as never,
     );
     customers.getById.mockResolvedValue({ id: 'c1', status: 'active' });
     items.getById.mockResolvedValue(itemRow);
@@ -109,6 +114,8 @@ describe('RentalsService', () => {
     availability.runExclusive.mockImplementation(
       async (fn: (tx: unknown) => Promise<unknown>) => fn({}),
     );
+    finance.createCharge.mockResolvedValue({ id: 'tx1' });
+    finance.registerDeposit.mockResolvedValue({ id: 'tx2' });
     repo.client.$transaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) =>
       fn({}),
     );
@@ -196,6 +203,7 @@ describe('RentalsService', () => {
       expect.objectContaining({ excludeRentalId: 'r1' }),
     );
     expect(result.status).toBe(RENTAL_STATUS.ACTIVE);
+    expect(finance.createCharge).toHaveBeenCalled();
     expect(audit.record).toHaveBeenCalledWith(
       expect.objectContaining({ action: 'checkout' }),
     );

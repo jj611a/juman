@@ -310,6 +310,7 @@ model Customer {
 
   rentals Rental[]
   reservations Reservation[]
+  financialAccounts FinancialAccount[]
 
   @@index([fullName])
   @@index([phoneNormalized])
@@ -638,5 +639,135 @@ model ReservationStatusHistory {
 
   @@index([reservationId])
   @@index([newStatus])
+  @@index([createdAt])
+}
+
+/// Customer financial ledger (Phase 6.1). Balances are never stored — computed from transactions.
+model FinancialAccount {
+  id            String    @id @default(uuid())
+  accountNumber String    @unique
+  customerId    String
+  currency      String    @default("IQD")
+  status        String    @default("open")
+  notes         String?
+  deletedAt     DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  createdBy     String?
+  updatedBy     String?
+  deletedBy     String?
+
+  customer     Customer               @relation(fields: [customerId], references: [id])
+  transactions FinancialTransaction[]
+  payments     Payment[]
+  movements    MoneyMovement[]
+
+  @@unique([customerId])
+  @@index([accountNumber])
+  @@index([customerId])
+  @@index([status])
+  @@index([deletedAt])
+  @@index([createdAt])
+}
+
+/// Posted ledger entry. Amounts are integer fils (IQD only).
+model FinancialTransaction {
+  id            String   @id @default(uuid())
+  accountId     String
+  type          String
+  /// Positive fils; effect on outstanding is defined by type (see FinancialDesign).
+  amountFils    Int
+  status        String   @default("posted")
+  referenceType String?
+  referenceId   String?
+  description   String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  createdBy     String?
+  updatedBy     String?
+
+  account   FinancialAccount @relation(fields: [accountId], references: [id])
+  payment   Payment?
+  movements MoneyMovement[]
+
+  @@index([accountId])
+  @@index([type])
+  @@index([status])
+  @@index([referenceType, referenceId])
+  @@index([createdAt])
+}
+
+/// Payment document (Phase 6.1). Does not mutate rental rows.
+model Payment {
+  id            String    @id @default(uuid())
+  paymentNumber String    @unique
+  accountId     String
+  transactionId String?   @unique
+  amountFils    Int
+  status        String    @default("pending")
+  method        String    @default("cash")
+  notes         String?
+  completedAt   DateTime?
+  cancelledAt   DateTime?
+  deletedAt     DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  createdBy     String?
+  updatedBy     String?
+  deletedBy     String?
+
+  account     FinancialAccount      @relation(fields: [accountId], references: [id])
+  transaction FinancialTransaction? @relation(fields: [transactionId], references: [id])
+  movements   MoneyMovement[]
+
+  @@index([accountId])
+  @@index([paymentNumber])
+  @@index([status])
+  @@index([deletedAt])
+  @@index([createdAt])
+}
+
+/// Immutable money movement trail linked to account / payment / transaction.
+model MoneyMovement {
+  id            String   @id @default(uuid())
+  accountId     String
+  paymentId     String?
+  transactionId String?
+  /// in = reduces outstanding; out = increases outstanding (obligation).
+  direction     String
+  amountFils    Int
+  currency      String   @default("IQD")
+  kind          String
+  createdAt     DateTime @default(now())
+  createdBy     String?
+
+  account     FinancialAccount      @relation(fields: [accountId], references: [id])
+  payment     Payment?              @relation(fields: [paymentId], references: [id])
+  transaction FinancialTransaction? @relation(fields: [transactionId], references: [id])
+
+  @@index([accountId])
+  @@index([paymentId])
+  @@index([transactionId])
+  @@index([direction])
+  @@index([kind])
+  @@index([createdAt])
+}
+
+/// Finance-domain audit (append-only). Complements platform AuditService.
+model FinancialAudit {
+  id         String   @id @default(uuid())
+  entityType String
+  entityId   String
+  action     String
+  oldValues  String?
+  newValues  String?
+  userId     String?
+  username   String?
+  message    String?
+  createdAt  DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([action])
+  @@index([userId])
   @@index([createdAt])
 }

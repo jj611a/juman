@@ -105,4 +105,10 @@ export class ReservationActionDto {
   @IsString()
   @MaxLength(500)
   reason?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  depositAmountFils?: number;
 }

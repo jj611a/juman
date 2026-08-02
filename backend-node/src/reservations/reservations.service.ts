@@ -150,7 +150,12 @@ export class ReservationsService {
    * Checkout: create Rental + inventory transitions + mark reservation checked_out.
    * Single transaction — full rollback on failure.
    */
-  async checkout(id: string, reason?: string, actor?: AuthPrincipal) {
+  async checkout(
+    id: string,
+    reason?: string,
+    actor?: AuthPrincipal,
+    depositAmountFils?: number,
+  ) {
     const reservation = await this.requireLive(id);
     if (!canCheckoutReservation(reservation.status)) {
       throw BusinessException.conflict(
@@ -208,6 +213,13 @@ export class ReservationsService {
     });
 
     const updated = await this.requireLive(id);
+    if (rentalId) {
+      await this.rentals.syncCheckoutFinance(
+        rentalId,
+        depositAmountFils,
+        actor,
+      );
+    }
     await this.audit.record({
       module: RESERVATION_MODULE,
       entityType: RESERVATION_ENTITY,

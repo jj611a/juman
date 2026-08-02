@@ -74,6 +74,7 @@ src/
   rentals/        Rental workflow core (Phase 5.1)
   reservations/   Reservation engine (Phase 5.2)
   availability/   Sole calendar allocator (Phase 5.4)
+  finance/        Financial core — Money + ledger (Phase 6.1)
 ```
 
 ## Auth / RBAC
@@ -152,4 +153,4 @@ Inventory mutations remain exclusive to `LifecycleService`.
 
 ## Financial (Phase 6)
 
-**Blocked pending explicit approval** after Phase 5.4 integrity remediation.
+`FinanceModule` (`src/finance`) is the sole owner of money. Rentals request `createCharge` / `registerDeposit`; balances are computed, never stored on rental/inventory. Docs: `FinancialDesign.md`.

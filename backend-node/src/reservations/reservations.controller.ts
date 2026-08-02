@@ -52,7 +52,12 @@ export class ReservationsController {
     @Body() body: ReservationActionDto,
     @CurrentUser() user: AuthPrincipal,
   ) {
-    return this.reservations.checkout(id, body.reason, user);
+    return this.reservations.checkout(
+      id,
+      body.reason,
+      user,
+      body.depositAmountFils,
+    );
   }
 
   @Post(':id/cancel')
