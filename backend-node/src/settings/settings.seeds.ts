@@ -148,4 +148,28 @@ export const DEFAULT_APP_SETTINGS: readonly SettingSeed[] = [
     description: 'Customer number zero-pad width',
     isEditable: true,
   },
+  {
+    key: 'rentals.number.prefix',
+    value: 'RENT',
+    valueType: SETTING_VALUE_TYPE.STRING,
+    category: 'rentals',
+    description: 'Rental number prefix',
+    isEditable: true,
+  },
+  {
+    key: 'rentals.number.separator',
+    value: '-',
+    valueType: SETTING_VALUE_TYPE.STRING,
+    category: 'rentals',
+    description: 'Rental number separator',
+    isEditable: true,
+  },
+  {
+    key: 'rentals.number.padding',
+    value: '8',
+    valueType: SETTING_VALUE_TYPE.INTEGER,
+    category: 'rentals',
+    description: 'Rental number zero-pad width',
+    isEditable: true,
+  },
 ];

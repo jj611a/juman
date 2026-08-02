@@ -308,6 +308,8 @@ model Customer {
   updatedBy       String?
   deletedBy       String?
 
+  rentals Rental[]
+
   @@index([fullName])
   @@index([phoneNormalized])
   @@index([secondaryPhoneNormalized])
@@ -437,6 +439,7 @@ model Item {
   size     Size?     @relation(fields: [sizeId], references: [id])
   barcodes ItemBarcode[]
   stateHistory ItemStateHistory[]
+  rentalItems RentalItem[]
 
   @@index([displayName])
   @@index([internalCode])
@@ -492,4 +495,72 @@ model ItemBarcode {
   @@index([itemId])
   @@index([barcodeId])
   @@index([deletedAt])
+}
+
+/// Rental workflow document (Phase 5.1) — inventory lifecycle owned by LifecycleService.
+model Rental {
+  id                  String    @id @default(uuid())
+  rentalNumber        String    @unique
+  customerId          String
+  rentalDate          DateTime
+  expectedReturnDate  DateTime
+  actualReturnDate    DateTime?
+  status              String    @default("draft")
+  notes               String?
+  deletedAt           DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  createdBy           String?
+  updatedBy           String?
+  deletedBy           String?
+
+  customer      Customer               @relation(fields: [customerId], references: [id])
+  items         RentalItem[]
+  statusHistory RentalStatusHistory[]
+
+  @@index([customerId])
+  @@index([rentalNumber])
+  @@index([status])
+  @@index([rentalDate])
+  @@index([expectedReturnDate])
+  @@index([deletedAt])
+  @@index([createdAt])
+  @@index([status, deletedAt])
+}
+
+model RentalItem {
+  id                 String   @id @default(uuid())
+  rentalId           String
+  itemId             String
+  barcodeValue       String?
+  agreedRentalPrice  Int      @default(0)
+  notes              String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  createdBy          String?
+
+  rental Rental @relation(fields: [rentalId], references: [id])
+  item   Item   @relation(fields: [itemId], references: [id])
+
+  @@unique([rentalId, itemId])
+  @@index([rentalId])
+  @@index([itemId])
+  @@index([barcodeValue])
+}
+
+model RentalStatusHistory {
+  id        String   @id @default(uuid())
+  rentalId  String
+  oldStatus String
+  newStatus String
+  reason    String?
+  userId    String?
+  username  String?
+  createdAt DateTime @default(now())
+
+  rental Rental @relation(fields: [rentalId], references: [id])
+
+  @@index([rentalId])
+  @@index([newStatus])
+  @@index([createdAt])
 }

@@ -16,6 +16,7 @@ import { InventoryModule } from './inventory/inventory.module';
 import { LoggerModule } from './logging/logger.module';
 import { MediaModule } from './media/media.module';
 import { PermissionsModule } from './permissions/permissions.module';
+import { RentalsModule } from './rentals/rentals.module';
 import { RolesModule } from './roles/roles.module';
 import { SettingsModule } from './settings/settings.module';
 import { UsersModule } from './users/users.module';
@@ -40,6 +41,7 @@ import { UsersModule } from './users/users.module';
     AuthModule,
     CustomersModule,
     InventoryModule,
+    RentalsModule,
     HealthModule,
   ],
   providers: [

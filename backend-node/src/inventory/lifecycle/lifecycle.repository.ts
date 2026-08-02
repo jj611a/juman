@@ -3,12 +3,17 @@ import type { Item, ItemStateHistory, Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { liveWhere } from '../../shared/soft-delete/soft-delete';
 
+type DbClient = Prisma.TransactionClient | PrismaService;
+
 @Injectable()
 export class LifecycleRepository {
   constructor(private readonly prisma: PrismaService) {}
 
-  findLiveItem(id: string): Promise<Item | null> {
-    return this.prisma.item.findFirst({ where: liveWhere({ id }) });
+  findLiveItem(
+    id: string,
+    client: DbClient = this.prisma,
+  ): Promise<Item | null> {
+    return client.item.findFirst({ where: liveWhere({ id }) });
   }
 
   history(itemId: string, offset: number, limit: number): Promise<{
@@ -29,21 +34,24 @@ export class LifecycleRepository {
 
   /**
    * CAS transition: updates only if current lifecycleState still matches `from`.
-   * Prevents concurrent conflicting transitions.
+   * Pass `tx` to join an outer rental/business transaction.
    */
-  async transitionAtomic(input: {
-    itemId: string;
-    from: string;
-    to: string;
-    reason: string | null;
-    userId: string | null;
-    username: string | null;
-    referenceType: string | null;
-    referenceId: string | null;
-    updatedBy: string | null;
-  }): Promise<{ item: Item; history: ItemStateHistory } | null> {
-    return this.prisma.$transaction(async (tx) => {
-      const result = await tx.item.updateMany({
+  async transitionAtomic(
+    input: {
+      itemId: string;
+      from: string;
+      to: string;
+      reason: string | null;
+      userId: string | null;
+      username: string | null;
+      referenceType: string | null;
+      referenceId: string | null;
+      updatedBy: string | null;
+    },
+    tx?: Prisma.TransactionClient,
+  ): Promise<{ item: Item; history: ItemStateHistory } | null> {
+    const run = async (client: Prisma.TransactionClient) => {
+      const result = await client.item.updateMany({
         where: {
           id: input.itemId,
           deletedAt: null,
@@ -56,7 +64,7 @@ export class LifecycleRepository {
       });
       if (result.count !== 1) return null;
 
-      const history = await tx.itemStateHistory.create({
+      const history = await client.itemStateHistory.create({
         data: {
           itemId: input.itemId,
           oldState: input.from,
@@ -68,12 +76,19 @@ export class LifecycleRepository {
           referenceId: input.referenceId,
         },
       });
-      const item = await tx.item.findUniqueOrThrow({ where: { id: input.itemId } });
+      const item = await client.item.findUniqueOrThrow({
+        where: { id: input.itemId },
+      });
       return { item, history };
-    });
+    };
+
+    if (tx) return run(tx);
+    return this.prisma.$transaction(run);
   }
 
-  createHistory(data: Prisma.ItemStateHistoryUncheckedCreateInput): Promise<ItemStateHistory> {
+  createHistory(
+    data: Prisma.ItemStateHistoryUncheckedCreateInput,
+  ): Promise<ItemStateHistory> {
     return this.prisma.itemStateHistory.create({ data });
   }
 }

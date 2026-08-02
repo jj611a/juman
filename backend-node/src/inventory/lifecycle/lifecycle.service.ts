@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import type { Prisma } from '@prisma/client';
 import { AuditService } from '../../audit/audit.service';
 import { AUDIT_ACTION } from '../../shared/constants/business.constants';
 import { BusinessException } from '../../shared/errors/business.exception';
@@ -36,6 +37,13 @@ export interface TransitionInput {
   readonly expectedState?: string | null;
 }
 
+export interface TransitionOptions {
+  /** Join an outer business transaction (e.g. rental checkout). */
+  readonly tx?: Prisma.TransactionClient;
+  /** Skip audit write (caller records a higher-level audit). Default false. */
+  readonly skipAudit?: boolean;
+}
+
 @Injectable()
 export class LifecycleService {
   constructor(
@@ -51,17 +59,19 @@ export class LifecycleService {
   async history(
     itemId: string,
     query: PaginationInput = {},
-  ): Promise<Paginated<{
-    id: string;
-    oldState: string;
-    newState: string;
-    reason: string | null;
-    userId: string | null;
-    username: string | null;
-    referenceType: string | null;
-    referenceId: string | null;
-    createdAt: Date;
-  }>> {
+  ): Promise<
+    Paginated<{
+      id: string;
+      oldState: string;
+      newState: string;
+      reason: string | null;
+      userId: string | null;
+      username: string | null;
+      referenceType: string | null;
+      referenceId: string | null;
+      createdAt: Date;
+    }>
+  > {
     await this.requireLive(itemId);
     const page = normalizePagination(query);
     const { rows, total } = await this.repo.history(
@@ -91,12 +101,17 @@ export class LifecycleService {
     return canTransitionStates(fromRaw, toRaw);
   }
 
+  /**
+   * Authoritative inventory lifecycle mutation.
+   * Domains (rentals) MUST use this — never write Item.lifecycleState directly.
+   */
   async transition(
     itemId: string,
     input: TransitionInput,
     actor?: AuthPrincipal,
+    options?: TransitionOptions,
   ) {
-    const item = await this.requireLive(itemId);
+    const item = await this.requireLive(itemId, options?.tx);
     if (item.status !== ITEM_STATUS.ACTIVE) {
       throw BusinessException.conflict(
         'Only active catalog items can enter operational lifecycle transitions',
@@ -131,23 +146,29 @@ export class LifecycleService {
         ? null
         : String(input.reason).trim().slice(0, 500);
 
-    const result = await this.repo.transitionAtomic({
-      itemId,
-      from,
-      to,
-      reason,
-      userId: actor?.userId ?? null,
-      username: actor?.username ?? null,
-      referenceType:
-        input.referenceType == null || String(input.referenceType).trim() === ''
-          ? null
-          : String(input.referenceType).trim().toLowerCase().slice(0, 64),
-      referenceId:
-        input.referenceId == null || String(input.referenceId).trim() === ''
-          ? null
-          : String(input.referenceId).trim().slice(0, 64),
-      updatedBy: actor?.userId ?? null,
-    });
+    const referenceType =
+      input.referenceType == null || String(input.referenceType).trim() === ''
+        ? null
+        : String(input.referenceType).trim().toLowerCase().slice(0, 64);
+    const referenceId =
+      input.referenceId == null || String(input.referenceId).trim() === ''
+        ? null
+        : String(input.referenceId).trim().slice(0, 64);
+
+    const result = await this.repo.transitionAtomic(
+      {
+        itemId,
+        from,
+        to,
+        reason,
+        userId: actor?.userId ?? null,
+        username: actor?.username ?? null,
+        referenceType,
+        referenceId,
+        updatedBy: actor?.userId ?? null,
+      },
+      options?.tx,
+    );
 
     if (!result) {
       throw BusinessException.conflict(
@@ -155,20 +176,22 @@ export class LifecycleService {
       );
     }
 
-    await this.audit.record({
-      module: INVENTORY_MODULE,
-      entityType: ITEM_ENTITY,
-      entityId: itemId,
-      action: AUDIT_ACTION.TRANSITION,
-      oldValues: { lifecycleState: from },
-      newValues: {
-        lifecycleState: to,
-        reason,
-        referenceType: result.history.referenceType,
-        referenceId: result.history.referenceId,
-      },
-      actor: { userId: actor?.userId, username: actor?.username },
-    });
+    if (!options?.skipAudit) {
+      await this.audit.record({
+        module: INVENTORY_MODULE,
+        entityType: ITEM_ENTITY,
+        entityId: itemId,
+        action: AUDIT_ACTION.TRANSITION,
+        oldValues: { lifecycleState: from },
+        newValues: {
+          lifecycleState: to,
+          reason,
+          referenceType: result.history.referenceType,
+          referenceId: result.history.referenceId,
+        },
+        actor: { userId: actor?.userId, username: actor?.username },
+      });
+    }
 
     return this.toStateView(result.item);
   }
@@ -195,9 +218,14 @@ export class LifecycleService {
     return value;
   }
 
-  private async requireLive(itemId: string) {
+  private async requireLive(
+    itemId: string,
+    tx?: Prisma.TransactionClient,
+  ) {
     const id = assertNonEmptyString(itemId, 'itemId');
-    const item = await this.repo.findLiveItem(id);
+    const item = tx
+      ? await this.repo.findLiveItem(id, tx)
+      : await this.repo.findLiveItem(id);
     if (!item) throw BusinessException.notFound('Item not found');
     return item;
   }

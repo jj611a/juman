@@ -148,3 +148,11 @@
 - **Context:** Phase 4.3 certification blocked rentals on six Must-Fix integrity defects.
 - **Decision:** (1) Reject soft-delete in mid-ops lifecycle states; (2) release barcodes + soft-delete `ItemBarcode`/`MediaReference` on delete and reverse on restore; (3) atomic create (`createAtomic`) for item+barcode+media+history; (4) restore prior catalog status via `statusBeforeDelete`; (5) LifecycleService transitions require catalog `active` only; (6) **MediaReference-only** attachments — drop `ItemMedia`.
 - **Consequences:** Integrity score raised to **88**. Rental Engine still requires explicit approval before implementation. Report: `PHASE_4_REMEDIATION_REPORT.md`.
+
+## ADR-V2-020 - Rental workflow core (Phase 5.1)
+
+- **Date:** 2026-08-02
+- **Status:** Accepted
+- **Context:** Inventory integrity gate cleared; need a rental workflow foundation without payments/settlements.
+- **Decision:** Introduce `Rental` / `RentalItem` / `RentalStatusHistory` with closed status graph. Checkout/return/cancel mutate inventory **only** through `LifecycleService.transition` inside shared Prisma transactions. No reservations, fees, or settlements in this phase.
+- **Consequences:** Walk-in path uses inventory `available→reserved→rented`. Return stops at `return_pending`. Coverage gate `pnpm test:cov:rentals` ≥95%. Docs: `RentalDesign.md`.

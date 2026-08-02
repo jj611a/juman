@@ -70,7 +70,8 @@ src/
   media/          MediaFile + HTTP /media
   barcode/        reusable platform + HTTP /barcodes
   customers/      Customer domain
-  inventory/      Catalog engine (Item + taxonomy)
+  inventory/      Catalog engine (Item + taxonomy + lifecycle)
+  rentals/        Rental workflow core (Phase 5.1)
 ```
 
 ## Auth / RBAC
@@ -85,7 +86,7 @@ src/
 ## What is not in V2 (yet)
 
 - Users/roles admin HTTP CRUD (beyond unlock)
-- Reservations / rentals / availability calendar / penalties
+- Reservations / availability calendar / late fees / penalties / settlements
 - Laundry / inspection / sales workflows
 - Barcode hardware adapters / label printing
 - Electron process management / installer Nest packaging
@@ -124,6 +125,10 @@ Generic Item Catalog in `src/inventory` — not a dress-specific engine. Taxonom
 
 Authoritative operational `lifecycleState` on `Item` with `ItemStateHistory` and `LifecycleService.transition` (CAS + audit). Availability predicates (`isRentable` / `isSellable` / …) only — no reservations or calendar. Docs: `InventoryDesign.md`.
 
-## Inventory certification (Phase 4.3)
+## Inventory certification (Phase 4.3–4.4)
 
-Non-feature gate: `PHASE_4_ENGINEERING_CERTIFICATION.md` — overall **78 PASS WITH WARNINGS**. **Rental Engine blocked** until Must-Fix soft-delete/barcode/media integrity items are remediated.
+Non-feature gate then remediation: `PHASE_4_ENGINEERING_CERTIFICATION.md` → `PHASE_4_REMEDIATION_REPORT.md` (integrity **88**). Must-Fix blockers cleared.
+
+## Rental workflow core (Phase 5.1)
+
+`RentalsModule` owns rental documents (`Rental` / `RentalItem` / `RentalStatusHistory`). Inventory lifecycle mutations go **only** through `LifecycleService` inside shared transactions. No reservations, payments, or settlements. Docs: `RentalDesign.md`.
