@@ -36,6 +36,11 @@ backend-node/
     users/
     roles/
     permissions/
+    settings/
+    audit/
+    media/
+    barcode/
+    customers/          # Phase 3.2
   test/
   package.json
 ```

@@ -15,7 +15,7 @@
 
 | Area | Path | Responsibility |
 |------|------|----------------|
-| Shared primitives | `src/shared/**` | Money, pagination, search, filter, sort, soft-delete, UUID, datetime, validation, result, i18n, domain errors |
+| Shared primitives | `src/shared/**` | Money, pagination, search, filter, sort, soft-delete, UUID, datetime, validation, phone, result, i18n, domain errors |
 | Settings | `src/settings/**` | `AppSetting` typed get/set + seed defaults |
 | Audit | `src/audit/**` | Central `AuditService` + append-only `AuditLog` |
 | Media | `src/media/**` | `MediaFile` + `MediaReference` abstraction (no HTTP upload yet) |

@@ -23,6 +23,7 @@ import {
   toIsoUtc,
 } from '../src/shared/datetime/datetime';
 import { assertDefined, assertInRange, assertMatch, assertNonEmptyString } from '../src/shared/validation/assert';
+import { parseOptionalBoolean } from '../src/shared/validation/parse-boolean';
 import { operatorMessage, t } from '../src/shared/localization/messages';
 import { err, isErr, isOk, ok, unwrap } from '../src/shared/result/result';
 import { BusinessException } from '../src/shared/errors/business.exception';
@@ -143,4 +144,20 @@ describe('shared soft-delete uuid datetime validation result i18n', () => {
     expect(BusinessException.validation('x').domainCode).toBe(DOMAIN_ERROR_CODE.VALIDATION);
     expect(BusinessException.invariant('x').getStatus()).toBe(422);
   });
+
+  it('parses optional booleans from query forms', () => {
+    expect(parseOptionalBoolean(undefined)).toBeUndefined();
+    expect(parseOptionalBoolean('')).toBeUndefined();
+    expect(parseOptionalBoolean(true)).toBe(true);
+    expect(parseOptionalBoolean(false)).toBe(false);
+    expect(parseOptionalBoolean(1)).toBe(true);
+    expect(parseOptionalBoolean(0)).toBe(false);
+    expect(parseOptionalBoolean(2)).toBeUndefined();
+    expect(parseOptionalBoolean('true')).toBe(true);
+    expect(parseOptionalBoolean('FALSE')).toBe(false);
+    expect(parseOptionalBoolean('yes')).toBe(true);
+    expect(parseOptionalBoolean('no')).toBe(false);
+    expect(parseOptionalBoolean('maybe')).toBeUndefined();
+  });
+
 });

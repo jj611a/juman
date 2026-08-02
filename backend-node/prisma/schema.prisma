@@ -275,3 +275,37 @@ model AuditLog {
   @@index([userId])
   @@index([createdAt])
 }
+
+model Customer {
+  id              String    @id @default(uuid())
+  customerNumber  String    @unique
+  fullName        String
+  phone           String
+  phoneNormalized String
+  secondaryPhone  String?
+  secondaryPhoneNormalized String?
+  address         String?
+  city            String?
+  nationalId      String?
+  gender          String?
+  birthDate       DateTime?
+  notes           String?
+  status          String    @default("active")
+  deletedAt       DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  createdBy       String?
+  updatedBy       String?
+  deletedBy       String?
+
+  @@index([fullName])
+  @@index([phoneNormalized])
+  @@index([secondaryPhoneNormalized])
+  @@index([nationalId])
+  @@index([city])
+  @@index([status])
+  @@index([deletedAt])
+  @@index([createdAt])
+  @@index([updatedAt])
+  @@index([status, phoneNormalized, deletedAt])
+}

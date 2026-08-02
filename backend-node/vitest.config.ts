@@ -34,6 +34,7 @@ export default defineConfig({
         'src/media/**/*.ts',
         'src/barcode/**/*.ts',
         'src/audit/**/*.ts',
+        'src/customers/**/*.ts',
       ],
       exclude: [
         '**/*.module.ts',

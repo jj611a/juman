@@ -8,7 +8,6 @@ import {
   DEFAULT_TIMEZONE,
   SETTING_VALUE_TYPE,
 } from '../shared/constants/business.constants';
-
 export interface SettingSeed {
   readonly key: string;
   readonly value: string;
@@ -89,6 +88,30 @@ export const DEFAULT_APP_SETTINGS: readonly SettingSeed[] = [
     valueType: SETTING_VALUE_TYPE.INTEGER,
     category: 'media',
     description: 'Max upload size in bytes',
+    isEditable: true,
+  },
+  {
+    key: 'customers.number.prefix',
+    value: 'CUS',
+    valueType: SETTING_VALUE_TYPE.STRING,
+    category: 'customers',
+    description: 'Customer number prefix',
+    isEditable: true,
+  },
+  {
+    key: 'customers.number.separator',
+    value: '-',
+    valueType: SETTING_VALUE_TYPE.STRING,
+    category: 'customers',
+    description: 'Customer number separator',
+    isEditable: true,
+  },
+  {
+    key: 'customers.number.padding',
+    value: '8',
+    valueType: SETTING_VALUE_TYPE.INTEGER,
+    category: 'customers',
+    description: 'Customer number zero-pad width',
     isEditable: true,
   },
 ];

@@ -9,6 +9,7 @@ import { PermissionsGuard } from './auth/guards/permissions.guard';
 import { BarcodeModule } from './barcode/barcode.module';
 import { configuration } from './config/configuration';
 import { validateEnvironment } from './config/env.validation';
+import { CustomersModule } from './customers/customers.module';
 import { PrismaModule } from './database/prisma.module';
 import { HealthModule } from './health/health.module';
 import { LoggerModule } from './logging/logger.module';
@@ -36,6 +37,7 @@ import { UsersModule } from './users/users.module';
     RolesModule,
     UsersModule,
     AuthModule,
+    CustomersModule,
     HealthModule,
   ],
   providers: [

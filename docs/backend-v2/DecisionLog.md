@@ -85,3 +85,10 @@
 - **Context:** Domain modules must not duplicate cross-cutting logic; Phase 3 needs a stable substrate.
 - **Decision:** Introduce shared primitives (`src/shared`) plus Settings/Audit/Media/Barcode modules with Prisma models `AppSetting`, `MediaFile`, `MediaReference`, `Barcode`, `SequenceCounter`, `AuditLog`. Money = integer fils (1000 = 1 IQD). Soft-delete = `deletedAt`. Audit writes only via `AuditService.record`. No domain HTTP for media/barcode/search yet.
 - **Consequences:** Customers/inventory must import these services; coverage gate `pnpm test:cov:shared` enforces ≥95% on shared infra.
+## ADR-V2-012 - Customer domain (Phase 3.2)
+
+- **Date:** 2026-08-02
+- **Status:** Accepted
+- **Context:** First business module after shared foundation; Python V1 allows duplicate phones and has no restore/city.
+- **Decision:** Implement Nest `CustomersModule` with Prisma `Customer` (soft delete, restore, city, status, normalized phones). Block duplicate **active** primary phones. Reuse shared Audit/Settings/SequenceCounter/phone/pagination. No CustomerAttachment/CustomerAudit/CustomerNote tables ? use shared media/audit and a notes column. Permissions remain singular `customer.*` (+ `customer.restore`). HTTP under `/customers` without `/api/v1`.
+- **Consequences:** Categories/settings HTTP still pending; inventory blocked. Coverage gate `pnpm test:cov:customers` ?95%.

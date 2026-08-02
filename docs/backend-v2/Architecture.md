@@ -1,6 +1,6 @@
 # Backend V2 Architecture
 
-**Status:** Phase 3.1 Shared Business Foundation  
+**Status:** Phase 3.2 Customer Domain  
 **Branch:** `backend-v2`  
 **Spec source:** `backend-python/` (read-only Python FastAPI stack)
 
@@ -92,3 +92,14 @@ src/
 `backend-python/` remains the official behavioral specification until full parity. Do not modify its application code on this track.
 
 See `SharedFoundation.md` for Phase 3.1 contracts.
+
+
+## Customer domain (Phase 3.2)
+
+First business module: `src/customers` over Prisma `Customer`.
+
+- Soft delete + restore; primary-phone uniqueness among **active live** rows
+- Shared phone normalization (`src/shared/phone`)
+- Audit via `AuditService` (create/update/soft_delete/restore; optional view)
+- Attachments deferred to shared `MediaReference` (no CustomerAttachment table)
+- Docs: `CustomerDomain.md`, `CustomerAPI.md`

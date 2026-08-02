@@ -53,6 +53,7 @@ export const DEFAULT_PERMISSIONS: readonly PermissionSeed[] = [
   perm('customer.create', 'إنشاء عميل', 'إنشاء عميل جديد'),
   perm('customer.update', 'تعديل عميل', 'تعديل بيانات العميل'),
   perm('customer.delete', 'حذف عميل', 'حذف عميل'),
+  perm('customer.restore', 'استعادة عميل', 'استعادة عميل محذوف'),
   perm('reservation.view', 'عرض الحجوزات', 'عرض الحجوزات'),
   perm('reservation.create', 'إنشاء حجز', 'إنشاء حجز جديد'),
   perm('reservation.update', 'تعديل حجز', 'تعديل حجز'),

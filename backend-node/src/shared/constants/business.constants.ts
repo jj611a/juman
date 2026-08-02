@@ -49,6 +49,7 @@ export const AUDIT_ACTION = {
   SOFT_DELETE: 'soft_delete',
   HARD_DELETE: 'hard_delete',
   RESTORE: 'restore',
+  VIEW: 'view',
   ALLOCATE: 'allocate',
   RESERVE: 'reserve',
   RELEASE: 'release',

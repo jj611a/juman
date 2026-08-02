@@ -1,3 +1,5 @@
+import { BusinessException } from '../errors/business.exception';
+
 export type SortDirection = 'asc' | 'desc';
 
 export interface SortClause {
@@ -13,11 +15,11 @@ export function normalizeSort(
 ): SortClause {
   if (!field) return fallback;
   if (!allowedFields.has(field)) {
-    throw new Error(`Sort field not allowed: ${field}`);
+    throw BusinessException.validation(`Sort field not allowed: ${field}`);
   }
   const dir = (direction ?? 'asc').toLowerCase();
   if (dir !== 'asc' && dir !== 'desc') {
-    throw new Error(`Sort direction must be asc or desc`);
+    throw BusinessException.validation('Sort direction must be asc or desc');
   }
   return { field, direction: dir };
 }

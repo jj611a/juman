@@ -11,5 +11,7 @@ export * from './soft-delete/soft-delete';
 export * from './uuid/uuid';
 export * from './datetime/datetime';
 export * from './validation/assert';
+export * from './validation/parse-boolean';
 export * from './localization/messages';
 export * from './domain/common-entity';
+export * from './phone/phone';

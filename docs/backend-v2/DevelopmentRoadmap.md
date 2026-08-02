@@ -5,9 +5,9 @@
 | 0 | Architecture | Docs, branch, rename, canvas |
 | 1 | Foundation | Nest + Prisma + SQLite + `/health` |
 | 2 | Identity & Security | Auth + audit remediation |
-| 3 | Core Business | **3.1 shared foundation** → customers/categories/settings HTTP |
+| 3 | Core Business | **3.1 shared** ? **3.2 customers DONE** ? categories/settings HTTP |
 | 4 | Inventory Engine | Dresses / inventory |
-| 5 | Rental Engine | Reservations → returns |
+| 5 | Rental Engine | Reservations ? returns |
 | 6 | Financial Engine | Sales, settlements, payments |
 | 7 | Reports & Analytics | Operational + financial |
 | 8 | Desktop Integration | Electron + Nest sidecar |
@@ -16,10 +16,10 @@
 
 ## Current milestone
 
-**Phase 3.1 Shared Business Foundation complete.**  
-Doc: `docs/backend-v2/SharedFoundation.md`.
+**Phase 3.2 Customer Domain complete.**  
+Docs: `CustomerDomain.md`, `CustomerAPI.md`, `SharedFoundation.md`.
 
-**Next (requires approval):** customers / categories / settings HTTP — still no inventory/rentals/sales.
+**Next (requires approval):** categories / settings HTTP ? still no inventory/rentals/sales.
 
 ## Completion rule
 
