@@ -19,6 +19,7 @@ import { LoggerModule } from './logging/logger.module';
 import { MediaModule } from './media/media.module';
 import { PermissionsModule } from './permissions/permissions.module';
 import { RentalsModule } from './rentals/rentals.module';
+import { ReportsModule } from './reports/reports.module';
 import { ReservationsModule } from './reservations/reservations.module';
 import { RolesModule } from './roles/roles.module';
 import { SettingsModule } from './settings/settings.module';
@@ -48,6 +49,7 @@ import { UsersModule } from './users/users.module';
     FinanceModule,
     RentalsModule,
     ReservationsModule,
+    ReportsModule,
     HealthModule,
   ],
   providers: [

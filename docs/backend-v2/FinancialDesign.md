@@ -8,7 +8,7 @@
 
 **In scope:** FinancialAccount, FinancialTransaction, Payment, MoneyMovement, FinancialAudit; Money VO (IQD fils); charge / deposit / payment; Settlement + Refund / Adjustment / Discount / LateFee domain; centralized formulas; HTTP; RBAC; rental checkout + complete.
 
-**Out of scope:** Reports, dashboards, analytics, invoices, late-fee **scheduler**, desktop integration.
+**Out of scope:** Dashboards as a separate product surface beyond Reports HTTP; invoices; late-fee **scheduler**; desktop integration. Reporting reads Settlement/Finance/Payment aggregates but lives in `ReportsModule` — see `ReportingDesign.md`.
 
 See also: `SettlementDesign.md`.
 

@@ -74,7 +74,8 @@ src/
   rentals/        Rental workflow core (Phase 5.1)
   reservations/   Reservation engine (Phase 5.2)
   availability/   Sole calendar allocator (Phase 5.4)
-  finance/        Financial foundation certified 6.4 (Reports NO-GO)
+  finance/        Financial foundation + Settlement (6.1–6.6)
+  reports/        Read-only reporting engine (Phase 7.0)
 ```
 
 ## Auth / RBAC
@@ -89,7 +90,7 @@ src/
 ## What is not in V2 (yet)
 
 - Users/roles admin HTTP CRUD (beyond unlock)
-- Availability calendar UI / late fees / penalties / invoices / reports
+- Availability calendar UI / late-fee **scheduler** / invoices / PDF-Excel report renderers
 - Laundry / inspection / sales workflows
 - Barcode hardware adapters / label printing
 - Electron process management / installer Nest packaging
@@ -157,3 +158,7 @@ Inventory mutations remain exclusive to `LifecycleService`.
 **Phase 6.5:** Atomic checkout TX + idempotency + cancel policy.  
 **Phase 6.6:** Settlement owns refund / adjustment / discount / late-fee assessment; centralized formulas in `settlement.formula.ts`.  
 Docs: `FinancialDesign.md`, `SettlementDesign.md`.
+
+## Reporting engine (Phase 7.0)
+
+`ReportsModule` (`src/reports`) is **read-only**. It aggregates Inventory / Rental / Settlement / Finance via Prisma and never calls domain write services or recalculates settlement formulas. Export: CSV/JSON implemented; PDF/Excel adapters stubbed. Docs: `ReportingDesign.md`.

@@ -228,3 +228,11 @@
 - **Context:** Need Settlement as sole money authority before Reports: refunds, adjustments, discounts, late-fee foundation, one formula.
 - **Decision:** (1) Settlement-owned engines for refund (entity + history), adjustment, discount (fixed/%), late fee (flat/daily/max, no scheduler). (2) Central formula in `settlement.formula.ts`: Total = (charge−deposit)+late+adj−discount−refund; Outstanding = Total−paid. (3) Append-only ledger via `postSettlementModifierInTx`; never mutate Payment. (4) Component columns on `RentalSettlement` + CAS recalculation.
 - **Consequences:** Financial domain feature-complete for rental money. Reports / dashboards / analytics / desktop still blocked pending approval. Docs: `FinancialDesign.md`, `SettlementDesign.md`.
+
+## ADR-V2-030 - Reporting engine (Phase 7.0)
+
+- **Date:** 2026-08-03
+- **Status:** Accepted
+- **Context:** Product approved read-only reporting after financial domain completion. Reports must not become a second money authority or mutate inventory/rental/settlement/ledger.
+- **Decision:** Introduce `ReportsModule` with Prisma aggregate repository only (no domain write services). Dashboard + financial + rental + inventory + customer reports; shared filters/pagination/sort; `ReportExporter` with CSV/JSON implemented and PDF/Excel stubs. RBAC: `reports.view`, `reports.financial.view`, `reports.export`. Settlement remaining / posted ledger / completed payments are read as-is — formulas stay in Settlement.
+- **Consequences:** Coverage gate `pnpm test:cov:reports` ≥95%. Docs: `ReportingDesign.md`. Desktop / PDF-Excel rendering remain later phases.

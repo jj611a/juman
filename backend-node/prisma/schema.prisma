@@ -530,6 +530,7 @@ model Rental {
   @@index([status])
   @@index([rentalDate])
   @@index([expectedReturnDate])
+  @@index([actualReturnDate])
   @@index([deletedAt])
   @@index([createdAt])
   @@index([status, deletedAt])
@@ -702,6 +703,7 @@ model FinancialTransaction {
   @@index([referenceType, referenceId])
   @@index([settlementId])
   @@index([createdAt])
+  @@index([status, type, createdAt])
 }
 
 /// Payment document (Phase 6.1). Does not mutate rental rows.
@@ -736,6 +738,8 @@ model Payment {
   @@index([status])
   @@index([deletedAt])
   @@index([createdAt])
+  @@index([completedAt])
+  @@index([status, completedAt])
 }
 
 /// Immutable money movement trail linked to account / payment / transaction.

@@ -8,18 +8,18 @@
 | 3 | Core Business | **3.1–3.5 DONE** |
 | 4 | Inventory Engine | **4.1–4.4 DONE** |
 | 5 | Rental Engine | **5.1–5.4 DONE** |
-| 6 | Financial Engine | **6.1–6.6 DONE** — domain complete · Reports still NO-GO (approval) |
-| 7 | Reports & Analytics | **BLOCKED** until product approval |
+| 6 | Financial Engine | **6.1–6.6 DONE** — domain complete |
+| 7 | Reports & Analytics | **7.0 DONE** — reporting engine (read-only) |
 | 8 | Desktop Integration | Electron + Nest sidecar |
 | 9 | Testing & Hardening | Parity suites |
 | 10 | Production & Installer | Cutover |
 
 ## Current milestone
 
-**Phase 6.6 Financial Domain Completion complete.**  
-Settlement is the single financial authority (refund / adjustment / discount / late-fee foundation + centralized formulas).
+**Phase 7.0 Reporting Engine complete.**  
+Read-only `ReportsModule` over Inventory / Rental / Settlement / Finance aggregates. CSV/JSON export; PDF/Excel stubs.
 
-**STOP:** Do **not** implement Reports, Dashboards, Analytics, or Desktop integration until explicitly approved.
+**STOP:** Do **not** begin Electron / desktop integration, PDF/Excel renderers, or change Settlement formulas until explicitly approved.
 
 ## Completion rule
 

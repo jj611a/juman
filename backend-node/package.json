@@ -20,7 +20,8 @@
     "test:cov:inventory": "vitest run --coverage --config vitest.inventory.config.ts",
     "test:cov:rentals": "vitest run --coverage --config vitest.rentals.config.ts",
     "test:cov:reservations": "vitest run --coverage --config vitest.reservations.config.ts",
-    "test:cov:finance": "vitest run --coverage --config vitest.finance.config.ts"
+    "test:cov:finance": "vitest run --coverage --config vitest.finance.config.ts",
+    "test:cov:reports": "vitest run --coverage --config vitest.reports.config.ts"
   },
   "dependencies": {
     "@nestjs/common": "11.1.28",
