@@ -46,6 +46,7 @@ export function installRoot(): string {
       if (
         existsSync(join(appDir, 'backend', 'juman-api.exe')) ||
         existsSync(join(appDir, 'backend', 'run_api.py')) ||
+        existsSync(join(appDir, 'backend-node', 'package.json')) ||
         existsSync(join(appDir, 'portable.marker'))
       ) {
         return appDir
@@ -66,6 +67,46 @@ export function apiPythonPath(): string {
 
 export function runApiScriptPath(): string {
   return join(installRoot(), 'backend', 'run_api.py')
+}
+
+/** Prefer Nest backend-node when present (dev / Phase 8 sidecar). */
+export function backendNodeDir(): string {
+  const fromEnv = process.env.JUMAN_BACKEND_NODE_DIR?.trim()
+  if (fromEnv && existsSync(fromEnv)) return fromEnv
+  const candidates = [
+    join(installRoot(), 'backend-node'),
+    join(packagedAppDir(), 'backend-node'),
+    join(packagedAppDir(), '..', 'backend-node'),
+    join(process.cwd(), 'backend-node'),
+    join(process.cwd(), '..', 'backend-node')
+  ]
+  for (const c of candidates) {
+    try {
+      if (existsSync(join(c, 'package.json'))) return c
+    } catch {
+      /* continue */
+    }
+  }
+  return join(installRoot(), 'backend-node')
+}
+
+export function hasNestBackendNode(): boolean {
+  const dir = backendNodeDir()
+  return existsSync(join(dir, 'package.json')) && existsSync(join(dir, 'dist', 'main.js'))
+    ? true
+    : existsSync(join(dir, 'package.json'))
+}
+
+export function nestStartCommand(): { cmd: string; args: string[]; cwd: string } | null {
+  const dir = backendNodeDir()
+  if (!existsSync(join(dir, 'package.json'))) return null
+  const distMain = join(dir, 'dist', 'main.js')
+  if (existsSync(distMain)) {
+    return { cmd: process.execPath.includes('electron') ? 'node' : 'node', args: [distMain], cwd: dir }
+  }
+  // Prefer pnpm start when scripts exist (dev).
+  const pnpmCmd = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm'
+  return { cmd: pnpmCmd, args: ['start'], cwd: dir }
 }
 
 export function bootstrapMarkerPath(): string {
@@ -147,7 +188,7 @@ function winswPath(): string {
 
 async function probeApiHealth(): Promise<boolean> {
   try {
-    const base = (process.env.JUMAN_API_BASE_URL || 'http://127.0.0.1:8000/api/v1').replace(
+    const base = (process.env.JUMAN_API_BASE_URL || 'http://127.0.0.1:8787').replace(
       /\/$/,
       ''
     )
@@ -178,15 +219,31 @@ export async function getBackendServiceStatus(): Promise<BackendServiceStatus> {
       portableApiChild && !portableApiChild.killed && portableApiChild.exitCode == null
     )
     const running = healthy || childAlive
+    const nest = hasNestBackendNode()
     return {
       platform: 'win32',
-      serviceName: 'juman-api.exe (portable)',
+      serviceName: nest ? 'backend-node (Nest)' : 'juman-api.exe (portable)',
       state: running ? 'running' : 'stopped',
       raw: running
-        ? `portable API ${healthy ? 'healthy' : 'starting'}; child=${childAlive}`
-        : 'portable API not running (use Start Juman Portable.cmd or Start Backend)',
+        ? `portable API ${healthy ? 'healthy' : 'starting'}; nest=${nest}; child=${childAlive}`
+        : 'portable API not running (use Start Backend or start Nest on :8787)',
       canStart: !running,
       logsHint
+    }
+  }
+
+  // DEV / non-portable: prefer health on apiBaseUrl (Nest) before WinSW query.
+  {
+    const healthy = await probeApiHealth()
+    if (healthy && (process.env.NODE_ENV === 'development' || !app.isPackaged)) {
+      return {
+        platform: 'win32',
+        serviceName: hasNestBackendNode() ? 'backend-node (Nest DEV)' : JUMAN_API_SERVICE_NAME,
+        state: 'running',
+        raw: `DEV health OK at ${process.env.JUMAN_API_BASE_URL || 'http://127.0.0.1:8787'}/health`,
+        canStart: false,
+        logsHint
+      }
     }
   }
 
@@ -242,12 +299,41 @@ async function runElevatedPowerShell(scriptPath: string, args: string[]): Promis
 }
 
 function spawnPortableApi(): void {
+  // Prefer Nest backend-node over Python venv when available.
+  const nest = nestStartCommand()
+  if (nest && hasNestBackendNode()) {
+    if (portableApiChild && !portableApiChild.killed && portableApiChild.exitCode == null) {
+      return
+    }
+    ensureInstallDirs(installRoot())
+    const child = spawn(nest.cmd, nest.args, {
+      cwd: nest.cwd,
+      windowsHide: true,
+      env: {
+        ...process.env,
+        JUMAN_INSTALL_DIR: installRoot(),
+        JUMAN_PORTABLE: '1',
+        PORT: process.env.PORT || '8787',
+        HOST: process.env.HOST || '127.0.0.1'
+      },
+      stdio: 'ignore',
+      shell: process.platform === 'win32'
+    })
+    portableApiChild = child
+    child.on('exit', () => {
+      if (portableApiChild === child) portableApiChild = null
+    })
+    return
+  }
+
   const py = apiPythonPath()
   const script = runApiScriptPath()
   const frozen = join(installRoot(), 'backend', 'juman-api.exe')
   const useVenv = existsSync(py) && existsSync(script)
   if (!useVenv && !existsSync(frozen)) {
-    throw new Error(`backend runtime missing (venv or juman-api.exe) under ${installRoot()}`)
+    throw new Error(
+      `backend runtime missing (backend-node, venv, or juman-api.exe) under ${installRoot()}`
+    )
   }
   if (portableApiChild && !portableApiChild.killed && portableApiChild.exitCode == null) {
     return

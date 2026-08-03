@@ -9,4 +9,4 @@ pnpm --filter @juman/frontend exec playwright install
 # add tests/e2e with _electron.launch({ args: ['.'] })
 ```
 
-Dev smoke: `pnpm --filter @juman/frontend dev` with backend on `http://127.0.0.1:8000`.
+Dev smoke: `pnpm --filter @juman/frontend dev` with Nest Backend V2 on `http://127.0.0.1:8787`.

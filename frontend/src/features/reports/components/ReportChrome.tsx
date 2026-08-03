@@ -46,8 +46,14 @@ export function ReportChrome({
           <div />
         )}
         <div className="flex flex-wrap items-center gap-2">
-          <Button type="button" variant="outline" disabled title="قريبًا">
-            تصدير — قريبًا
+          <Button type="button" variant="outline" disabled title="CSV/JSON عبر /reports/export">
+            تصدير CSV/JSON
+          </Button>
+          <Button type="button" variant="outline" disabled title="PDF غير مدعوم في Backend V2">
+            PDF
+          </Button>
+          <Button type="button" variant="outline" disabled title="Excel غير مدعوم في Backend V2">
+            Excel
           </Button>
           <Button type="button" variant="outline" onClick={() => undefined}>
             طباعة

@@ -19,8 +19,8 @@ import { installRoot, jumanEnvPath, readJumanEnv } from '../hardware/serviceStat
 const execFileAsync = promisify(execFile)
 
 export const PG_SERVICE = 'postgresql-x64-16'
-export const HEALTH_URL_DEFAULT = 'http://127.0.0.1:8000/api/v1/health'
-export const VERSION_URL_DEFAULT = 'http://127.0.0.1:8000/api/v1/version'
+export const HEALTH_URL_DEFAULT = 'http://127.0.0.1:8787/health'
+export const VERSION_URL_DEFAULT = 'http://127.0.0.1:8787/health'
 
 export const REQUIRED_ENV_KEYS = [
   'DATABASE_URL',
@@ -279,6 +279,9 @@ try {
 }
 
 export function apiExePath(): string {
+  // Prefer Nest dist when present for diagnostics.
+  const nestDist = join(backendNodeDir(), 'dist', 'main.js')
+  if (existsSync(nestDist)) return nestDist
   const py = join(installRoot(), 'backend', '.venv', 'Scripts', 'python.exe')
   if (existsSync(py)) return py
   return join(installRoot(), 'backend', 'juman-api.exe')
@@ -286,6 +289,20 @@ export function apiExePath(): string {
 
 export function runApiScriptPath(): string {
   return join(installRoot(), 'backend', 'run_api.py')
+}
+
+export function backendNodeDir(): string {
+  const fromEnv = process.env.JUMAN_BACKEND_NODE_DIR?.trim()
+  if (fromEnv) return fromEnv
+  const candidates = [
+    join(installRoot(), 'backend-node'),
+    join(process.cwd(), 'backend-node'),
+    join(process.cwd(), '..', 'backend-node')
+  ]
+  for (const c of candidates) {
+    if (existsSync(join(c, 'package.json'))) return c
+  }
+  return join(installRoot(), 'backend-node')
 }
 
 let _diagnoseCache: {
@@ -377,15 +394,15 @@ export function fileSize(path: string): number | null {
 }
 
 export function resolveHealthUrl(env: Record<string, string>): string {
-  const port = env.PORT || '8000'
+  const port = env.PORT || '8787'
   const host = env.HOST || '127.0.0.1'
-  return `http://${host}:${port}/api/v1/health`
+  return `http://${host}:${port}/health`
 }
 
 export function resolveVersionUrl(env: Record<string, string>): string {
-  const port = env.PORT || '8000'
+  const port = env.PORT || '8787'
   const host = env.HOST || '127.0.0.1'
-  return `http://${host}:${port}/api/v1/version`
+  return `http://${host}:${port}/health`
 }
 
 export function getEnvMap(): Record<string, string> {

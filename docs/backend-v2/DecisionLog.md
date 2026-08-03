@@ -236,3 +236,11 @@
 - **Context:** Product approved read-only reporting after financial domain completion. Reports must not become a second money authority or mutate inventory/rental/settlement/ledger.
 - **Decision:** Introduce `ReportsModule` with Prisma aggregate repository only (no domain write services). Dashboard + financial + rental + inventory + customer reports; shared filters/pagination/sort; `ReportExporter` with CSV/JSON implemented and PDF/Excel stubs. RBAC: `reports.view`, `reports.financial.view`, `reports.export`. Settlement remaining / posted ledger / completed payments are read as-is — formulas stay in Settlement.
 - **Consequences:** Coverage gate `pnpm test:cov:reports` ≥95%. Docs: `ReportingDesign.md`. Desktop / PDF-Excel rendering remain later phases.
+
+## ADR-V2-031 - Frontend compatibility façade (Phase 8.0)
+
+- **Date:** 2026-08-03
+- **Status:** Accepted
+- **Context:** Electron UI still spoke Python V1 shapes (`/api/v1`, snake_case envelopes, `/dresses`, `/rental-settlements`). Nest V2 is camelCase at root paths on `:8787`. Redesigning every screen is out of scope; installer packaging is deferred.
+- **Decision:** Keep UI layouts; introduce `frontend/src/services/v2/{contracts,legacyBridge,unsupported}.ts` and rewrite `apiClient` to call Nest paths while returning legacy envelopes. Hide nav entries without V2 HTTP (calendar, returns, processing, sales, users, roles, system). Prefer spawning/detecting `backend-node` over Python venv. Auth stays in SessionManager. PDF/Excel export buttons disabled; csv/json helpers call `/reports/export`.
+- **Consequences:** Ops domains (customers/items/reservations/rentals/settlements/reports/media/health) work against Nest. Unsupported modules throw `V2_UNSUPPORTED`. Docs: `frontend/docs/API_COMPATIBILITY_REPORT.md`, `FRONTEND_BACKEND_V2_COMPATIBILITY.md`. Packaging cutover remains later Phase 8/10 work.

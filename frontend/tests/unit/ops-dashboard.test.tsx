@@ -193,7 +193,7 @@ describe('OpsDashboardPage', () => {
     expect(await screen.findByRole('main')).toBeInTheDocument()
     expect(await screen.findByRole('heading', { name: /مرحباً/ })).toBeInTheDocument()
     expect(await screen.findByText('تأجيرات نشطة')).toBeInTheDocument()
-    expect(await screen.findByText('فساتين متاحة')).toBeInTheDocument()
+    expect(await screen.findByText('متاحة')).toBeInTheDocument()
     expect(await screen.findByRole('heading', { name: 'عمل اليوم' })).toBeInTheDocument()
     expect(await screen.findByRole('heading', { name: 'إجراءات سريعة' })).toBeInTheDocument()
   })

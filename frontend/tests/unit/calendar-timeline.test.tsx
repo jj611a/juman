@@ -93,8 +93,8 @@ describe('CalendarDressPage', () => {
           block_type: 'MAINTENANCE',
           reference_module: null,
           reference_id: null,
-          start_at: '2026-07-01T00:00:00Z',
-          end_at: '2026-07-03T00:00:00Z',
+          start_at: '2026-08-01T00:00:00Z',
+          end_at: '2026-08-03T00:00:00Z',
           notes: 'صيانة',
           created_at: '2026-01-01T00:00:00Z',
           updated_at: '2026-01-01T00:00:00Z'

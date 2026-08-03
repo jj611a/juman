@@ -37,19 +37,19 @@ export default function DashboardReportPage(): React.ReactElement {
           <ErrorState title="تعذر تحميل لوحة التشغيل" onRetry={() => void query.refetch()} />
         ) : data ? (
           <Grid cols={3} gap={4}>
-            <KPICard title="إجمالي الفساتين" value={data.dresses_total} icon="Package" />
-            <KPICard title="فساتين نشطة" value={data.dresses_active} icon="Package" />
+            <KPICard title="إجمالي المخزون" value={data.dresses_total} icon="Package" />
+            <KPICard title="متاحة + محجوزة" value={data.dresses_active} icon="Package" />
             <KPICard title="تأجيرات نشطة" value={data.rentals_active} icon="Key" />
-            <KPICard title="مستحق الإرجاع اليوم" value={data.rentals_due_today} icon="Clock" />
-            <KPICard title="متأخرة" value={data.rentals_overdue} icon="AlertTriangle" />
-            <KPICard title="حجوزات اليوم" value={data.reservations_today} icon="Calendar" />
-            <KPICard title="حجوزات قادمة" value={data.reservations_upcoming} icon="Calendar" />
+            <KPICard title="إرجاعات اليوم" value={data.rentals_due_today} icon="Clock" />
+            <KPICard title="تسليمات اليوم" value={data.reservations_today} icon="Calendar" />
+            <KPICard title="محجوزة" value={data.reservations_upcoming} icon="Calendar" />
+            <KPICard title="تسويات مفتوحة" value={data.open_settlements ?? 0} icon="Wallet" />
             <KPICard
-              title="دفعات معالجة جارية"
-              value={data.processing_batches_in_process}
-              icon="RefreshCw"
+              title="مستحقات (فلس)"
+              value={data.outstanding_balance_fils ?? 0}
+              icon="AlertTriangle"
             />
-            <KPICard title="فساتين قيد المعالجة" value={data.dresses_in_processing} icon="RefreshCw" />
+            <KPICard title="إيراد اليوم (فلس)" value={data.revenue_today_fils ?? 0} icon="Key" />
           </Grid>
         ) : null}
       </ReportChrome>

@@ -9,12 +9,28 @@ interface BackendErrorBody {
     details?: unknown
   }
   detail?: string | { message?: string }
+  /** NestJS GlobalHttpExceptionFilter shape */
+  statusCode?: number
+  message?: string | string[]
+}
+
+export function messageFromNestBody(data: unknown): string | undefined {
+  if (!data || typeof data !== 'object') return undefined
+  const body = data as BackendErrorBody
+  if (typeof body.message === 'string' && body.message.trim()) return body.message
+  if (Array.isArray(body.message) && body.message.length > 0) {
+    return body.message.map(String).join(', ')
+  }
+  if (body.error?.message) return body.error.message
+  if (typeof body.detail === 'string') return body.detail
+  return undefined
 }
 
 export function mapAxiosError(error: unknown): AppError {
   if (typeof error === 'object' && error !== null && 'isAxiosError' in error) {
     const ax = error as AxiosError<BackendErrorBody>
     const data = ax.response?.data
+    const nestMessage = messageFromNestBody(data)
     if (data?.error?.code && data.error.message) {
       return {
         code: data.error.code,
@@ -22,8 +38,11 @@ export function mapAxiosError(error: unknown): AppError {
         details: data.error.details
       }
     }
-    if (typeof data?.detail === 'string') {
-      return { code: 'HTTP_ERROR', message: data.detail }
+    if (nestMessage) {
+      return {
+        code: ax.response?.status === 401 ? 'INVALID_CREDENTIALS' : 'HTTP_ERROR',
+        message: nestMessage
+      }
     }
     if (ax.code === 'ECONNREFUSED' || ax.code === 'ENOTFOUND') {
       return {

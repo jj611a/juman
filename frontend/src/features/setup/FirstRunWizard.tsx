@@ -55,7 +55,7 @@ export function FirstRunWizard({ onCompleted }: FirstRunWizardProps): React.Reac
       setError(
         err instanceof Error
           ? err.message
-          : 'الخادم غير متاح — تحقق من خدمة JumanApi وPostgreSQL'
+          : 'الخادم غير متاح — تحقق من خدمة JumanApi (Nest / SQLite)'
       )
     } finally {
       setBusy(false)
@@ -164,7 +164,7 @@ export function FirstRunWizard({ onCompleted }: FirstRunWizardProps): React.Reac
       {step === 'database' ? (
         <section className="space-y-3">
           <p className="text-sm text-muted-foreground">
-            يتحقق التطبيق من اتصال الواجهة الخلفية فقط — لا يشغّل PostgreSQL بنفسه.
+            يتحقق التطبيق من اتصال الواجهة الخلفية فقط — Nest Backend V2 (SQLite)، لا يشغّل قاعدة بيانات منفصلة.
           </p>
           {dbOk === true ? (
             <InlineMessage variant="success">الاتصال ناجح</InlineMessage>
@@ -268,7 +268,7 @@ export function FirstRunWizard({ onCompleted }: FirstRunWizardProps): React.Reac
       {step === 'app' ? (
         <section className="space-y-3">
           <InlineMessage variant="info">
-            اللغة: العربية — الاتجاه: RTL — API: http://127.0.0.1:8000/api/v1
+            اللغة: العربية — الاتجاه: RTL — API: http://127.0.0.1:8787
           </InlineMessage>
           <p className="text-sm text-muted-foreground">
             الشركة: {company || '—'} — المنطقة: {timezone}

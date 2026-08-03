@@ -11,52 +11,37 @@ interface ReportCategory {
   financial?: boolean
 }
 
+/** Nest V2-available report categories only (inspections/processing/sales removed). */
 const CATEGORIES: ReportCategory[] = [
   {
     to: '/reports/dashboard',
     title: 'لوحة التشغيل',
-    description: 'لقطة تشغيلية — فساتين، إيجارات، حجوزات، معالجة'
+    description: 'لقطة تشغيلية — تأجير، مخزون، تسويات، إيراد'
   },
   {
     to: '/reports/inventory',
     title: 'المخزون',
-    description: 'توزيع الفساتين حسب الحالة والخصائص'
+    description: 'توزيع العناصر حسب الحالة والخصائص'
   },
   {
     to: '/reports/rentals',
     title: 'الإيجارات',
-    description: 'ملخص الإيجارات والأكثر إيجاراً'
+    description: 'ملخص الإيجارات الحالية والمتأخرة والتاريخ'
   },
   {
     to: '/reports/reservations',
     title: 'الحجوزات',
-    description: 'حجوزات الفترة والقادمة'
+    description: 'حجوزات الفترة'
   },
   {
     to: '/reports/customers',
     title: 'العملاء',
-    description: 'إحصاءات العملاء والأكثر نشاطاً'
-  },
-  {
-    to: '/reports/inspections',
-    title: 'الفحوصات',
-    description: 'نتائج الفحص والأضرار'
-  },
-  {
-    to: '/reports/processing',
-    title: 'المعالجة',
-    description: 'دفعات المعالجة والمدة'
-  },
-  {
-    to: '/reports/sales',
-    title: 'المبيعات',
-    description: 'sale_revenue و sale_revenue_normal و sale_revenue_mandatory',
-    financial: true
+    description: 'تقارير العملاء (حسب المعرّف في Backend V2)'
   },
   {
     to: '/reports/financial',
     title: 'المالي',
-    description: 'total_cash_collected و total_charged والمقاييس المسماة',
+    description: 'إيراد، مستحقات، رسوم وتسويات',
     financial: true
   }
 ]

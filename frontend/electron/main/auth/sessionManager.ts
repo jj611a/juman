@@ -4,23 +4,33 @@ import type { CredentialStore } from '../security/credentialStore'
 import type { SessionUser, SessionView } from '../../shared/session'
 import type { AppError } from '../../shared/errors'
 import { IpcChannels } from '../../shared/channels'
-import { mapAxiosError } from '../http/errors'
+import { mapAxiosError, messageFromNestBody } from '../http/errors'
 
-interface TokenData {
-  access_token: string
-  refresh_token: string
-  token_type: string
-  access_expires_at?: string
-  refresh_expires_at?: string
-  session_id?: string
-  user: SessionUser & Record<string, unknown>
+/** Nest Backend V2 auth token payload (camelCase, no envelope). */
+interface V2TokenPayload {
+  accessToken: string
+  refreshToken: string
+  tokenType: string
+  accessExpiresAt?: string
+  refreshExpiresAt?: string
+  sessionId?: string
+  user: {
+    id: string
+    username: string
+    fullName?: string | null
+    roleId?: string | null
+    roleName?: string | null
+    mustChangePassword?: boolean
+    isActive?: boolean
+    permissions?: string[]
+  }
 }
 
-interface Envelope<T> {
-  success: boolean
-  data?: T
-  error?: { code?: string; message?: string; details?: unknown }
-  item?: { permissions?: Array<{ key?: string }> } & Record<string, unknown>
+interface V2SessionRestore {
+  tokens?: V2TokenPayload
+  session?: {
+    user?: V2TokenPayload['user']
+  }
 }
 
 export class SessionManager {
@@ -57,7 +67,7 @@ export class SessionManager {
           return response
         }
         const url = response.config.url ?? ''
-        if (url.includes('/login') || url.includes('/refresh')) {
+        if (url.includes('/auth/login') || url.includes('/auth/session')) {
           return response
         }
         const refreshed = await this.refresh()
@@ -73,13 +83,13 @@ export class SessionManager {
     )
   }
 
-  private toSessionUser(raw: TokenData['user']): SessionUser {
+  private toSessionUser(raw: V2TokenPayload['user']): SessionUser {
     return {
       id: String(raw.id),
       username: String(raw.username),
-      full_name: (raw.full_name as string | null | undefined) ?? null,
-      role_id: raw.role_id != null ? String(raw.role_id) : null,
-      is_active: Boolean(raw.is_active ?? true)
+      full_name: raw.fullName ?? null,
+      role_id: raw.roleId != null ? String(raw.roleId) : null,
+      is_active: Boolean(raw.isActive ?? true)
     }
   }
 
@@ -109,42 +119,24 @@ export class SessionManager {
     this.emitChanged()
   }
 
-  private async hydratePermissions(roleId: string | null): Promise<void> {
-    if (!roleId) {
-      this.permissions = []
-      return
-    }
-    try {
-      const response = await this.http.get<Envelope<unknown>>(`/roles/${roleId}`)
-      if (response.status >= 400) {
-        this.permissions = []
-        return
-      }
-      const body = response.data as Envelope<unknown> & {
-        item?: { permissions?: Array<{ key?: string }> }
-      }
-      const perms = body.item?.permissions ?? []
-      this.permissions = perms
-        .map((p) => p.key)
-        .filter((k): k is string => typeof k === 'string' && k.length > 0)
-    } catch {
-      this.permissions = []
-    }
-  }
-
-  async applyTokenData(data: TokenData, options?: { remember?: boolean }): Promise<SessionView> {
+  async applyTokenData(
+    data: V2TokenPayload,
+    options?: { remember?: boolean }
+  ): Promise<SessionView> {
     const remember = options?.remember !== false
-    this.accessToken = data.access_token
+    this.accessToken = data.accessToken
     this.user = this.toSessionUser(data.user)
-    this.mustChangePassword = Boolean(data.user.must_change_password)
+    this.mustChangePassword = Boolean(data.user.mustChangePassword)
+    this.permissions = Array.isArray(data.user.permissions)
+      ? data.user.permissions.filter((p): p is string => typeof p === 'string')
+      : []
     if (remember) {
       this.memoryRefreshToken = null
-      await this.credentials.setRefreshToken(data.refresh_token)
+      await this.credentials.setRefreshToken(data.refreshToken)
     } else {
-      this.memoryRefreshToken = data.refresh_token
+      this.memoryRefreshToken = data.refreshToken
       await this.credentials.clearRefreshToken()
     }
-    await this.hydratePermissions(this.user.role_id)
     this.emitChanged()
     return this.getSessionView()
   }
@@ -178,34 +170,32 @@ export class SessionManager {
     options?: { remember?: boolean; deviceName?: string }
   ): Promise<SessionView> {
     const remember = options?.remember ?? true
-    const response = await this.http.post<Envelope<TokenData>>('/login', {
+    const response = await this.http.post<V2TokenPayload>('/auth/login', {
       username,
       password,
-      remember_me: remember,
-      device_name: options?.deviceName ?? 'Juman Desktop'
+      rememberMe: remember,
+      deviceName: options?.deviceName ?? 'Juman Desktop'
     })
-    if (response.status >= 400 || !response.data?.success || !response.data.data) {
-      const err = response.data?.error
+    if (response.status >= 400 || !response.data?.accessToken) {
       throw {
-        code: err?.code ?? (response.status === 401 ? 'INVALID_CREDENTIALS' : 'HTTP_ERROR'),
-        message: err?.message ?? 'تعذر تسجيل الدخول',
-        details: err?.details
+        code: response.status === 401 ? 'INVALID_CREDENTIALS' : 'HTTP_ERROR',
+        message: messageFromNestBody(response.data) ?? 'تعذر تسجيل الدخول',
+        details: response.data
       } satisfies AppError
     }
-    return this.applyTokenData(response.data.data, { remember })
+    return this.applyTokenData(response.data, { remember })
   }
 
   async changePassword(currentPassword: string, newPassword: string): Promise<SessionView> {
-    const response = await this.http.post<Envelope<unknown>>('/change-password', {
-      current_password: currentPassword,
-      new_password: newPassword
+    const response = await this.http.post('/auth/change-password', {
+      currentPassword,
+      newPassword
     })
-    if (response.status >= 400 || (response.data && 'success' in response.data && response.data.success === false)) {
-      const err = (response.data as Envelope<unknown>)?.error
+    if (response.status >= 400) {
       throw {
-        code: err?.code ?? 'HTTP_ERROR',
-        message: err?.message ?? 'تعذر تغيير كلمة المرور',
-        details: err?.details
+        code: 'HTTP_ERROR',
+        message: messageFromNestBody(response.data) ?? 'تعذر تغيير كلمة المرور',
+        details: response.data
       } satisfies AppError
     }
     this.mustChangePassword = false
@@ -237,14 +227,17 @@ export class SessionManager {
     options?: { remember?: boolean }
   ): Promise<boolean> {
     try {
-      const response = await this.http.post<Envelope<TokenData>>('/refresh', {
-        refresh_token: refreshToken
+      // Nest V2 rotates via GET /auth/session + X-Refresh-Token (no /refresh).
+      const response = await this.http.get<V2SessionRestore>('/auth/session', {
+        headers: { 'X-Refresh-Token': refreshToken }
       })
-      if (response.status >= 400 || !response.data?.success || !response.data.data) {
+      if (response.status >= 400 || !response.data?.tokens?.accessToken) {
         await this.clear()
         return false
       }
-      await this.applyTokenData(response.data.data, { remember: options?.remember !== false })
+      await this.applyTokenData(response.data.tokens, {
+        remember: options?.remember !== false
+      })
       return true
     } catch {
       await this.clear()
@@ -255,7 +248,7 @@ export class SessionManager {
   async logout(): Promise<SessionView> {
     try {
       if (this.accessToken) {
-        await this.http.post('/logout')
+        await this.http.post('/auth/logout')
       }
     } catch {
       // still clear locally
@@ -265,19 +258,12 @@ export class SessionManager {
   }
 
   async logoutAll(): Promise<SessionView> {
-    try {
-      if (this.accessToken) {
-        await this.http.post('/logout-all')
-      }
-    } catch {
-      // still clear locally
-    }
-    await this.clear()
-    return this.getSessionView()
+    // V2 has no logout-all yet — clear local session (and revoke current via logout).
+    return this.logout()
   }
 
   async systemHealth(): Promise<unknown> {
-    const response = await this.http.get<Envelope<unknown> | Record<string, unknown>>('/health')
+    const response = await this.http.get<Record<string, unknown>>('/health')
     if (response.status >= 400) {
       throw mapAxiosError({
         isAxiosError: true,
@@ -286,28 +272,13 @@ export class SessionManager {
         code: 'ERR_BAD_RESPONSE'
       })
     }
-    const body = response.data as Envelope<unknown>
-    if (body && typeof body === 'object' && 'success' in body && body.success && 'data' in body) {
-      return body.data
-    }
     return response.data
   }
 
   async systemVersion(): Promise<unknown> {
-    const response = await this.http.get<Envelope<unknown> | Record<string, unknown>>('/version')
-    if (response.status >= 400) {
-      throw mapAxiosError({
-        isAxiosError: true,
-        response,
-        message: 'version failed',
-        code: 'ERR_BAD_RESPONSE'
-      })
-    }
-    const body = response.data as Envelope<unknown>
-    if (body && typeof body === 'object' && 'success' in body && body.success && 'data' in body) {
-      return body.data
-    }
-    return response.data
+    // V2 exposes version on /health (no dedicated /version route yet).
+    const health = (await this.systemHealth()) as { version?: string }
+    return { version: health.version ?? '2.0.0', api: 'backend-node' }
   }
 
   asAppError(error: unknown): AppError {

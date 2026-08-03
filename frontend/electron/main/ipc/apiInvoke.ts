@@ -1,12 +1,14 @@
 import type { AxiosInstance, AxiosRequestConfig, Method } from 'axios'
 import type { ApiBinaryResult, ApiInvokeRequest } from '../../shared/apiInvoke'
 import type { AppError } from '../../shared/errors'
-import { mapAxiosError } from '../http/errors'
+import { mapAxiosError, messageFromNestBody } from '../http/errors'
 
 interface EnvelopeLike {
   success?: boolean
   error?: { code?: string; message?: string; details?: unknown }
   detail?: string
+  statusCode?: number
+  message?: string | string[]
 }
 
 function buildQuery(query?: ApiInvokeRequest['query']): Record<string, string> | undefined {
@@ -28,6 +30,13 @@ function raiseFromBody(status: number, data: unknown): never {
       details: body.error.details
     }
     throw err
+  }
+  const nestMessage = messageFromNestBody(data)
+  if (nestMessage) {
+    throw {
+      code: status === 403 ? 'FORBIDDEN' : status === 401 ? 'UNAUTHORIZED' : 'HTTP_ERROR',
+      message: nestMessage
+    } satisfies AppError
   }
   if (typeof body?.detail === 'string') {
     throw { code: 'HTTP_ERROR', message: body.detail } satisfies AppError

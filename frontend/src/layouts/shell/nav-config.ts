@@ -1,6 +1,10 @@
 import type { ShellNavSection } from './types'
 
-/** Primary app navigation — permission-filtered in shell. */
+/**
+ * Primary app navigation — permission-filtered in shell.
+ * Modules without Nest V2 HTTP (returns, processing, sales, users, roles,
+ * system, calendar) are omitted so they stay hidden.
+ */
 export const DEFAULT_SHELL_SECTIONS: ShellNavSection[] = [
   {
     id: 'main',
@@ -28,54 +32,28 @@ export const DEFAULT_SHELL_SECTIONS: ShellNavSection[] = [
         icon: 'Shirt',
         permission: 'inventory.view'
       },
-      {
-        id: 'calendar',
-        label: 'التقويم',
-        href: '/calendar',
-        icon: 'Calendar',
-        permission: 'calendar.view'
-      },
+      // calendar: no Availability HTTP in Nest V2 — hidden
       {
         id: 'reservations',
         label: 'الحجوزات',
         href: '/reservations',
         icon: 'Bookmark',
-        permission: 'reservation.view'
+        anyOf: ['reservation.view', 'reservations.view']
       },
       {
         id: 'rentals',
         label: 'التأجير',
         href: '/rentals',
         icon: 'ShoppingBag',
-        permission: 'rental.view'
+        anyOf: ['rental.view', 'rentals.view']
       },
-      {
-        id: 'returns',
-        label: 'المرتجعات',
-        href: '/returns',
-        icon: 'Undo2',
-        permission: 'return.view'
-      },
-      {
-        id: 'processing',
-        label: 'المعالجة',
-        href: '/processing',
-        icon: 'WashingMachine',
-        anyOf: ['processing.view', 'inspection.view']
-      },
-      {
-        id: 'sales',
-        label: 'المبيعات',
-        href: '/sales',
-        icon: 'BadgeDollarSign',
-        permission: 'sale.view'
-      },
+      // returns / processing / sales: V2_UNSUPPORTED — hidden
       {
         id: 'settlements',
         label: 'التسويات',
         href: '/settlements',
         icon: 'Wallet',
-        permission: 'rental.settlement.view'
+        anyOf: ['rental.settlement.view', 'finance.settlement.view']
       },
       {
         id: 'reports',
@@ -90,20 +68,7 @@ export const DEFAULT_SHELL_SECTIONS: ShellNavSection[] = [
     id: 'admin',
     label: 'الإدارة',
     items: [
-      {
-        id: 'users',
-        label: 'المستخدمون',
-        href: '/users',
-        icon: 'UserCog',
-        anyOf: ['users.view', 'users.manage']
-      },
-      {
-        id: 'roles',
-        label: 'الأدوار',
-        href: '/roles',
-        icon: 'Shield',
-        anyOf: ['roles.view', 'roles.manage']
-      },
+      // users / roles / system: no Nest V2 admin CRUD HTTP — hidden
       {
         id: 'settings',
         label: 'الإعدادات',
@@ -124,13 +89,6 @@ export const DEFAULT_SHELL_SECTIONS: ShellNavSection[] = [
         href: '/audit',
         icon: 'ScrollText',
         permission: 'audit.view'
-      },
-      {
-        id: 'system',
-        label: 'النظام',
-        href: '/system',
-        icon: 'Server',
-        anyOf: ['system.view', 'system.backup', 'system.restore', 'system.maintenance']
       }
     ]
   }

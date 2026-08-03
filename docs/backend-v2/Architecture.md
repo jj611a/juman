@@ -7,9 +7,9 @@
 ## Target runtime
 
 ```
-Electron (desktop) — Main process owns tokens
-    ↓ Bearer access JWT
-NestJS (backend-node) — binds HOST (default 127.0.0.1)
+Electron (desktop) — Main process owns tokens; apiClient façade adapts UI to Nest V2
+    ↓ Bearer access JWT (no /api/v1)
+NestJS (backend-node) — binds HOST (default 127.0.0.1:8787)
     ↓
 Prisma ORM + migrate deploy on boot
     ↓
@@ -20,7 +20,8 @@ SQLite → data/juman.db (WAL, foreign_keys, busy_timeout)
 
 - Desktop-first, single-machine, offline-first
 - Zero manual database configuration (no PostgreSQL)
-- Single installer packaging path (Electron + Nest sidecar) — Phase 8
+- Single installer packaging path (Electron + Nest sidecar) — Phase 8 (8.0 frontend compat done; packaging later)
+- Electron renderer adapts to Nest V2 via `frontend/src/services/v2` façade (ADR-V2-031) — no Python `/api/v1`
 - Same business behavior as Python V1, reimplemented cleanly (not ported line-by-line)
 
 ## Runtime directories

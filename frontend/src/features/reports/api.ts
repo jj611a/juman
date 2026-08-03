@@ -51,5 +51,9 @@ export const reportsApi = {
   salesSummary: (params: ReportDateRangeParams) => apiClient.reports.salesSummary(params),
   salesDetails: (params: SalesDetailsParams) => apiClient.reports.salesDetails(params),
   financialSummary: (params: ReportDateRangeParams) => apiClient.reports.financialSummary(params),
-  financialDaily: (params: ReportDateRangeParams) => apiClient.reports.financialDaily(params)
+  financialDaily: (params: ReportDateRangeParams) => apiClient.reports.financialDaily(params),
+  exportCsv: (report: string, params?: ReportDateRangeParams) =>
+    apiClient.reports.exportCsv(report, params),
+  exportJson: (report: string, params?: ReportDateRangeParams) =>
+    apiClient.reports.exportJson(report, params)
 }

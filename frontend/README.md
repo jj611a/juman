@@ -6,7 +6,7 @@ Desktop client foundation for **جمان** — Electron + React + TypeScript.
 
 - Node.js 20+
 - pnpm 10+
-- Backend running at `http://127.0.0.1:8000` (optional for UI shell; needed for health probe)
+- Backend running at `http://127.0.0.1:8787` (Nest Backend V2; required for login/health)
 
 ## Commands
 

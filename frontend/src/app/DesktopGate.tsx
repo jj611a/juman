@@ -9,7 +9,7 @@ type GateState = 'loading' | 'first-run' | 'offline' | 'ready'
 
 /**
  * Gates the app on first-run completion and backend reachability.
- * Electron never starts PostgreSQL — only offers to start JumanApi service.
+ * Electron talks to Nest Backend V2 (SQLite) — only offers to start JumanApi.
  * On offline, opens Diagnostics Center once per session.
  */
 export function DesktopGate({ children }: { children: React.ReactNode }): React.ReactElement {
@@ -82,8 +82,8 @@ export function DesktopGate({ children }: { children: React.ReactNode }): React.
           </p>
         ) : null}
         <InlineMessage variant="info">
-          التطبيق لا يشغّل PostgreSQL. تأكد أن خدمة PostgreSQL تعمل، ثم شغّل خدمة JumanApi. تم فتح مركز
-          التشخيص تلقائياً عند الفشل.
+          التطبيق يتصل بخادم Nest (Backend V2 / SQLite). شغّل خدمة JumanApi أو backend-node ثم أعد
+          المحاولة. تم فتح مركز التشخيص تلقائياً عند الفشل.
         </InlineMessage>
         <div className="flex flex-wrap gap-2">
           <Button type="button" onClick={() => openDiagnostics()}>

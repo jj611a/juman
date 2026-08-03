@@ -885,6 +885,11 @@ export interface DashboardReportDto {
   reservations_upcoming: number
   processing_batches_in_process: number
   dresses_in_processing: number
+  /** Nest V2 dashboard extras (mapped from camelCase). */
+  open_settlements?: number
+  outstanding_balance_fils?: number
+  revenue_today_fils?: number
+  revenue_this_month_fils?: number
 }
 
 export interface InventorySummaryReportDto {

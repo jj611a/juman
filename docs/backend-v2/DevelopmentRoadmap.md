@@ -10,16 +10,16 @@
 | 5 | Rental Engine | **5.1–5.4 DONE** |
 | 6 | Financial Engine | **6.1–6.6 DONE** — domain complete |
 | 7 | Reports & Analytics | **7.0 DONE** — reporting engine (read-only) |
-| 8 | Desktop Integration | Electron + Nest sidecar |
+| 8 | Desktop Integration | **8.0 DONE** — frontend Nest compat façade (packaging later) |
 | 9 | Testing & Hardening | Parity suites |
 | 10 | Production & Installer | Cutover |
 
 ## Current milestone
 
-**Phase 7.0 Reporting Engine complete.**  
-Read-only `ReportsModule` over Inventory / Rental / Settlement / Finance aggregates. CSV/JSON export; PDF/Excel stubs.
+**Phase 8.0 Frontend↔Nest compatibility complete.**  
+Electron `apiClient` talks to Nest on `:8787` via `src/services/v2` façade (legacy envelopes preserved). Nav pruned for modules without V2 HTTP. Installer packaging / Nest sidecar bundling remains later Phase 8/10 work.
 
-**STOP:** Do **not** begin Electron / desktop integration, PDF/Excel renderers, or change Settlement formulas until explicitly approved.
+**STOP:** Do **not** change Settlement formulas, redesign UI layouts, or cut over installer packaging until explicitly approved. Next: Phase 8 packaging / Phase 9 hardening on approval.
 
 ## Completion rule
 

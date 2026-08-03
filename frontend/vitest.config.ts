@@ -14,6 +14,11 @@ export default defineConfig({
     environment: 'jsdom',
     globals: true,
     setupFiles: ['./tests/setup.ts'],
-    include: ['tests/**/*.{test,spec}.{ts,tsx}']
+    include: ['tests/**/*.{test,spec}.{ts,tsx}'],
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'json-summary'],
+      include: ['src/services/v2/**', 'src/services/apiClient.ts']
+    }
   }
 })

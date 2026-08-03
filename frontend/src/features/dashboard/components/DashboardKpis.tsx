@@ -4,20 +4,18 @@ import { usePermission } from '@/hooks/usePermission'
 import { useDashboardReport } from '@/features/reports/hooks'
 import type { DashboardReportDto } from '@/services/domainTypes'
 
-function kpiItems(data: DashboardReportDto): Array<{ title: string; value: number; icon: 'Key' | 'Calendar' | 'Clock' | 'AlertTriangle' | 'Package' | 'RefreshCw' }> {
-  const items: Array<{ title: string; value: number; icon: 'Key' | 'Calendar' | 'Clock' | 'AlertTriangle' | 'Package' | 'RefreshCw' }> = [
+function kpiItems(data: DashboardReportDto): Array<{ title: string; value: number; icon: 'Key' | 'Calendar' | 'Clock' | 'AlertTriangle' | 'Package' | 'Wallet' }> {
+  const items: Array<{ title: string; value: number; icon: 'Key' | 'Calendar' | 'Clock' | 'AlertTriangle' | 'Package' | 'Wallet' }> = [
     { title: 'تأجيرات نشطة', value: data.rentals_active, icon: 'Key' },
-    { title: 'حجوزات اليوم', value: data.reservations_today, icon: 'Calendar' },
-    { title: 'مستحق الإرجاع اليوم', value: data.rentals_due_today, icon: 'Clock' },
-    { title: 'متأخرة', value: data.rentals_overdue, icon: 'AlertTriangle' },
-    { title: 'فساتين نشطة', value: data.dresses_active, icon: 'Package' },
-    { title: 'دفعات معالجة جارية', value: data.processing_batches_in_process, icon: 'RefreshCw' },
-    { title: 'فساتين قيد المعالجة', value: data.dresses_in_processing, icon: 'RefreshCw' },
-    { title: 'حجوزات قادمة', value: data.reservations_upcoming, icon: 'Calendar' }
+    { title: 'تسليمات اليوم', value: data.reservations_today, icon: 'Calendar' },
+    { title: 'إرجاعات اليوم', value: data.rentals_due_today, icon: 'Clock' },
+    { title: 'عناصر المخزون', value: data.dresses_total, icon: 'Package' },
+    { title: 'محجوزة', value: data.reservations_upcoming, icon: 'Calendar' },
+    { title: 'تسويات مفتوحة', value: data.open_settlements ?? 0, icon: 'Wallet' }
   ]
-  if (Object.prototype.hasOwnProperty.call(data.dresses_by_status, 'AVAILABLE')) {
-    items.splice(4, 0, {
-      title: 'فساتين متاحة',
+  if (Object.prototype.hasOwnProperty.call(data.dresses_by_status ?? {}, 'AVAILABLE')) {
+    items.splice(3, 0, {
+      title: 'متاحة',
       value: data.dresses_by_status.AVAILABLE,
       icon: 'Package'
     })

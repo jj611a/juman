@@ -136,13 +136,57 @@ import type {
   RestoreExecuteBody,
   RestoreHistoryDto,
   RestoreHistoryParams,
-} from './domainTypes' 
+  CountByKeyDto
+} from './domainTypes'
+import type {
+  V2Category,
+  V2Customer,
+  V2DashboardReport,
+  V2FinancialReport,
+  V2Health,
+  V2Item,
+  V2MediaFile,
+  V2Rental,
+  V2Reservation,
+  V2Settlement
+} from './v2/contracts'
+import {
+  bridgeListQuery,
+  dressListQuery,
+  mapCategoryBodyToV2,
+  mapCategoryV2ToLegacy,
+  mapCustomerBodyToV2,
+  mapCustomerV2ToLegacy,
+  mapDashboardV2ToLegacy,
+  mapDressBodyToItemV2,
+  mapDressStatusToTransition,
+  mapFinancialV2ToLegacy,
+  mapItemV2ToDress,
+  mapMediaV2ToStoredFile,
+  mapRentalBodyToV2,
+  mapRentalV2ToLegacy,
+  mapReservationBodyToV2,
+  mapReservationV2ToLegacy,
+  mapSettlementAdjustmentBodyToV2,
+  mapSettlementPaymentBodyToV2,
+  mapSettlementV2ToLegacy,
+  toLegacyItem,
+  toLegacyList,
+  toLegacyMessage,
+  toPageListEnvelope,
+  unwrapV2Page
+} from './v2/legacyBridge'
+import { v2Unsupported } from './v2/unsupported'
 
 function bridge() {
   if (typeof window === 'undefined' || !window.juman) {
     throw new Error('Juman desktop bridge is unavailable')
   }
   return window.juman
+}
+
+async function invoke<T = unknown>(request: ApiInvokeRequest): Promise<T> {
+  return bridge().api.invoke(request) as Promise<T>
 }
 
 async function fileToBase64(file: File): Promise<string> {
@@ -155,7 +199,15 @@ async function fileToBase64(file: File): Promise<string> {
   return btoa(binary)
 }
 
-/** Renderer SDK — IPC only. Never imports Axios. */
+function asCountRows(raw: unknown): CountByKeyDto[] {
+  const { items } = unwrapV2Page<Record<string, unknown>>(raw)
+  return items.map((row) => ({
+    key: String(row.key ?? row.name ?? row.label ?? row.id ?? ''),
+    count: Number(row.count ?? row.total ?? row.value ?? 0)
+  }))
+}
+
+/** Renderer SDK — IPC only. Never imports Axios. Targets Nest Backend V2. */
 export const apiClient = {
   auth: {
     getSession: (): Promise<SessionView> => bridge().auth.getSession(),
@@ -176,53 +228,60 @@ export const apiClient = {
       bridge().auth.onChanged(listener)
   },
   system: {
-    health: (): Promise<HealthDto> => bridge().api.system.health(),
-    version: (): Promise<VersionDto> => bridge().api.system.version(),
-    info: (): Promise<SystemInfoDto> =>
-      bridge().api.invoke({ method: 'GET', path: '/system/info' }),
-    diagnostics: (): Promise<SystemDiagnosticsDto> =>
-      bridge().api.invoke({ method: 'GET', path: '/system/diagnostics' }),
-    metrics: (): Promise<SystemMetricsDto> =>
-      bridge().api.invoke({ method: 'GET', path: '/system/metrics' }),
+    health: async (): Promise<HealthDto> => {
+      const h = await invoke<V2Health>({ method: 'GET', path: '/health' })
+      return {
+        status: h.status,
+        database: h.database,
+        redis: 'n/a',
+        app: 'backend-node',
+        environment: h.environment,
+        version: h.version,
+        uptime: h.uptime
+      }
+    },
+    version: async (): Promise<VersionDto> => {
+      const h = await invoke<V2Health>({ method: 'GET', path: '/health' })
+      return {
+        name: 'Juman',
+        name_ar: 'جمان',
+        version: h.version,
+        api: 'backend-node',
+        environment: h.environment
+      }
+    },
+    info: (): Promise<SystemInfoDto> => v2Unsupported('system.info'),
+    diagnostics: (): Promise<SystemDiagnosticsDto> => v2Unsupported('system.diagnostics'),
+    metrics: (): Promise<SystemMetricsDto> => v2Unsupported('system.metrics'),
     maintenanceTasks: (): Promise<ItemsEnvelope<MaintenanceTaskDto> | { items: MaintenanceTaskDto[] }> =>
-      bridge().api.invoke({ method: 'GET', path: '/system/maintenance/tasks' }),
+      v2Unsupported('system.maintenance'),
     executeMaintenance: (
-      taskKey: string,
-      body?: MaintenanceExecuteBody
+      _taskKey: string,
+      _body?: MaintenanceExecuteBody
     ): Promise<ItemEnvelope<MaintenanceRunDto> | MaintenanceRunDto> =>
-      bridge().api.invoke({
-        method: 'POST',
-        path: `/system/maintenance/tasks/${taskKey}/execute`,
-        body
-      }),
-    maintenanceHistory: (
-      params?: MaintenanceHistoryParams
-    ): Promise<ListEnvelope<MaintenanceRunDto>> =>
-      bridge().api.invoke({ method: 'GET', path: '/system/maintenance/history', query: params }),
-    maintenanceRun: (id: string): Promise<ItemEnvelope<MaintenanceRunDto>> =>
-      bridge().api.invoke({ method: 'GET', path: `/system/maintenance/history/${id}` }),
-    listBackups: (params?: SystemBackupListParams): Promise<ListEnvelope<SystemBackupDto>> =>
-      bridge().api.invoke({ method: 'GET', path: '/system/backups', query: params }),
-    getBackup: (id: string): Promise<ItemEnvelope<SystemBackupDto>> =>
-      bridge().api.invoke({ method: 'GET', path: `/system/backups/${id}` }),
-    createBackup: (body?: SystemBackupCreateBody): Promise<ItemEnvelope<SystemBackupDto>> =>
-      bridge().api.invoke({ method: 'POST', path: '/system/backups', body }),
-    deleteBackup: (id: string): Promise<MessageEnvelope> =>
-      bridge().api.invoke({ method: 'DELETE', path: `/system/backups/${id}` }),
-    downloadBackup: (id: string): Promise<ApiBinaryResult> =>
-      bridge().api.invoke({
-        method: 'GET',
-        path: `/system/backups/${id}/download`,
-        responseType: 'binary'
-      }),
-    validateRestore: (body: RestoreValidateBody): Promise<unknown> =>
-      bridge().api.invoke({ method: 'POST', path: '/system/restore/validate', body }),
-    restore: (body: RestoreExecuteBody): Promise<ItemEnvelope<RestoreHistoryDto> | RestoreHistoryDto> =>
-      bridge().api.invoke({ method: 'POST', path: '/system/restore', body }),
-    restoreHistory: (params?: RestoreHistoryParams): Promise<ListEnvelope<RestoreHistoryDto>> =>
-      bridge().api.invoke({ method: 'GET', path: '/system/restore/history', query: params }),
-    getRestore: (id: string): Promise<ItemEnvelope<RestoreHistoryDto>> =>
-      bridge().api.invoke({ method: 'GET', path: `/system/restore/history/${id}` })
+      v2Unsupported('system.maintenance'),
+    maintenanceHistory: (_params?: MaintenanceHistoryParams): Promise<ListEnvelope<MaintenanceRunDto>> =>
+      v2Unsupported('system.maintenance'),
+    maintenanceRun: (_id: string): Promise<ItemEnvelope<MaintenanceRunDto>> =>
+      v2Unsupported('system.maintenance'),
+    listBackups: (_params?: SystemBackupListParams): Promise<ListEnvelope<SystemBackupDto>> =>
+      v2Unsupported('system.backups'),
+    getBackup: (_id: string): Promise<ItemEnvelope<SystemBackupDto>> =>
+      v2Unsupported('system.backups'),
+    createBackup: (_body?: SystemBackupCreateBody): Promise<ItemEnvelope<SystemBackupDto>> =>
+      v2Unsupported('system.backups'),
+    deleteBackup: (_id: string): Promise<MessageEnvelope> => v2Unsupported('system.backups'),
+    downloadBackup: (_id: string): Promise<ApiBinaryResult> => v2Unsupported('system.backups'),
+    validateRestore: (_body: RestoreValidateBody): Promise<unknown> =>
+      v2Unsupported('system.restore'),
+    restore: (
+      _body: RestoreExecuteBody
+    ): Promise<ItemEnvelope<RestoreHistoryDto> | RestoreHistoryDto> =>
+      v2Unsupported('system.restore'),
+    restoreHistory: (_params?: RestoreHistoryParams): Promise<ListEnvelope<RestoreHistoryDto>> =>
+      v2Unsupported('system.restore'),
+    getRestore: (_id: string): Promise<ItemEnvelope<RestoreHistoryDto>> =>
+      v2Unsupported('system.restore')
   },
   app: {
     getConfig: (): Promise<AppRuntimeConfig> => bridge().app.getConfig(),
@@ -230,354 +289,817 @@ export const apiClient = {
   },
 
   users: {
-    list: (params?: UserListParams): Promise<ListEnvelope<UserDto>> =>
-      bridge().api.invoke({ method: 'GET', path: '/users', query: params }),
-    get: (id: string): Promise<ItemEnvelope<UserDto>> =>
-      bridge().api.invoke({ method: 'GET', path: `/users/${id}` }),
-    create: (body: UserCreateBody): Promise<ItemEnvelope<UserDto>> =>
-      bridge().api.invoke({ method: 'POST', path: '/users', body }),
-    update: (id: string, body: UserUpdateBody): Promise<ItemEnvelope<UserDto>> =>
-      bridge().api.invoke({ method: 'PATCH', path: `/users/${id}`, body }),
-    deactivate: (id: string): Promise<ItemEnvelope<UserDto>> =>
-      bridge().api.invoke({ method: 'POST', path: `/users/${id}/deactivate` }),
-    activate: (id: string): Promise<ItemEnvelope<UserDto>> =>
-      bridge().api.invoke({ method: 'POST', path: `/users/${id}/activate` }),
-    remove: (id: string): Promise<MessageEnvelope> =>
-      bridge().api.invoke({ method: 'DELETE', path: `/users/${id}` }),
-    resetPassword: (body: AdminResetPasswordBody): Promise<MessageEnvelope | ItemEnvelope<UserDto>> =>
-      bridge().api.invoke({ method: 'POST', path: '/admin/reset-password', body }),
-    loginHistory: (params?: LoginHistoryListParams): Promise<ListEnvelope<LoginHistoryDto>> =>
-      bridge().api.invoke({ method: 'GET', path: '/login-history', query: params }),
+    list: (_params?: UserListParams): Promise<ListEnvelope<UserDto>> =>
+      v2Unsupported('users.list'),
+    get: (_id: string): Promise<ItemEnvelope<UserDto>> => v2Unsupported('users.get'),
+    create: (_body: UserCreateBody): Promise<ItemEnvelope<UserDto>> =>
+      v2Unsupported('users.create'),
+    update: (_id: string, _body: UserUpdateBody): Promise<ItemEnvelope<UserDto>> =>
+      v2Unsupported('users.update'),
+    deactivate: (_id: string): Promise<ItemEnvelope<UserDto>> =>
+      v2Unsupported('users.deactivate'),
+    activate: (_id: string): Promise<ItemEnvelope<UserDto>> => v2Unsupported('users.activate'),
+    remove: (_id: string): Promise<MessageEnvelope> => v2Unsupported('users.remove'),
+    resetPassword: (
+      _body: AdminResetPasswordBody
+    ): Promise<MessageEnvelope | ItemEnvelope<UserDto>> => v2Unsupported('users.resetPassword'),
+    loginHistory: (_params?: LoginHistoryListParams): Promise<ListEnvelope<LoginHistoryDto>> =>
+      v2Unsupported('users.loginHistory'),
     userLoginHistory: (
-      userId: string,
-      params?: LoginHistoryListParams
-    ): Promise<ListEnvelope<LoginHistoryDto>> =>
-      bridge().api.invoke({ method: 'GET', path: `/users/${userId}/login-history`, query: params })
+      _userId: string,
+      _params?: LoginHistoryListParams
+    ): Promise<ListEnvelope<LoginHistoryDto>> => v2Unsupported('users.loginHistory')
   },
   roles: {
-    list: (params?: { active_only?: boolean }): Promise<ItemsEnvelope<RoleDto>> =>
-      bridge().api.invoke({ method: 'GET', path: '/roles', query: params }),
-    get: (id: string): Promise<ItemEnvelope<RoleDto> | { success: boolean; item: RoleDto }> =>
-      bridge().api.invoke({ method: 'GET', path: `/roles/${id}` }),
-    create: (body: RoleCreateBody): Promise<ItemEnvelope<RoleDto> | { success: boolean; item: RoleDto }> =>
-      bridge().api.invoke({ method: 'POST', path: '/roles', body }),
-    update: (id: string, body: RoleUpdateBody): Promise<ItemEnvelope<RoleDto> | { success: boolean; item: RoleDto }> =>
-      bridge().api.invoke({ method: 'PUT', path: `/roles/${id}`, body }),
-    remove: (id: string): Promise<MessageEnvelope> =>
-      bridge().api.invoke({ method: 'DELETE', path: `/roles/${id}` }),
-    listPermissions: (id: string): Promise<ItemsEnvelope<PermissionDto>> =>
-      bridge().api.invoke({ method: 'GET', path: `/roles/${id}/permissions` }),
+    list: (_params?: { active_only?: boolean }): Promise<ItemsEnvelope<RoleDto>> =>
+      v2Unsupported('roles.list'),
+    get: (_id: string): Promise<ItemEnvelope<RoleDto> | { success: boolean; item: RoleDto }> =>
+      v2Unsupported('roles.get'),
+    create: (
+      _body: RoleCreateBody
+    ): Promise<ItemEnvelope<RoleDto> | { success: boolean; item: RoleDto }> =>
+      v2Unsupported('roles.create'),
+    update: (
+      _id: string,
+      _body: RoleUpdateBody
+    ): Promise<ItemEnvelope<RoleDto> | { success: boolean; item: RoleDto }> =>
+      v2Unsupported('roles.update'),
+    remove: (_id: string): Promise<MessageEnvelope> => v2Unsupported('roles.remove'),
+    listPermissions: (_id: string): Promise<ItemsEnvelope<PermissionDto>> =>
+      v2Unsupported('roles.permissions'),
     assignPermissions: (
-      id: string,
-      body: RolePermissionsAssignBody
-    ): Promise<ItemsEnvelope<PermissionDto>> =>
-      bridge().api.invoke({ method: 'POST', path: `/roles/${id}/permissions`, body }),
-    removePermission: (id: string, permissionId: string): Promise<MessageEnvelope> =>
-      bridge().api.invoke({ method: 'DELETE', path: `/roles/${id}/permissions/${permissionId}` })
+      _id: string,
+      _body: RolePermissionsAssignBody
+    ): Promise<ItemsEnvelope<PermissionDto>> => v2Unsupported('roles.permissions'),
+    removePermission: (_id: string, _permissionId: string): Promise<MessageEnvelope> =>
+      v2Unsupported('roles.permissions')
   },
   permissions: {
-    list: (params?: { module?: string }): Promise<ItemsEnvelope<PermissionDto>> =>
-      bridge().api.invoke({ method: 'GET', path: '/permissions', query: params }),
-    get: (id: string): Promise<ItemEnvelope<PermissionDto> | { success: boolean; item: PermissionDto }> =>
-      bridge().api.invoke({ method: 'GET', path: `/permissions/${id}` }),
-    create: (body: PermissionCreateBody): Promise<ItemEnvelope<PermissionDto> | { success: boolean; item: PermissionDto }> =>
-      bridge().api.invoke({ method: 'POST', path: '/permissions', body }),
-    update: (
-      id: string,
-      body: PermissionUpdateBody
+    list: (_params?: { module?: string }): Promise<ItemsEnvelope<PermissionDto>> =>
+      v2Unsupported('permissions.list'),
+    get: (
+      _id: string
     ): Promise<ItemEnvelope<PermissionDto> | { success: boolean; item: PermissionDto }> =>
-      bridge().api.invoke({ method: 'PUT', path: `/permissions/${id}`, body }),
-    remove: (id: string): Promise<MessageEnvelope> =>
-      bridge().api.invoke({ method: 'DELETE', path: `/permissions/${id}` })
+      v2Unsupported('permissions.get'),
+    create: (
+      _body: PermissionCreateBody
+    ): Promise<ItemEnvelope<PermissionDto> | { success: boolean; item: PermissionDto }> =>
+      v2Unsupported('permissions.create'),
+    update: (
+      _id: string,
+      _body: PermissionUpdateBody
+    ): Promise<ItemEnvelope<PermissionDto> | { success: boolean; item: PermissionDto }> =>
+      v2Unsupported('permissions.update'),
+    remove: (_id: string): Promise<MessageEnvelope> => v2Unsupported('permissions.remove')
   },
   settings: {
-    list: (params?: { category?: SettingCategory | string }): Promise<ItemsEnvelope<SettingDto>> =>
-      bridge().api.invoke({ method: 'GET', path: '/settings', query: params }),
-    get: (key: string): Promise<ItemEnvelope<SettingDto> | { success: boolean; item: SettingDto }> =>
-      bridge().api.invoke({ method: 'GET', path: `/settings/${encodeURIComponent(key)}` }),
+    list: (_params?: { category?: SettingCategory | string }): Promise<ItemsEnvelope<SettingDto>> =>
+      v2Unsupported('settings.list'),
+    get: (
+      _key: string
+    ): Promise<ItemEnvelope<SettingDto> | { success: boolean; item: SettingDto }> =>
+      v2Unsupported('settings.get'),
     update: (
-      key: string,
-      body: SettingUpdateBody
+      _key: string,
+      _body: SettingUpdateBody
     ): Promise<ItemEnvelope<SettingDto> | { success: boolean; item: SettingDto }> =>
-      bridge().api.invoke({ method: 'PUT', path: `/settings/${encodeURIComponent(key)}`, body }),
+      v2Unsupported('settings.update'),
     patchValue: (
-      key: string,
-      body: SettingValueBody
+      _key: string,
+      _body: SettingValueBody
     ): Promise<ItemEnvelope<SettingDto> | { success: boolean; item: SettingDto }> =>
-      bridge().api.invoke({
-        method: 'PATCH',
-        path: `/settings/${encodeURIComponent(key)}/value`,
-        body
-      })
+      v2Unsupported('settings.patchValue')
   },
   invoke: <T = unknown>(request: ApiInvokeRequest): Promise<T> => bridge().api.invoke(request),
+
   categories: {
-    list: (params?: CategoryListParams): Promise<ListEnvelope<CategoryDto>> =>
-      bridge().api.invoke({ method: 'GET', path: '/categories', query: params }),
-    get: (id: string): Promise<ItemEnvelope<CategoryDto>> =>
-      bridge().api.invoke({ method: 'GET', path: `/categories/${id}` }),
-    create: (body: CategoryCreateBody): Promise<ItemEnvelope<CategoryDto>> =>
-      bridge().api.invoke({ method: 'POST', path: '/categories', body }),
-    update: (id: string, body: CategoryUpdateBody): Promise<ItemEnvelope<CategoryDto>> =>
-      bridge().api.invoke({ method: 'PATCH', path: `/categories/${id}`, body }),
-    remove: (id: string): Promise<MessageEnvelope> =>
-      bridge().api.invoke({ method: 'DELETE', path: `/categories/${id}` }),
-    activate: (id: string): Promise<ItemEnvelope<CategoryDto>> =>
-      bridge().api.invoke({ method: 'POST', path: `/categories/${id}/activate` }),
-    deactivate: (id: string): Promise<ItemEnvelope<CategoryDto>> =>
-      bridge().api.invoke({ method: 'POST', path: `/categories/${id}/deactivate` })
+    list: async (params?: CategoryListParams): Promise<ListEnvelope<CategoryDto>> => {
+      const raw = await invoke({
+        method: 'GET',
+        path: '/categories',
+        query: bridgeListQuery(params as Record<string, unknown>)
+      })
+      const page = unwrapV2Page<V2Category>(raw)
+      return toLegacyList(page.items, page.meta, mapCategoryV2ToLegacy)
+    },
+    get: async (id: string): Promise<ItemEnvelope<CategoryDto>> => {
+      const raw = await invoke<V2Category>({ method: 'GET', path: `/categories/${id}` })
+      return toLegacyItem(raw, mapCategoryV2ToLegacy)
+    },
+    create: async (body: CategoryCreateBody): Promise<ItemEnvelope<CategoryDto>> => {
+      const raw = await invoke<V2Category>({
+        method: 'POST',
+        path: '/categories',
+        body: mapCategoryBodyToV2(body as unknown as Record<string, unknown>)
+      })
+      return toLegacyItem(raw, mapCategoryV2ToLegacy)
+    },
+    update: async (id: string, body: CategoryUpdateBody): Promise<ItemEnvelope<CategoryDto>> => {
+      const raw = await invoke<V2Category>({
+        method: 'PATCH',
+        path: `/categories/${id}`,
+        body: mapCategoryBodyToV2(body as unknown as Record<string, unknown>)
+      })
+      return toLegacyItem(raw, mapCategoryV2ToLegacy)
+    },
+    remove: async (id: string): Promise<MessageEnvelope> => {
+      await invoke({ method: 'DELETE', path: `/categories/${id}` })
+      return toLegacyMessage()
+    },
+    activate: async (id: string): Promise<ItemEnvelope<CategoryDto>> => {
+      const raw = await invoke<V2Category>({
+        method: 'PATCH',
+        path: `/categories/${id}`,
+        body: { isActive: true }
+      })
+      return toLegacyItem(raw, mapCategoryV2ToLegacy)
+    },
+    deactivate: async (id: string): Promise<ItemEnvelope<CategoryDto>> => {
+      const raw = await invoke<V2Category>({
+        method: 'PATCH',
+        path: `/categories/${id}`,
+        body: { isActive: false }
+      })
+      return toLegacyItem(raw, mapCategoryV2ToLegacy)
+    }
   },
+
   customers: {
-    list: (params?: CustomerListParams): Promise<ListEnvelope<CustomerDto>> =>
-      bridge().api.invoke({ method: 'GET', path: '/customers', query: params }),
-    get: (id: string): Promise<ItemEnvelope<CustomerDto>> =>
-      bridge().api.invoke({ method: 'GET', path: `/customers/${id}` }),
-    create: (body: CustomerCreateBody): Promise<ItemEnvelope<CustomerDto>> =>
-      bridge().api.invoke({ method: 'POST', path: '/customers', body }),
-    update: (id: string, body: CustomerUpdateBody): Promise<ItemEnvelope<CustomerDto>> =>
-      bridge().api.invoke({ method: 'PATCH', path: `/customers/${id}`, body }),
-    remove: (id: string): Promise<MessageEnvelope> =>
-      bridge().api.invoke({ method: 'DELETE', path: `/customers/${id}` }),
-    activate: (id: string): Promise<ItemEnvelope<CustomerDto>> =>
-      bridge().api.invoke({ method: 'POST', path: `/customers/${id}/activate` }),
-    deactivate: (id: string): Promise<ItemEnvelope<CustomerDto>> =>
-      bridge().api.invoke({ method: 'POST', path: `/customers/${id}/deactivate` })
+    list: async (params?: CustomerListParams): Promise<ListEnvelope<CustomerDto>> => {
+      const raw = await invoke({
+        method: 'GET',
+        path: '/customers',
+        query: bridgeListQuery(params as Record<string, unknown>)
+      })
+      const page = unwrapV2Page<V2Customer>(raw)
+      return toLegacyList(page.items, page.meta, mapCustomerV2ToLegacy)
+    },
+    get: async (id: string): Promise<ItemEnvelope<CustomerDto>> => {
+      const raw = await invoke<V2Customer>({ method: 'GET', path: `/customers/${id}` })
+      return toLegacyItem(raw, mapCustomerV2ToLegacy)
+    },
+    create: async (body: CustomerCreateBody): Promise<ItemEnvelope<CustomerDto>> => {
+      const raw = await invoke<V2Customer>({
+        method: 'POST',
+        path: '/customers',
+        body: mapCustomerBodyToV2(body)
+      })
+      return toLegacyItem(raw, mapCustomerV2ToLegacy)
+    },
+    update: async (id: string, body: CustomerUpdateBody): Promise<ItemEnvelope<CustomerDto>> => {
+      const raw = await invoke<V2Customer>({
+        method: 'PATCH',
+        path: `/customers/${id}`,
+        body: mapCustomerBodyToV2(body)
+      })
+      return toLegacyItem(raw, mapCustomerV2ToLegacy)
+    },
+    remove: async (id: string): Promise<MessageEnvelope> => {
+      await invoke({ method: 'DELETE', path: `/customers/${id}` })
+      return toLegacyMessage()
+    },
+    activate: async (id: string): Promise<ItemEnvelope<CustomerDto>> => {
+      const raw = await invoke<V2Customer>({
+        method: 'PATCH',
+        path: `/customers/${id}`,
+        body: { status: 'active' }
+      })
+      return toLegacyItem(raw, mapCustomerV2ToLegacy)
+    },
+    deactivate: async (id: string): Promise<ItemEnvelope<CustomerDto>> => {
+      const raw = await invoke<V2Customer>({
+        method: 'PATCH',
+        path: `/customers/${id}`,
+        body: { status: 'inactive' }
+      })
+      return toLegacyItem(raw, mapCustomerV2ToLegacy)
+    },
+    restore: async (id: string): Promise<ItemEnvelope<CustomerDto>> => {
+      const raw = await invoke<V2Customer>({
+        method: 'POST',
+        path: `/customers/${id}/restore`
+      })
+      return toLegacyItem(raw, mapCustomerV2ToLegacy)
+    }
   },
+
   dresses: {
-    list: (params?: DressListParams): Promise<PageListEnvelope<DressDto>> =>
-      bridge().api.invoke({ method: 'GET', path: '/dresses', query: params }),
-    get: (id: string): Promise<ItemEnvelope<DressDto>> =>
-      bridge().api.invoke({ method: 'GET', path: `/dresses/${id}` }),
-    getByBarcode: (barcode: string): Promise<ItemEnvelope<DressDto>> =>
-      bridge().api.invoke({ method: 'GET', path: `/dresses/barcode/${encodeURIComponent(barcode)}` }),
-    create: (body: DressCreateBody): Promise<ItemEnvelope<DressDto>> =>
-      bridge().api.invoke({ method: 'POST', path: '/dresses', body }),
-    update: (id: string, body: DressUpdateBody): Promise<ItemEnvelope<DressDto>> =>
-      bridge().api.invoke({ method: 'PATCH', path: `/dresses/${id}`, body }),
-    remove: (id: string): Promise<MessageEnvelope> =>
-      bridge().api.invoke({ method: 'DELETE', path: `/dresses/${id}` }),
-    activate: (id: string): Promise<ItemEnvelope<DressDto>> =>
-      bridge().api.invoke({ method: 'POST', path: `/dresses/${id}/activate` }),
-    deactivate: (id: string): Promise<ItemEnvelope<DressDto>> =>
-      bridge().api.invoke({ method: 'POST', path: `/dresses/${id}/deactivate` }),
-    changeStatus: (id: string, body: DressStatusChangeBody): Promise<ItemEnvelope<DressDto>> =>
-      bridge().api.invoke({ method: 'POST', path: `/dresses/${id}/status`, body }),
-    updateBarcode: (id: string, body: DressBarcodeUpdateBody): Promise<ItemEnvelope<DressDto>> =>
-      bridge().api.invoke({ method: 'PATCH', path: `/dresses/${id}/barcode`, body })
+    list: async (params?: DressListParams): Promise<PageListEnvelope<DressDto>> => {
+      const query = dressListQuery(params as Record<string, unknown>)
+      const raw = await invoke({ method: 'GET', path: '/items', query })
+      const page = unwrapV2Page<V2Item>(raw)
+      const dresses = page.items.map(mapItemV2ToDress)
+      return toPageListEnvelope(
+        dresses,
+        page.meta,
+        params?.page,
+        params?.page_size
+      )
+    },
+    get: async (id: string): Promise<ItemEnvelope<DressDto>> => {
+      const raw = await invoke<V2Item>({ method: 'GET', path: `/items/${id}` })
+      return toLegacyItem(raw, mapItemV2ToDress)
+    },
+    getByBarcode: async (barcode: string): Promise<ItemEnvelope<DressDto>> => {
+      const raw = await invoke({
+        method: 'GET',
+        path: '/items',
+        query: { barcode, limit: 1, offset: 0 }
+      })
+      const page = unwrapV2Page<V2Item>(raw)
+      const item = page.items[0]
+      if (!item) {
+        const err = {
+          code: 'NOT_FOUND',
+          message: `No item found for barcode ${barcode}`
+        }
+        throw err
+      }
+      return toLegacyItem(item, mapItemV2ToDress)
+    },
+    create: async (body: DressCreateBody): Promise<ItemEnvelope<DressDto>> => {
+      const raw = await invoke<V2Item>({
+        method: 'POST',
+        path: '/items',
+        body: mapDressBodyToItemV2(body)
+      })
+      return toLegacyItem(raw, mapItemV2ToDress)
+    },
+    update: async (id: string, body: DressUpdateBody): Promise<ItemEnvelope<DressDto>> => {
+      const raw = await invoke<V2Item>({
+        method: 'PATCH',
+        path: `/items/${id}`,
+        body: mapDressBodyToItemV2(body)
+      })
+      return toLegacyItem(raw, mapItemV2ToDress)
+    },
+    remove: async (id: string): Promise<MessageEnvelope> => {
+      await invoke({ method: 'DELETE', path: `/items/${id}` })
+      return toLegacyMessage()
+    },
+    activate: async (id: string): Promise<ItemEnvelope<DressDto>> => {
+      const raw = await invoke<V2Item>({
+        method: 'PATCH',
+        path: `/items/${id}`,
+        body: { status: 'active' }
+      })
+      return toLegacyItem(raw, mapItemV2ToDress)
+    },
+    deactivate: async (id: string): Promise<ItemEnvelope<DressDto>> => {
+      const raw = await invoke<V2Item>({
+        method: 'PATCH',
+        path: `/items/${id}`,
+        body: { status: 'inactive' }
+      })
+      return toLegacyItem(raw, mapItemV2ToDress)
+    },
+    changeStatus: async (
+      id: string,
+      body: DressStatusChangeBody
+    ): Promise<ItemEnvelope<DressDto>> => {
+      await invoke({
+        method: 'POST',
+        path: `/items/${id}/transition`,
+        body: {
+          newState: mapDressStatusToTransition(body.new_status),
+          reason: body.reason ?? undefined
+        }
+      })
+      const raw = await invoke<V2Item>({ method: 'GET', path: `/items/${id}` })
+      return toLegacyItem(raw, mapItemV2ToDress)
+    },
+    updateBarcode: async (
+      id: string,
+      body: DressBarcodeUpdateBody
+    ): Promise<ItemEnvelope<DressDto>> => {
+      const raw = await invoke<V2Item>({
+        method: 'PATCH',
+        path: `/items/${id}`,
+        body: { barcode: body.barcode ?? undefined }
+      })
+      return toLegacyItem(raw, mapItemV2ToDress)
+    }
   },
+
   dressPhotos: {
-    list: (dressId: string): Promise<{ success: boolean; data: DressPhotoDto[] }> =>
-      bridge().api.invoke({ method: 'GET', path: `/dresses/${dressId}/photos` }),
-    create: (dressId: string, body: DressPhotoCreateBody): Promise<ItemEnvelope<DressPhotoDto>> =>
-      bridge().api.invoke({ method: 'POST', path: `/dresses/${dressId}/photos`, body }),
-    setCover: (dressId: string, photoId: string): Promise<ItemEnvelope<DressPhotoDto>> =>
-      bridge().api.invoke({
-        method: 'PATCH',
-        path: `/dresses/${dressId}/photos/cover`,
-        body: { photo_id: photoId }
-      }),
-    reorder: (dressId: string, photoIds: string[]): Promise<{ success: boolean; data: DressPhotoDto[] }> =>
-      bridge().api.invoke({
-        method: 'PATCH',
-        path: `/dresses/${dressId}/photos/reorder`,
-        body: { photo_ids: photoIds }
-      }),
-    remove: (photoId: string): Promise<MessageEnvelope> =>
-      bridge().api.invoke({ method: 'DELETE', path: `/dress-photos/${photoId}` })
+    list: (_dressId: string): Promise<{ success: boolean; data: DressPhotoDto[] }> =>
+      v2Unsupported('dressPhotos.list — use item media embed / POST /items/:id/media'),
+    create: (
+      _dressId: string,
+      _body: DressPhotoCreateBody
+    ): Promise<ItemEnvelope<DressPhotoDto>> => v2Unsupported('dressPhotos.create'),
+    setCover: (_dressId: string, _photoId: string): Promise<ItemEnvelope<DressPhotoDto>> =>
+      v2Unsupported('dressPhotos.setCover'),
+    reorder: (
+      _dressId: string,
+      _photoIds: string[]
+    ): Promise<{ success: boolean; data: DressPhotoDto[] }> =>
+      v2Unsupported('dressPhotos.reorder'),
+    remove: (_photoId: string): Promise<MessageEnvelope> => v2Unsupported('dressPhotos.remove')
   },
+
   calendar: {
     timeline: (
-      dressId: string,
-      params?: { from?: string; to?: string }
+      _dressId: string,
+      _params?: { from?: string; to?: string }
     ): Promise<{ success: boolean; data: CalendarBlockDto[] }> =>
-      bridge().api.invoke({ method: 'GET', path: `/calendar/dress/${dressId}`, query: params }),
+      v2Unsupported('calendar.timeline'),
     availability: (
-      dressId: string,
-      params: { start_at: string; end_at: string }
-    ): Promise<ItemEnvelope<CalendarAvailabilityDto>> =>
-      bridge().api.invoke({
-        method: 'GET',
-        path: `/calendar/dress/${dressId}/availability`,
-        query: params
-      }),
+      _dressId: string,
+      _params: { start_at: string; end_at: string }
+    ): Promise<ItemEnvelope<CalendarAvailabilityDto>> => v2Unsupported('calendar.availability'),
     conflicts: (
-      dressId: string,
-      params: { start_at: string; end_at: string }
-    ): Promise<ItemEnvelope<CalendarConflictsDto>> =>
-      bridge().api.invoke({
-        method: 'GET',
-        path: `/calendar/dress/${dressId}/conflicts`,
-        query: params
-      }),
-    createBlock: (body: CalendarBlockCreateBody): Promise<ItemEnvelope<CalendarBlockDto>> =>
-      bridge().api.invoke({ method: 'POST', path: '/calendar/block', body }),
+      _dressId: string,
+      _params: { start_at: string; end_at: string }
+    ): Promise<ItemEnvelope<CalendarConflictsDto>> => v2Unsupported('calendar.conflicts'),
+    createBlock: (_body: CalendarBlockCreateBody): Promise<ItemEnvelope<CalendarBlockDto>> =>
+      v2Unsupported('calendar.createBlock'),
     updateBlock: (
-      blockId: string,
-      body: CalendarBlockUpdateBody
-    ): Promise<ItemEnvelope<CalendarBlockDto>> =>
-      bridge().api.invoke({ method: 'PATCH', path: `/calendar/block/${blockId}`, body }),
-    deleteBlock: (blockId: string): Promise<MessageEnvelope> =>
-      bridge().api.invoke({ method: 'DELETE', path: `/calendar/block/${blockId}` })
+      _blockId: string,
+      _body: CalendarBlockUpdateBody
+    ): Promise<ItemEnvelope<CalendarBlockDto>> => v2Unsupported('calendar.updateBlock'),
+    deleteBlock: (_blockId: string): Promise<MessageEnvelope> =>
+      v2Unsupported('calendar.deleteBlock')
   },
+
   reservations: {
-    list: (params?: ReservationListParams): Promise<ListEnvelope<ReservationDto>> =>
-      bridge().api.invoke({ method: 'GET', path: '/reservations', query: params }),
-    get: (id: string): Promise<ItemEnvelope<ReservationDto>> =>
-      bridge().api.invoke({ method: 'GET', path: `/reservations/${id}` }),
-    create: (body: ReservationCreateBody): Promise<ItemEnvelope<ReservationDto>> =>
-      bridge().api.invoke({ method: 'POST', path: '/reservations', body }),
-    update: (id: string, body: ReservationUpdateBody): Promise<ItemEnvelope<ReservationDto>> =>
-      bridge().api.invoke({ method: 'PATCH', path: `/reservations/${id}`, body }),
-    confirm: (id: string): Promise<ItemEnvelope<ReservationDto>> =>
-      bridge().api.invoke({ method: 'POST', path: `/reservations/${id}/confirm` }),
-    cancel: (id: string): Promise<ItemEnvelope<ReservationDto>> =>
-      bridge().api.invoke({ method: 'POST', path: `/reservations/${id}/cancel` }),
-    expire: (id: string): Promise<ItemEnvelope<ReservationDto>> =>
-      bridge().api.invoke({ method: 'POST', path: `/reservations/${id}/expire` })
+    list: async (params?: ReservationListParams): Promise<ListEnvelope<ReservationDto>> => {
+      const raw = await invoke({
+        method: 'GET',
+        path: '/reservations',
+        query: bridgeListQuery(params as Record<string, unknown>)
+      })
+      const page = unwrapV2Page<V2Reservation>(raw)
+      return toLegacyList(page.items, page.meta, mapReservationV2ToLegacy)
+    },
+    get: async (id: string): Promise<ItemEnvelope<ReservationDto>> => {
+      const raw = await invoke<V2Reservation>({ method: 'GET', path: `/reservations/${id}` })
+      return toLegacyItem(raw, mapReservationV2ToLegacy)
+    },
+    create: async (body: ReservationCreateBody): Promise<ItemEnvelope<ReservationDto>> => {
+      const raw = await invoke<V2Reservation>({
+        method: 'POST',
+        path: '/reservations',
+        body: mapReservationBodyToV2(body)
+      })
+      return toLegacyItem(raw, mapReservationV2ToLegacy)
+    },
+    update: (
+      _id: string,
+      _body: ReservationUpdateBody
+    ): Promise<ItemEnvelope<ReservationDto>> =>
+      v2Unsupported('reservations.update — V2 has no PATCH; cancel/recreate'),
+    confirm: async (id: string): Promise<ItemEnvelope<ReservationDto>> => {
+      // V2 create confirms; re-fetch as confirm no-op.
+      const raw = await invoke<V2Reservation>({ method: 'GET', path: `/reservations/${id}` })
+      return toLegacyItem(raw, mapReservationV2ToLegacy)
+    },
+    cancel: async (id: string): Promise<ItemEnvelope<ReservationDto>> => {
+      const raw = await invoke<V2Reservation>({
+        method: 'POST',
+        path: `/reservations/${id}/cancel`
+      })
+      return toLegacyItem(raw, mapReservationV2ToLegacy)
+    },
+    expire: async (id: string): Promise<ItemEnvelope<ReservationDto>> => {
+      const raw = await invoke<V2Reservation>({
+        method: 'POST',
+        path: `/reservations/${id}/expire`
+      })
+      return toLegacyItem(raw, mapReservationV2ToLegacy)
+    },
+    checkout: async (
+      id: string,
+      body?: { depositAmountFils?: number; reason?: string; idempotencyKey?: string }
+    ): Promise<ItemEnvelope<ReservationDto>> => {
+      const raw = await invoke<V2Reservation>({
+        method: 'POST',
+        path: `/reservations/${id}/checkout`,
+        body
+      })
+      return toLegacyItem(raw, mapReservationV2ToLegacy)
+    }
   },
+
   rentals: {
-    list: (params?: RentalListParams): Promise<ListEnvelope<RentalDto>> =>
-      bridge().api.invoke({ method: 'GET', path: '/rentals', query: params }),
-    get: (id: string): Promise<ItemEnvelope<RentalDto>> =>
-      bridge().api.invoke({ method: 'GET', path: `/rentals/${id}` }),
-    create: (body: RentalCreateBody): Promise<ItemEnvelope<RentalDto>> =>
-      bridge().api.invoke({ method: 'POST', path: '/rentals', body }),
-    update: (id: string, body: RentalUpdateBody): Promise<ItemEnvelope<RentalDto>> =>
-      bridge().api.invoke({ method: 'PATCH', path: `/rentals/${id}`, body })
+    list: async (params?: RentalListParams): Promise<ListEnvelope<RentalDto>> => {
+      const raw = await invoke({
+        method: 'GET',
+        path: '/rentals',
+        query: bridgeListQuery(params as Record<string, unknown>)
+      })
+      const page = unwrapV2Page<V2Rental>(raw)
+      return toLegacyList(page.items, page.meta, mapRentalV2ToLegacy)
+    },
+    get: async (id: string): Promise<ItemEnvelope<RentalDto>> => {
+      const raw = await invoke<V2Rental>({ method: 'GET', path: `/rentals/${id}` })
+      return toLegacyItem(raw, mapRentalV2ToLegacy)
+    },
+    create: async (body: RentalCreateBody): Promise<ItemEnvelope<RentalDto>> => {
+      const raw = await invoke<V2Rental>({
+        method: 'POST',
+        path: '/rentals',
+        body: mapRentalBodyToV2(body)
+      })
+      return toLegacyItem(raw, mapRentalV2ToLegacy)
+    },
+    update: (_id: string, _body: RentalUpdateBody): Promise<ItemEnvelope<RentalDto>> =>
+      v2Unsupported('rentals.update — use checkout/return/complete/cancel'),
+    checkout: async (
+      id: string,
+      body?: { depositAmountFils?: number; reason?: string; idempotencyKey?: string }
+    ): Promise<ItemEnvelope<RentalDto>> => {
+      const raw = await invoke<V2Rental>({
+        method: 'POST',
+        path: `/rentals/${id}/checkout`,
+        body
+      })
+      return toLegacyItem(raw, mapRentalV2ToLegacy)
+    },
+    return: async (
+      id: string,
+      body?: { reason?: string; idempotencyKey?: string }
+    ): Promise<ItemEnvelope<RentalDto>> => {
+      const raw = await invoke<V2Rental>({
+        method: 'POST',
+        path: `/rentals/${id}/return`,
+        body
+      })
+      return toLegacyItem(raw, mapRentalV2ToLegacy)
+    },
+    complete: async (
+      id: string,
+      body?: { reason?: string }
+    ): Promise<ItemEnvelope<RentalDto>> => {
+      const raw = await invoke<V2Rental>({
+        method: 'POST',
+        path: `/rentals/${id}/complete`,
+        body
+      })
+      return toLegacyItem(raw, mapRentalV2ToLegacy)
+    },
+    cancel: async (
+      id: string,
+      body?: { reason?: string }
+    ): Promise<ItemEnvelope<RentalDto>> => {
+      const raw = await invoke<V2Rental>({
+        method: 'POST',
+        path: `/rentals/${id}/cancel`,
+        body
+      })
+      return toLegacyItem(raw, mapRentalV2ToLegacy)
+    }
   },
+
   returns: {
-    list: (params?: ReturnListParams): Promise<ListEnvelope<ReturnDto>> =>
-      bridge().api.invoke({ method: 'GET', path: '/returns', query: params }),
-    get: (id: string): Promise<ItemEnvelope<ReturnDto>> =>
-      bridge().api.invoke({ method: 'GET', path: `/returns/${id}` }),
-    create: (body: ReturnCreateBody): Promise<ItemEnvelope<ReturnDto>> =>
-      bridge().api.invoke({ method: 'POST', path: '/returns', body })
+    list: (_params?: ReturnListParams): Promise<ListEnvelope<ReturnDto>> =>
+      v2Unsupported('returns module'),
+    get: (_id: string): Promise<ItemEnvelope<ReturnDto>> => v2Unsupported('returns module'),
+    create: (_body: ReturnCreateBody): Promise<ItemEnvelope<ReturnDto>> =>
+      v2Unsupported('returns module — use rentals.return')
   },
   inspections: {
-    list: (params?: InspectionListParams): Promise<ListEnvelope<InspectionDto>> =>
-      bridge().api.invoke({ method: 'GET', path: '/inspections', query: params }),
-    get: (id: string): Promise<ItemEnvelope<InspectionDto>> =>
-      bridge().api.invoke({ method: 'GET', path: `/inspections/${id}` }),
-    create: (body: InspectionCreateBody): Promise<ItemEnvelope<InspectionDto>> =>
-      bridge().api.invoke({ method: 'POST', path: '/inspections', body }),
-    update: (id: string, body: InspectionUpdateBody): Promise<ItemEnvelope<InspectionDto>> =>
-      bridge().api.invoke({ method: 'PATCH', path: `/inspections/${id}`, body })
+    list: (_params?: InspectionListParams): Promise<ListEnvelope<InspectionDto>> =>
+      v2Unsupported('inspections module'),
+    get: (_id: string): Promise<ItemEnvelope<InspectionDto>> =>
+      v2Unsupported('inspections module'),
+    create: (_body: InspectionCreateBody): Promise<ItemEnvelope<InspectionDto>> =>
+      v2Unsupported('inspections module'),
+    update: (_id: string, _body: InspectionUpdateBody): Promise<ItemEnvelope<InspectionDto>> =>
+      v2Unsupported('inspections module')
   },
   processing: {
-    list: (params?: ProcessingListParams): Promise<ListEnvelope<ProcessingBatchDto>> =>
-      bridge().api.invoke({ method: 'GET', path: '/processing', query: params }),
-    get: (id: string): Promise<ItemEnvelope<ProcessingBatchDto>> =>
-      bridge().api.invoke({ method: 'GET', path: `/processing/${id}` }),
-    create: (body: ProcessingCreateBody): Promise<ItemEnvelope<ProcessingBatchDto>> =>
-      bridge().api.invoke({ method: 'POST', path: '/processing', body }),
-    update: (id: string, body: ProcessingUpdateBody): Promise<ItemEnvelope<ProcessingBatchDto>> =>
-      bridge().api.invoke({ method: 'PATCH', path: `/processing/${id}`, body }),
-    start: (id: string, body?: ProcessingStartBody): Promise<ItemEnvelope<ProcessingBatchDto>> =>
-      bridge().api.invoke({ method: 'POST', path: `/processing/${id}/start`, body }),
-    addOptionalDay: (id: string): Promise<ItemEnvelope<ProcessingBatchDto>> =>
-      bridge().api.invoke({ method: 'POST', path: `/processing/${id}/add-optional-day` }),
-    complete: (id: string): Promise<ItemEnvelope<ProcessingBatchDto>> =>
-      bridge().api.invoke({ method: 'POST', path: `/processing/${id}/complete` })
+    list: (_params?: ProcessingListParams): Promise<ListEnvelope<ProcessingBatchDto>> =>
+      v2Unsupported('processing module'),
+    get: (_id: string): Promise<ItemEnvelope<ProcessingBatchDto>> =>
+      v2Unsupported('processing module'),
+    create: (_body: ProcessingCreateBody): Promise<ItemEnvelope<ProcessingBatchDto>> =>
+      v2Unsupported('processing module'),
+    update: (
+      _id: string,
+      _body: ProcessingUpdateBody
+    ): Promise<ItemEnvelope<ProcessingBatchDto>> => v2Unsupported('processing module'),
+    start: (
+      _id: string,
+      _body?: ProcessingStartBody
+    ): Promise<ItemEnvelope<ProcessingBatchDto>> => v2Unsupported('processing module'),
+    addOptionalDay: (_id: string): Promise<ItemEnvelope<ProcessingBatchDto>> =>
+      v2Unsupported('processing module'),
+    complete: (_id: string): Promise<ItemEnvelope<ProcessingBatchDto>> =>
+      v2Unsupported('processing module')
   },
   sales: {
-    list: (params?: SaleListParams): Promise<ListEnvelope<SaleDto>> =>
-      bridge().api.invoke({ method: 'GET', path: '/sales', query: params }),
-    get: (id: string): Promise<ItemEnvelope<SaleDto>> =>
-      bridge().api.invoke({ method: 'GET', path: `/sales/${id}` }),
-    create: (body: SaleCreateBody): Promise<ItemEnvelope<SaleDto>> =>
-      bridge().api.invoke({ method: 'POST', path: '/sales', body })
+    list: (_params?: SaleListParams): Promise<ListEnvelope<SaleDto>> =>
+      v2Unsupported('sales module'),
+    get: (_id: string): Promise<ItemEnvelope<SaleDto>> => v2Unsupported('sales module'),
+    create: (_body: SaleCreateBody): Promise<ItemEnvelope<SaleDto>> =>
+      v2Unsupported('sales module')
   },
+
   settlements: {
-    list: (params?: SettlementListParams): Promise<ListEnvelope<SettlementDto>> =>
-      bridge().api.invoke({ method: 'GET', path: '/rental-settlements', query: params }),
-    get: (id: string): Promise<ItemEnvelope<SettlementDto>> =>
-      bridge().api.invoke({ method: 'GET', path: `/rental-settlements/${id}` }),
-    getByRental: (rentalId: string): Promise<ItemEnvelope<SettlementDto>> =>
-      bridge().api.invoke({ method: 'GET', path: `/rentals/${rentalId}/settlement` }),
-    create: (body: SettlementCreateBody): Promise<ItemEnvelope<SettlementDto>> =>
-      bridge().api.invoke({ method: 'POST', path: '/rental-settlements', body }),
-    collectPayment: (
+    list: async (params?: SettlementListParams): Promise<ListEnvelope<SettlementDto>> => {
+      const raw = await invoke({
+        method: 'GET',
+        path: '/settlements',
+        query: bridgeListQuery(params as Record<string, unknown>)
+      })
+      const page = unwrapV2Page<V2Settlement>(raw)
+      return toLegacyList(page.items, page.meta, mapSettlementV2ToLegacy)
+    },
+    get: async (id: string): Promise<ItemEnvelope<SettlementDto>> => {
+      const raw = await invoke<V2Settlement>({ method: 'GET', path: `/settlements/${id}` })
+      return toLegacyItem(raw, mapSettlementV2ToLegacy)
+    },
+    getByRental: async (rentalId: string): Promise<ItemEnvelope<SettlementDto>> => {
+      const raw = await invoke({
+        method: 'GET',
+        path: '/settlements',
+        query: { rentalId, limit: 1, offset: 0 }
+      })
+      const page = unwrapV2Page<V2Settlement>(raw)
+      const row = page.items[0]
+      if (!row) {
+        throw { code: 'NOT_FOUND', message: `No settlement for rental ${rentalId}` }
+      }
+      return toLegacyItem(row, mapSettlementV2ToLegacy)
+    },
+    create: (_body: SettlementCreateBody): Promise<ItemEnvelope<SettlementDto>> =>
+      v2Unsupported('settlements.create — settlements are created by rental checkout'),
+    collectPayment: async (
       id: string,
       body: SettlementPaymentCreateBody
-    ): Promise<ItemEnvelope<SettlementDto>> =>
-      bridge().api.invoke({ method: 'POST', path: `/rental-settlements/${id}/payments`, body }),
-    adjust: (
+    ): Promise<ItemEnvelope<SettlementDto>> => {
+      const raw = await invoke<V2Settlement>({
+        method: 'POST',
+        path: `/settlements/${id}/payment`,
+        body: mapSettlementPaymentBodyToV2(body)
+      })
+      return toLegacyItem(raw, mapSettlementV2ToLegacy)
+    },
+    adjust: async (
       id: string,
       body: SettlementAdjustmentCreateBody
-    ): Promise<ItemEnvelope<SettlementDto>> =>
-      bridge().api.invoke({ method: 'POST', path: `/rental-settlements/${id}/adjustments`, body })
+    ): Promise<ItemEnvelope<SettlementDto>> => {
+      const raw = await invoke<V2Settlement>({
+        method: 'POST',
+        path: `/settlements/${id}/adjustment`,
+        body: mapSettlementAdjustmentBodyToV2(body)
+      })
+      return toLegacyItem(raw, mapSettlementV2ToLegacy)
+    },
+    refund: async (
+      id: string,
+      body: { amountFils: number; reason: string; idempotencyKey?: string }
+    ): Promise<ItemEnvelope<SettlementDto>> => {
+      const raw = await invoke<V2Settlement>({
+        method: 'POST',
+        path: `/settlements/${id}/refund`,
+        body
+      })
+      return toLegacyItem(raw, mapSettlementV2ToLegacy)
+    },
+    discount: async (
+      id: string,
+      body: Record<string, unknown>
+    ): Promise<ItemEnvelope<SettlementDto>> => {
+      const raw = await invoke<V2Settlement>({
+        method: 'POST',
+        path: `/settlements/${id}/discount`,
+        body
+      })
+      return toLegacyItem(raw, mapSettlementV2ToLegacy)
+    },
+    lateFee: async (
+      id: string,
+      body: Record<string, unknown>
+    ): Promise<ItemEnvelope<SettlementDto>> => {
+      const raw = await invoke<V2Settlement>({
+        method: 'POST',
+        path: `/settlements/${id}/late-fee`,
+        body
+      })
+      return toLegacyItem(raw, mapSettlementV2ToLegacy)
+    },
+    close: async (
+      id: string,
+      body?: { reason?: string }
+    ): Promise<ItemEnvelope<SettlementDto>> => {
+      const raw = await invoke<V2Settlement>({
+        method: 'POST',
+        path: `/settlements/${id}/close`,
+        body
+      })
+      return toLegacyItem(raw, mapSettlementV2ToLegacy)
+    },
+    cancel: async (
+      id: string,
+      body?: { reason?: string }
+    ): Promise<ItemEnvelope<SettlementDto>> => {
+      const raw = await invoke<V2Settlement>({
+        method: 'POST',
+        path: `/settlements/${id}/cancel`,
+        body
+      })
+      return toLegacyItem(raw, mapSettlementV2ToLegacy)
+    }
   },
+
   media: {
     upload: async (
       file: File,
       options?: { isPublic?: boolean }
     ): Promise<ItemEnvelope<StoredFileDto>> => {
       const base64 = await fileToBase64(file)
-      return bridge().api.invoke({
+      const raw = await invoke<V2MediaFile>({
         method: 'POST',
-        path: '/media/files',
+        path: '/media',
         multipart: {
           fieldName: 'file',
           fileName: file.name,
           mimeType: file.type || 'application/octet-stream',
           base64,
-          fields: options?.isPublic ? { is_public: 'true' } : { is_public: 'false' }
+          fields: options?.isPublic ? { isPublic: 'true' } : undefined
         }
       })
+      return toLegacyItem(raw, mapMediaV2ToStoredFile)
     },
-    getMetadata: (fileId: string): Promise<ItemEnvelope<StoredFileDto>> =>
-      bridge().api.invoke({ method: 'GET', path: `/media/files/${fileId}` }),
-    downloadDataUrl: (fileId: string): Promise<ApiBinaryResult> =>
-      bridge().api.invoke({
-        method: 'GET',
-        path: `/media/files/${fileId}/download`,
-        responseType: 'binary'
-      }),
-    createReference: (body: FileReferenceCreateBody): Promise<ItemEnvelope<FileReferenceDto>> =>
-      bridge().api.invoke({ method: 'POST', path: '/media/references', body }),
+    getMetadata: async (fileId: string): Promise<ItemEnvelope<StoredFileDto>> => {
+      const raw = await invoke<V2MediaFile>({ method: 'GET', path: `/media/${fileId}` })
+      return toLegacyItem(raw, mapMediaV2ToStoredFile)
+    },
+    downloadDataUrl: (_fileId: string): Promise<ApiBinaryResult> =>
+      v2Unsupported('media.download — V2 has no binary download route yet'),
+    createReference: (_body: FileReferenceCreateBody): Promise<ItemEnvelope<FileReferenceDto>> =>
+      v2Unsupported('media.references — use POST /items/:id/media'),
     listReferences: (
-      params?: FileReferenceListParams
+      _params?: FileReferenceListParams
     ): Promise<ListEnvelope<FileReferenceDto>> =>
-      bridge().api.invoke({ method: 'GET', path: '/media/references', query: params }),
-    deleteReference: (referenceId: string): Promise<MessageEnvelope> =>
-      bridge().api.invoke({ method: 'DELETE', path: `/media/references/${referenceId}` })
+      v2Unsupported('media.references'),
+    deleteReference: (_referenceId: string): Promise<MessageEnvelope> =>
+      v2Unsupported('media.references')
   },
+
   audit: {
-    listLogs: (params?: AuditLogListParams): Promise<ListEnvelope<AuditLogDto>> =>
-      bridge().api.invoke({ method: 'GET', path: '/audit/logs', query: params }),
-    getLog: (id: string): Promise<ItemEnvelope<AuditLogDto>> =>
-      bridge().api.invoke({ method: 'GET', path: `/audit/logs/${id}` })
+    listLogs: (_params?: AuditLogListParams): Promise<ListEnvelope<AuditLogDto>> =>
+      v2Unsupported('audit.logs'),
+    getLog: (_id: string): Promise<ItemEnvelope<AuditLogDto>> => v2Unsupported('audit.logs')
   },
+
   reports: {
-    dashboard: (): Promise<DashboardReportDto> =>
-      bridge().api.invoke({ method: 'GET', path: '/reports/dashboard' }),
-    inventorySummary: (): Promise<InventorySummaryReportDto> =>
-      bridge().api.invoke({ method: 'GET', path: '/reports/inventory/summary' }),
-    inventoryNeverRented: (params?: NeverRentedListParams): Promise<NeverRentedListResponseDto> =>
-      bridge().api.invoke({ method: 'GET', path: '/reports/inventory/never-rented', query: params }),
-    rentalsSummary: (params: ReportDateRangeParams): Promise<RentalsSummaryReportDto> =>
-      bridge().api.invoke({ method: 'GET', path: '/reports/rentals/summary', query: params }),
-    rentalsDetails: (params: RentalsDetailsParams): Promise<RentalsDetailsResponseDto> =>
-      bridge().api.invoke({ method: 'GET', path: '/reports/rentals/details', query: params }),
-    reservationsSummary: (params: ReportDateRangeParams): Promise<ReservationsSummaryReportDto> =>
-      bridge().api.invoke({ method: 'GET', path: '/reports/reservations/summary', query: params }),
-    customersSummary: (params: ReportDateRangeParams): Promise<CustomersSummaryReportDto> =>
-      bridge().api.invoke({ method: 'GET', path: '/reports/customers/summary', query: params }),
-    customersTop: (params?: CustomersTopParams): Promise<CustomersTopResponseDto> =>
-      bridge().api.invoke({ method: 'GET', path: '/reports/customers/top', query: params }),
-    inspectionsSummary: (params: ReportDateRangeParams): Promise<InspectionsSummaryReportDto> =>
-      bridge().api.invoke({ method: 'GET', path: '/reports/inspections/summary', query: params }),
-    processingSummary: (params: ReportDateRangeParams): Promise<ProcessingSummaryReportDto> =>
-      bridge().api.invoke({ method: 'GET', path: '/reports/processing/summary', query: params }),
-    salesSummary: (params: ReportDateRangeParams): Promise<SalesSummaryReportDto> =>
-      bridge().api.invoke({ method: 'GET', path: '/reports/sales/summary', query: params }),
-    salesDetails: (params: SalesDetailsParams): Promise<SalesDetailsResponseDto> =>
-      bridge().api.invoke({ method: 'GET', path: '/reports/sales/details', query: params }),
-    financialSummary: (params: ReportDateRangeParams): Promise<FinancialSummaryReportDto> =>
-      bridge().api.invoke({ method: 'GET', path: '/reports/financial/summary', query: params }),
-    financialDaily: (params: ReportDateRangeParams): Promise<FinancialDailyReportDto> =>
-      bridge().api.invoke({ method: 'GET', path: '/reports/financial/daily', query: params })
+    dashboard: async (): Promise<DashboardReportDto> => {
+      const raw = await invoke<V2DashboardReport>({ method: 'GET', path: '/reports/dashboard' })
+      return mapDashboardV2ToLegacy(raw)
+    },
+    inventorySummary: async (): Promise<InventorySummaryReportDto> => {
+      const [lifecycle, category, brand, color, size, availability] = await Promise.all([
+        invoke({ method: 'GET', path: '/reports/inventory/lifecycle' }),
+        invoke({ method: 'GET', path: '/reports/inventory/category' }),
+        invoke({ method: 'GET', path: '/reports/inventory/brand' }),
+        invoke({ method: 'GET', path: '/reports/inventory/color' }),
+        invoke({ method: 'GET', path: '/reports/inventory/size' }),
+        invoke({ method: 'GET', path: '/reports/inventory/availability' })
+      ])
+      const byStatus: Record<string, number> = {}
+      for (const row of asCountRows(lifecycle)) {
+        byStatus[row.key] = row.count
+      }
+      const avail = availability as Record<string, unknown>
+      const total = Number(
+        avail.total ?? avail.inventoryCount ?? Object.values(byStatus).reduce((a, b) => a + b, 0)
+      )
+      return {
+        dresses_total: total,
+        dresses_by_status: byStatus,
+        by_category: asCountRows(category),
+        by_size: asCountRows(size),
+        by_colour: asCountRows(color),
+        by_brand: asCountRows(brand)
+      }
+    },
+    inventoryNeverRented: (_params?: NeverRentedListParams): Promise<NeverRentedListResponseDto> =>
+      v2Unsupported('reports.inventory.never-rented'),
+    rentalsSummary: async (params: ReportDateRangeParams): Promise<RentalsSummaryReportDto> => {
+      const query = bridgeListQuery(params as unknown as Record<string, unknown>)
+      const [current, overdue, history] = await Promise.all([
+        invoke({ method: 'GET', path: '/reports/rentals/current', query }),
+        invoke({ method: 'GET', path: '/reports/rentals/overdue', query }),
+        invoke({ method: 'GET', path: '/reports/rentals/history', query })
+      ])
+      const cur = unwrapV2Page(current)
+      const od = unwrapV2Page(overdue)
+      const hist = unwrapV2Page(history)
+      return {
+        date_from: params.date_from,
+        date_to: params.date_to,
+        created_in_range_total: hist.meta.total,
+        active_now: cur.meta.total,
+        overdue_now: od.meta.total,
+        completed_settled_in_range: 0,
+        most_rented: [],
+        created_in_range_by_status: {}
+      }
+    },
+    rentalsDetails: async (params: RentalsDetailsParams): Promise<RentalsDetailsResponseDto> => {
+      const query = bridgeListQuery(params as unknown as Record<string, unknown>)
+      const raw = await invoke({ method: 'GET', path: '/reports/rentals/history', query })
+      const page = unwrapV2Page<Record<string, unknown>>(raw)
+      return {
+        items: page.items.map((row) => ({
+          id: String(row.id ?? ''),
+          rental_number: String(row.rentalNumber ?? row.rental_number ?? ''),
+          customer_id: String(row.customerId ?? row.customer_id ?? ''),
+          status: String(row.status ?? ''),
+          rental_at: String(row.rentalDate ?? row.rental_at ?? ''),
+          expected_return_at: String(row.expectedReturnDate ?? row.expected_return_at ?? ''),
+          estimated_total: Number(
+            (row.settlement as { totalFils?: number } | undefined)?.totalFils ?? 0
+          ),
+          duration_seconds: null
+        })),
+        meta: page.meta
+      }
+    },
+    reservationsSummary: async (
+      params: ReportDateRangeParams
+    ): Promise<ReservationsSummaryReportDto> => {
+      const query = bridgeListQuery(params as unknown as Record<string, unknown>)
+      const raw = await invoke({
+        method: 'GET',
+        path: '/reports/rentals/reservations',
+        query
+      })
+      const page = unwrapV2Page(raw)
+      return {
+        date_from: params.date_from,
+        date_to: params.date_to,
+        created_in_range_by_status: {},
+        created_in_range_total: page.meta.total,
+        upcoming_confirmed: page.meta.total,
+        by_customer: [],
+        by_cashier: []
+      }
+    },
+    customersSummary: (_params: ReportDateRangeParams): Promise<CustomersSummaryReportDto> =>
+      v2Unsupported('reports.customers.summary — use /reports/customers/:id/*'),
+    customersTop: (_params?: CustomersTopParams): Promise<CustomersTopResponseDto> =>
+      v2Unsupported('reports.customers.top'),
+    inspectionsSummary: (_params: ReportDateRangeParams): Promise<InspectionsSummaryReportDto> =>
+      v2Unsupported('reports.inspections'),
+    processingSummary: (_params: ReportDateRangeParams): Promise<ProcessingSummaryReportDto> =>
+      v2Unsupported('reports.processing'),
+    salesSummary: (_params: ReportDateRangeParams): Promise<SalesSummaryReportDto> =>
+      v2Unsupported('reports.sales'),
+    salesDetails: (_params: SalesDetailsParams): Promise<SalesDetailsResponseDto> =>
+      v2Unsupported('reports.sales'),
+    financialSummary: async (
+      params: ReportDateRangeParams
+    ): Promise<FinancialSummaryReportDto> => {
+      const query = bridgeListQuery(params as unknown as Record<string, unknown>)
+      const raw = await invoke<V2FinancialReport>({
+        method: 'GET',
+        path: '/reports/financial',
+        query
+      })
+      return mapFinancialV2ToLegacy(raw, {
+        date_from: params.date_from,
+        date_to: params.date_to
+      })
+    },
+    financialDaily: (_params: ReportDateRangeParams): Promise<FinancialDailyReportDto> =>
+      v2Unsupported('reports.financial.daily — V2 returns aggregate /reports/financial only'),
+    export: async (params: {
+      report: string
+      format: 'csv' | 'json'
+      from?: string
+      to?: string
+    }): Promise<unknown> =>
+      invoke({
+        method: 'GET',
+        path: '/reports/export',
+        query: params
+      }),
+    exportCsv: (report: string, params?: ReportDateRangeParams): Promise<unknown> =>
+      invoke({
+        method: 'GET',
+        path: '/reports/export',
+        query: {
+          report,
+          format: 'csv',
+          ...(bridgeListQuery(params as unknown as Record<string, unknown>) ?? {})
+        }
+      }),
+    exportJson: (report: string, params?: ReportDateRangeParams): Promise<unknown> =>
+      invoke({
+        method: 'GET',
+        path: '/reports/export',
+        query: {
+          report,
+          format: 'json',
+          ...(bridgeListQuery(params as unknown as Record<string, unknown>) ?? {})
+        }
+      })
   },
+
   desktop: {
     dialogs: {
       message: (options: {
@@ -615,7 +1137,8 @@ export const apiClient = {
     restartBackend: (): Promise<BackendServiceStatus> => bridge().hardware.restartBackend(),
     repairBackend: (): Promise<BackendServiceStatus> => bridge().hardware.repairBackend(),
     openLogs: (): Promise<boolean> => bridge().hardware.openLogs(),
-    onScan: (listener: (event: ScanEvent) => void): (() => void) => bridge().hardware.onScan(listener)
+    onScan: (listener: (event: ScanEvent) => void): (() => void) =>
+      bridge().hardware.onScan(listener)
   },
   appExtras: {
     getFirstRunState: (): Promise<FirstRunState> => bridge().app.getFirstRunState(),
