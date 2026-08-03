@@ -58,8 +58,10 @@ export default function SystemStatusPage(): React.ReactElement {
   const overallHealth = String(healthData?.status ?? 'unknown')
   const readiness = diagnostics.data ? diagnosticsOverall(diagnostics.data) : 'unknown'
   const readinessMapped = mapStatus(readiness, DIAGNOSTICS_OVERALL_MAP)
-  const checks = Array.isArray((diagnostics.data as { checks?: unknown[] } | undefined)?.checks)
-    ? ((diagnostics.data as { checks: Array<Record<string, unknown>> }).checks ?? [])
+  const checks = Array.isArray(
+    (diagnostics.data as unknown as { checks?: unknown[] } | undefined)?.checks
+  )
+    ? ((diagnostics.data as unknown as { checks: Array<Record<string, unknown>> }).checks ?? [])
     : []
 
   return (

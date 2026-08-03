@@ -122,7 +122,7 @@ export default function SettlementsListPage(): React.ReactElement {
     const byId = new Map<string, SettlementDto>()
     for (const row of openQuery.data?.data ?? []) byId.set(row.id, row)
     for (const row of partialQuery.data?.data ?? []) byId.set(row.id, row)
-    return sortSettlements([...byId.values()], sorting)
+    return sortSettlements(Array.from(byId.values()), sorting)
   }, [isOutstanding, openQuery.data, partialQuery.data, sorting])
 
   const rows = React.useMemo(() => {

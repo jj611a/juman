@@ -9,7 +9,7 @@ import type { BreadcrumbCrumb } from '@/components/ui/breadcrumb'
 import { apiClient } from '@/services/apiClient'
 import { cn } from '@/utils/cn'
 
-export interface TopBarProps extends React.HTMLAttributes<HTMLElement> {
+export interface TopBarProps extends Omit<React.HTMLAttributes<HTMLElement>, 'title'> {
   title?: React.ReactNode
   breadcrumbs?: BreadcrumbCrumb[]
   onSearch?: () => void

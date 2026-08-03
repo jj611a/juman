@@ -2,7 +2,7 @@ import * as React from 'react'
 import { StatusChip, type StatusChipProps } from '@/components/ui/business/status-chip'
 import { cn } from '@/utils/cn'
 
-export interface EntityHeaderProps extends React.HTMLAttributes<HTMLElement> {
+export interface EntityHeaderProps extends Omit<React.HTMLAttributes<HTMLElement>, 'title'> {
   title: React.ReactNode
   description?: React.ReactNode
   status?: StatusChipProps

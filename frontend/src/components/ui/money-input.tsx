@@ -18,6 +18,8 @@ export interface MoneyInputProps
   onBlur?: React.FocusEventHandler<HTMLInputElement>
   currency?: CurrencyMeta
   allowNegative?: boolean
+  /** Accepted for form layouts; not rendered by this control (label lives outside). */
+  label?: React.ReactNode
 }
 
 export const MoneyInput = React.forwardRef<HTMLInputElement, MoneyInputProps>(
@@ -30,10 +32,13 @@ export const MoneyInput = React.forwardRef<HTMLInputElement, MoneyInputProps>(
       currency = IQD,
       allowNegative = false,
       className,
+      label: _label,
       ...props
     },
     ref
   ) => {
+    void _label
+
     const isControlled = value !== undefined
     const [text, setText] = React.useState(() =>
       filsToDisplay(isControlled ? value : defaultValue ?? null, currency)

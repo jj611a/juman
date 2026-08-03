@@ -10,6 +10,8 @@ export interface NumberInputProps
   errorMessage?: string
   hint?: string
   loading?: boolean
+  /** Accepted for form layouts; label is rendered by the parent FormField. */
+  label?: React.ReactNode
 }
 
 export const NumberInput = React.forwardRef<HTMLInputElement, NumberInputProps>(
@@ -27,11 +29,13 @@ export const NumberInput = React.forwardRef<HTMLInputElement, NumberInputProps>(
       onChange,
       value,
       defaultValue,
+      label: _label,
       'aria-describedby': ariaDescribedBy,
       ...props
     },
     ref
   ) => {
+    void _label
     const describedBy = [ariaDescribedBy, errorMessage ? `${id}-error` : null, hint ? `${id}-hint` : null]
       .filter(Boolean)
       .join(' ') || undefined

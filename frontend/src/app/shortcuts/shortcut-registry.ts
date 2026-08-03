@@ -35,7 +35,7 @@ export class ShortcutRegistry {
 
   handle(event: KeyboardEvent): void {
     const combo = eventCombo(event)
-    for (const binding of this.bindings.values()) {
+    for (const binding of Array.from(this.bindings.values())) {
       if (binding.enabled === false) continue
       const target = normalizeCombo(binding.combo.replace(/ctrl/gi, 'control').replace(/cmd/gi, 'meta'))
       // Allow Control+b to match Meta+b on mac by registering both or matching control/meta interchangeably

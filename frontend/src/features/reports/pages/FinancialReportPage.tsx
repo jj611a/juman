@@ -52,7 +52,7 @@ export default function FinancialReportPage(): React.ReactElement {
   if (!canView) return <Navigate to="/forbidden" replace />
 
   const summaryData = summary.data
-  const chartData = daily.data?.days ?? []
+  const chartData = (daily.data?.days ?? []) as unknown as Record<string, string | number>[]
 
   return (
     <Page size="full" as="main">

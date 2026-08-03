@@ -3,7 +3,7 @@ import { CreatedUpdatedInfo, type CreatedUpdatedInfoProps } from '@/components/u
 import { EntityMeta, type EntityMetaItem } from '@/components/ui/business/entity-meta'
 import { cn } from '@/utils/cn'
 
-export interface RecordInfoPanelProps extends React.HTMLAttributes<HTMLElement> {
+export interface RecordInfoPanelProps extends Omit<React.HTMLAttributes<HTMLElement>, 'title'> {
   title?: React.ReactNode
   metaItems?: EntityMetaItem[]
   createdUpdated?: CreatedUpdatedInfoProps

@@ -5,7 +5,8 @@ import { cn } from '@/utils/cn'
 
 export interface ErrorStateProps extends Omit<React.HTMLAttributes<HTMLDivElement>, 'title'> {
   title?: React.ReactNode
-  message: React.ReactNode
+  /** Optional body copy; defaults to a generic Arabic message. */
+  message?: React.ReactNode
   errorCode?: string
   onRetry?: () => void
   retryLabel?: string
@@ -15,7 +16,7 @@ export interface ErrorStateProps extends Omit<React.HTMLAttributes<HTMLDivElemen
 
 export function ErrorState({
   title = 'حدث خطأ',
-  message,
+  message = 'تعذّر إكمال العملية. حاول مرة أخرى.',
   errorCode,
   onRetry,
   retryLabel = 'إعادة المحاولة',

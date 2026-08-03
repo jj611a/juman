@@ -679,6 +679,9 @@ export interface ProcessingListParams {
 
 export type SaleOriginCode = 'NORMAL_SALE' | 'MANDATORY_DAMAGE_PURCHASE'
 export type SaleStatusCode = 'COMPLETED' | 'VOIDED'
+/** @deprecated Alias — prefer SaleOriginCode */
+export type SaleOrigin = SaleOriginCode
+export type SalePaymentMethod = 'CASH' | 'CARD' | 'TRANSFER' | 'OTHER' | string
 export type PaymentMethodCode = 'CASH' | 'CARD' | 'BANK_TRANSFER' | 'OTHER'
 
 export interface SaleItemDto {

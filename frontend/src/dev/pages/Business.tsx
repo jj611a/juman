@@ -77,7 +77,7 @@ export default function BusinessPage(): React.ReactElement {
           description="عرض تقديمي فقط"
           status={{ status: 'AVAILABLE', map: STATUS_MAP }}
           leading={<DressThumbnail status={{ status: 'AVAILABLE', map: STATUS_MAP }} />}
-          actions={<CopyButton value="DRS-0001" />}
+          actions={<CopyButton value="DRS-0001" aria-label="نسخ الرمز" />}
         />
         <EntityMeta
           items={[

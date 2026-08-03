@@ -2,9 +2,10 @@ import * as React from 'react'
 import { IconButton, type IconButtonProps } from '@/components/ui/icon-button'
 import { toast } from '@/components/ui/toast'
 
-export interface CopyButtonProps extends Omit<IconButtonProps, 'icon' | 'onClick'> {
+export interface CopyButtonProps extends Omit<IconButtonProps, 'icon' | 'onClick' | 'aria-label'> {
   value: string
   successMessage?: string
+  'aria-label'?: string
 }
 
 export function CopyButton({

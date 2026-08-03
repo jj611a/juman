@@ -9,7 +9,7 @@ export interface AuditTimelineItem {
   detail?: React.ReactNode
 }
 
-export interface AuditTimelineProps extends React.HTMLAttributes<HTMLOlElement> {
+export interface AuditTimelineProps extends React.HTMLAttributes<HTMLOListElement> {
   items: AuditTimelineItem[]
 }
 

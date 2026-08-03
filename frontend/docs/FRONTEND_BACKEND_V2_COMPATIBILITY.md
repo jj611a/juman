@@ -55,7 +55,18 @@ From `frontend/`:
 npm run lint
 npm run build
 npm run test
+npm run test:coverage
 ```
+
+**2026-08-03 gate:** lint ✅ · build ✅ · test **224/224** ✅ · coverage run ✅ (façade unit coverage focused).
+
+## Critical debt (do not ignore)
+
+1. **`legacyBridge.ts` is temporary.** Keeping snake_case envelopes forever will rot the client. Next UI modernization must delete the façade and consume camelCase V2 DTOs directly.
+2. Money remains raw fils in mapped legacy fields — display layer still treats them as major units in places; verify MoneyDisplay paths before production cutover.
+3. Taxonomy create by **name** (brand/size/color strings) cannot resolve IDs — dress create must use taxonomy IDs or a lookup step.
+4. No Nest HTTP for settings/audit/calendar/users — nav hidden; do not re-enable without backends.
+5. Installer still Python/PostgreSQL-oriented — packaging is a separate Phase 8/10 gate.
 
 ## ADR
 

@@ -9,6 +9,8 @@ const inlineVariants = cva('inline-flex max-w-full items-start gap-2 rounded-md 
       info: 'bg-info/10 text-foreground',
       warning: 'bg-warning/10 text-foreground',
       error: 'bg-destructive/10 text-foreground',
+      /** Alias for legacy call sites — same as error. */
+      danger: 'bg-destructive/10 text-foreground',
       success: 'bg-success/10 text-foreground'
     }
   },
@@ -19,6 +21,7 @@ const ICONS: Record<string, IconName> = {
   info: 'Info',
   warning: 'AlertTriangle',
   error: 'CircleAlert',
+  danger: 'CircleAlert',
   success: 'CheckCircle2'
 }
 
@@ -26,6 +29,7 @@ const ICON_TONE: Record<string, string> = {
   info: 'text-info',
   warning: 'text-warning',
   error: 'text-destructive',
+  danger: 'text-destructive',
   success: 'text-success'
 }
 
