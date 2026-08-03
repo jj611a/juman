@@ -59,6 +59,12 @@ describe('SettlementService', () => {
     totalFils: 4000,
     paidFils: 0,
     remainingFils: 4000,
+    chargeFils: 4000,
+    depositFils: 0,
+    lateFeeFils: 0,
+    adjustmentFils: 0,
+    discountFils: 0,
+    refundFils: 0,
     status: SETTLEMENT_STATUS.OPEN,
     currency: 'IQD',
     notes: null,
@@ -71,6 +77,10 @@ describe('SettlementService', () => {
     updatedBy: null,
     deletedBy: null,
     history: [],
+    refunds: [],
+    adjustments: [],
+    discounts: [],
+    lateFees: [],
     rental: {
       id: 'r1',
       rentalNumber: 'RENT-1',
@@ -116,6 +126,7 @@ describe('SettlementService', () => {
     service = new SettlementService(
       repo as never,
       finance as never,
+      { applyRefund: vi.fn(), applyAdjustment: vi.fn(), applyDiscount: vi.fn(), assessLateFee: vi.fn() } as never,
       settings as never,
       audit as never,
     );

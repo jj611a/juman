@@ -1,103 +1,61 @@
-# Backend V2 Settlement Design (Phase 6.2)
+# Backend V2 Settlement Design (Phase 6.2–6.6)
 
 **Branch:** `backend-v2`  
 **Module:** `backend-node/src/finance/settlement`  
-**Role:** Sole authority for rental **financial completion**.
+**Role:** **Sole authority** for rental financial state and completion.
 
 ## Scope
 
-**In scope:** `RentalSettlement`, `SettlementHistory`, settlement statuses, `SettlementService` (create / apply payment / outstanding / mark paid / close / cancel), HTTP `/settlements`, RBAC, rental checkout + complete integration, audit.
+**In scope:** Settlement create / payment / refund / adjustment / discount / late-fee assessment; status machine; HTTP `/settlements`; RBAC; checkout + complete gates; centralized formulas.
 
-**Out of scope:** Late fees, penalty engine, reports, invoices, notifications.
+**Out of scope:** Reports, dashboards, late-fee scheduler, invoices.
 
-## Architecture rules
+## Formula (authoritative)
 
-1. Settlement is a **separate service** inside the finance bounded context.
-2. Rental **never** calculates balances or decides financial completion.
-3. Payments **never** determine completion — only Settlement status does.
-4. Settlement **never edits** Payment rows; it asks `FinanceService.registerPaymentInTx`.
-5. Rental operational completion (`return_pending → completed`) requires `SettlementService.assertFinanciallyComplete`.
-6. Checkout creates Settlement after charge/deposit; payment against a rental obligation goes through `POST /settlements/:id/payment`.
+See `settlement.formula.ts` and `FinancialDesign.md`:
+
+```
+Total = (charge − deposit) + lateFees + adjustments − discounts − refunds
+Remaining = Total − paidFils
+```
 
 ## Statuses
 
 | Status | Meaning |
 |--------|---------|
-| `open` | Obligation unpaid |
-| `partially_paid` | Some payments applied |
-| `paid` | `remainingFils === 0` — financially complete |
-| `cancelled` | Voided with no applied payments |
+| `open` | Unpaid |
+| `partially_paid` | Some payments |
+| `paid` | remaining === 0 |
+| `cancelled` | Voided (open unpaid / zero-obligation) |
 | `closed` | Books closed after paid |
 
-Transitions:
-
-```
-open → partially_paid | paid | cancelled
-partially_paid → partially_paid | paid | cancelled
-paid → closed
-cancelled / closed → ∅
-```
-
-Financial completion for rental close: status ∈ `{ paid, closed }`.
+HTTP cancel: **open unpaid only**. Partial/paid rental cancel still requires refund product path when money was collected.
 
 ## Models
 
 ### RentalSettlement
-One per rental (`rentalId` unique). Fields: `totalFils`, `paidFils`, `remainingFils` (IQD fils), `status`, link to `FinancialAccount`.
+Components: `chargeFils`, `depositFils`, `lateFeeFils`, `adjustmentFils`, `discountFils`, `refundFils`, plus `totalFils` / `paidFils` / `remainingFils`.
 
-Total = charge − deposit at checkout. Deposit reduces settlement total; it does not invent a separate settlement balance on Rental.
+### SettlementRefund + SettlementRefundHistory
+Credit-note refunds. Append-only history. Never mutates Payment.
 
-### SettlementHistory
-Append-only trail: created, payment_applied (with `paymentId` + `amountFils`), marked_paid, closed, cancelled.
-
-## SettlementService API
-
-| Method | Effect |
-|--------|--------|
-| `createForRental` | Idempotent settlement after checkout |
-| `applyPayment` | Register Payment via Finance + CAS update balances |
-| `outstandingOf` / remaining on public model | Remaining balance |
-| `markPaid` | Force `paid` when remaining is already 0 |
-| `close` | `paid → closed` |
-| `cancel` | Cancel only if `paidFils === 0` |
-| `assertFinanciallyComplete` | Rental complete gate |
-
-Concurrent payments use settlement row lock + CAS on `(remainingFils, status)`.
+### SettlementAdjustment / SettlementDiscount / SettlementLateFee
+Posted modifiers with ledger compensation via `FinanceService.postSettlementModifierInTx`.
 
 ## HTTP
 
-| Method | Path | Permission |
-|--------|------|------------|
-| GET | `/settlements` | finance.settlement.view |
-| GET | `/settlements/:id` | finance.settlement.view |
-| POST | `/settlements/:id/payment` | finance.settlement.manage |
-| POST | `/settlements/:id/close` | finance.settlement.manage |
-| POST | `/settlements/:id/cancel` | finance.settlement.manage |
-
-Rental: `POST /rentals/:id/complete` (requires financially complete settlement).
-
-## RBAC
-
-`finance.settlement.view` · `finance.settlement.manage`
-
-## Audit
-
-Platform audit + settlement history for: created, payment_applied, closed, cancelled (and marked_paid).
-
-## Technical debt (do not ignore)
-
-**Resolved in Phase 6.3:** Dual payment paths closed. `POST /finance/payments` is rejected while any open/partial settlement exists on the account. Rental payments must use `POST /settlements/:id/payment`. Outstanding HTTP prefers Settlement remaining (`balanceSource: settlement`).
-
-**Phase 6.4:** Foundation certified **80** PASS WITH WARNINGS. See `PHASE_6_ENGINEERING_CERTIFICATION.md`.
-
-**Phase 6.5:** Must-Fix cleared — atomic checkout TX, idempotency keys, rental cancel policy, settlement refs. Integrity **94**. See `PHASE_6_TRANSACTION_INTEGRITY.md`.
-
-**Remaining:** Refunds/late fees/discounts (when added) must be Settlement-owned; Reports need product approval.
+| Method | Path |
+|--------|------|
+| POST | `/settlements/:id/payment` |
+| POST | `/settlements/:id/refund` |
+| POST | `/settlements/:id/adjustment` |
+| POST | `/settlements/:id/discount` |
+| POST | `/settlements/:id/late-fee` |
+| POST | `/settlements/:id/close` |
+| POST | `/settlements/:id/cancel` |
 
 ## Coverage
 
 ```bash
 pnpm test:cov:finance
 ```
-
-Gate: ≥95% lines/functions/statements on `src/finance/**` (includes settlement).

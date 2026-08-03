@@ -16,6 +16,13 @@ import {
   SettlementActionDto,
   SettlementPaymentDto,
 } from './dto/settlement.dto';
+import {
+  SettlementAdjustmentDto,
+  SettlementDiscountDto,
+  SettlementLateFeeDto,
+  SettlementRefundDto,
+} from './dto/settlement-modifiers.dto';
+import { FINANCE_PERMISSION } from '../finance.constants';
 import { SETTLEMENT_PERMISSION } from './settlement.constants';
 import { SettlementService } from './settlement.service';
 
@@ -44,6 +51,50 @@ export class SettlementController {
     @CurrentUser() user: AuthPrincipal,
   ) {
     return this.settlements.applyPayment(id, body, user);
+  }
+
+  @Post(':id/refund')
+  @HttpCode(200)
+  @RequirePermissions(SETTLEMENT_PERMISSION.MANAGE)
+  applyRefund(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: SettlementRefundDto,
+    @CurrentUser() user: AuthPrincipal,
+  ) {
+    return this.settlements.applyRefund(id, body, user);
+  }
+
+  @Post(':id/adjustment')
+  @HttpCode(200)
+  @RequirePermissions(FINANCE_PERMISSION.ADJUSTMENT)
+  applyAdjustment(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: SettlementAdjustmentDto,
+    @CurrentUser() user: AuthPrincipal,
+  ) {
+    return this.settlements.applyAdjustment(id, body, user);
+  }
+
+  @Post(':id/discount')
+  @HttpCode(200)
+  @RequirePermissions(SETTLEMENT_PERMISSION.MANAGE)
+  applyDiscount(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: SettlementDiscountDto,
+    @CurrentUser() user: AuthPrincipal,
+  ) {
+    return this.settlements.applyDiscount(id, body, user);
+  }
+
+  @Post(':id/late-fee')
+  @HttpCode(200)
+  @RequirePermissions(SETTLEMENT_PERMISSION.MANAGE)
+  assessLateFee(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: SettlementLateFeeDto,
+    @CurrentUser() user: AuthPrincipal,
+  ) {
+    return this.settlements.assessLateFee(id, body, user);
   }
 
   @Post(':id/close')

@@ -32,7 +32,9 @@ describe('Money value object', () => {
     expect(outstandingDeltaFils(FINANCIAL_TX_TYPE.RENTAL_CHARGE, 1000)).toBe(1000);
     expect(outstandingDeltaFils(FINANCIAL_TX_TYPE.PAYMENT, 400)).toBe(-400);
     expect(outstandingDeltaFils(FINANCIAL_TX_TYPE.DEPOSIT, 200)).toBe(-200);
-    expect(outstandingDeltaFils(FINANCIAL_TX_TYPE.REFUND, 100)).toBe(100);
+    expect(outstandingDeltaFils(FINANCIAL_TX_TYPE.REFUND, 100)).toBe(-100);
+    expect(outstandingDeltaFils(FINANCIAL_TX_TYPE.DISCOUNT, 50)).toBe(-50);
+    expect(outstandingDeltaFils(FINANCIAL_TX_TYPE.LATE_FEE, 75)).toBe(75);
     expect(outstandingDeltaFils(FINANCIAL_TX_TYPE.ADJUSTMENT, -50)).toBe(-50);
     expect(outstandingDeltaFils('unknown', 10)).toBe(0);
     expect(

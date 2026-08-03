@@ -783,14 +783,26 @@ model FinancialAudit {
   @@index([createdAt])
 }
 
-/// Per-rental financial obligation tracker (Phase 6.2). SettlementService alone decides completion.
+/// Per-rental financial obligation tracker (Phase 6.2+). SettlementService alone decides completion.
 model RentalSettlement {
   id               String    @id @default(uuid())
   settlementNumber String    @unique
   rentalId         String    @unique
   accountId        String
   customerId       String
-  /// Original obligation in fils (charge − deposit applied at create).
+  /// Gross rental charge (fils) before deposit / modifiers.
+  chargeFils       Int       @default(0)
+  /// Deposit applied at checkout — reduces effective charges (not a Payment).
+  depositFils      Int       @default(0)
+  /// Sum of posted late fees.
+  lateFeeFils      Int       @default(0)
+  /// Signed net of posted adjustments (positive increases obligation).
+  adjustmentFils   Int       @default(0)
+  /// Sum of posted discounts.
+  discountFils     Int       @default(0)
+  /// Sum of posted refunds (credit notes — reduce obligation).
+  refundFils       Int       @default(0)
+  /// Computed: (charge−deposit)+late+adjustment−discount−refund.
   totalFils        Int
   paidFils         Int       @default(0)
   remainingFils    Int
@@ -806,11 +818,15 @@ model RentalSettlement {
   updatedBy        String?
   deletedBy        String?
 
-  rental       Rental                 @relation(fields: [rentalId], references: [id])
-  account      FinancialAccount       @relation(fields: [accountId], references: [id])
+  rental       Rental                  @relation(fields: [rentalId], references: [id])
+  account      FinancialAccount        @relation(fields: [accountId], references: [id])
   history      SettlementHistory[]
   transactions FinancialTransaction[]
   payments     Payment[]
+  refunds      SettlementRefund[]
+  adjustments  SettlementAdjustment[]
+  discounts    SettlementDiscount[]
+  lateFees     SettlementLateFee[]
 
   @@index([settlementNumber])
   @@index([rentalId])
@@ -822,7 +838,7 @@ model RentalSettlement {
   @@index([status, deletedAt])
 }
 
-/// Append-only settlement status / payment application history.
+/// Append-only settlement status / payment / modifier history.
 model SettlementHistory {
   id           String   @id @default(uuid())
   settlementId String
@@ -843,6 +859,131 @@ model SettlementHistory {
   @@index([action])
   @@index([paymentId])
   @@index([newStatus])
+  @@index([createdAt])
+}
+
+/// Credit-note refund against a settlement (Phase 6.6). Never mutates Payment rows.
+model SettlementRefund {
+  id             String    @id @default(uuid())
+  refundNumber   String    @unique
+  settlementId   String
+  amountFils     Int
+  reason         String
+  status         String    @default("posted")
+  transactionId  String?   @unique
+  deletedAt      DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  createdBy      String?
+  updatedBy      String?
+
+  settlement  RentalSettlement         @relation(fields: [settlementId], references: [id])
+  history     SettlementRefundHistory[]
+
+  @@index([settlementId])
+  @@index([refundNumber])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model SettlementRefundHistory {
+  id         String   @id @default(uuid())
+  refundId   String
+  oldStatus  String
+  newStatus  String
+  action     String
+  reason     String?
+  userId     String?
+  username   String?
+  createdAt  DateTime @default(now())
+
+  refund SettlementRefund @relation(fields: [refundId], references: [id])
+
+  @@index([refundId])
+  @@index([action])
+  @@index([createdAt])
+}
+
+/// Signed settlement adjustment (Phase 6.6).
+model SettlementAdjustment {
+  id            String    @id @default(uuid())
+  settlementId  String
+  /// Signed fils — positive increases obligation; negative decreases.
+  amountFils    Int
+  reason        String
+  status        String    @default("posted")
+  transactionId String?   @unique
+  deletedAt     DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  createdBy     String?
+  updatedBy     String?
+
+  settlement RentalSettlement @relation(fields: [settlementId], references: [id])
+
+  @@index([settlementId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+/// Settlement / rental-level discount (Phase 6.6).
+model SettlementDiscount {
+  id            String    @id @default(uuid())
+  settlementId  String
+  /// percentage | fixed
+  kind          String
+  /// rental | settlement
+  basis         String    @default("settlement")
+  /// Basis points (10000 = 100%) when kind=percentage.
+  percentBps    Int?
+  /// Fixed fils when kind=fixed.
+  amountFils    Int?
+  /// Computed fils actually applied.
+  computedFils  Int
+  reason        String
+  status        String    @default("posted")
+  transactionId String?   @unique
+  deletedAt     DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  createdBy     String?
+  updatedBy     String?
+
+  settlement RentalSettlement @relation(fields: [settlementId], references: [id])
+
+  @@index([settlementId])
+  @@index([kind])
+  @@index([status])
+  @@index([createdAt])
+}
+
+/// Late fee assessment foundation — domain only, no scheduler (Phase 6.6).
+model SettlementLateFee {
+  id            String    @id @default(uuid())
+  settlementId  String
+  /// flat | daily
+  kind          String
+  flatFils      Int?
+  dailyFils     Int?
+  maxFils       Int?
+  daysCharged   Int?
+  computedFils  Int
+  reason        String
+  status        String    @default("posted")
+  assessedAt    DateTime  @default(now())
+  transactionId String?   @unique
+  deletedAt     DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  createdBy     String?
+  updatedBy     String?
+
+  settlement RentalSettlement @relation(fields: [settlementId], references: [id])
+
+  @@index([settlementId])
+  @@index([kind])
+  @@index([status])
+  @@index([assessedAt])
   @@index([createdAt])
 }
 

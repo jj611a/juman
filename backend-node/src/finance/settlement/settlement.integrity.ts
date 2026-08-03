@@ -1,6 +1,10 @@
 import { BusinessException } from '../../shared/errors/business.exception';
 import { SETTLEMENT_STATUS } from './settlement.constants';
 import { canApplyPayment, canTransitionSettlementStatus } from './settlement.rules';
+import {
+  computeSettlementTotalFils,
+  type SettlementComponents,
+} from './settlement.formula';
 
 /** Settlement balance invariant: paid + remaining === total. */
 export function assertSettlementBalanceInvariant(row: {
@@ -42,43 +46,22 @@ export function assertSettlementStatusIntegrity(status: string): void {
   }
 }
 
-/**
- * Settlement obligation invariant (Phase 6.5):
- * total = charges − discounts + lateFees − refunds
- * remaining = total − paid (= outstanding for this settlement)
- *
- * Discounts / late fees / refunds are tracked as zero until those products ship.
- */
-export function assertSettlementObligationFormula(input: {
-  chargeFils: number;
-  discountFils?: number;
-  lateFeeFils?: number;
-  refundFils?: number;
-  settlementTotalFils: number;
-  settlementPaidFils: number;
-  settlementRemainingFils: number;
-}): void {
-  const discounts = input.discountFils ?? 0;
-  const lateFees = input.lateFeeFils ?? 0;
-  const refunds = input.refundFils ?? 0;
-  const expectedTotal =
-    input.chargeFils - discounts + lateFees - refunds;
-  if (input.settlementTotalFils !== expectedTotal) {
+/** Components must recompute to stored total. */
+export function assertSettlementComponentsMatchTotal(
+  components: SettlementComponents,
+  totalFils: number,
+): void {
+  const expected = computeSettlementTotalFils(components);
+  if (expected !== totalFils) {
     throw BusinessException.invariant(
-      `Settlement total ${input.settlementTotalFils} ≠ charges-discounts+late-refunds ${expectedTotal}`,
+      `Settlement total ${totalFils} ≠ formula ${expected}`,
     );
   }
-  assertSettlementBalanceInvariant({
-    totalFils: input.settlementTotalFils,
-    paidFils: input.settlementPaidFils,
-    remainingFils: input.settlementRemainingFils,
-  });
 }
 
 /**
- * Ledger reconstruction for a rental settlement:
- * charge − deposit − settlement-applied payments should equal remaining,
- * and settlement.total should equal charge − deposit.
+ * Ledger reconstruction at checkout (charge − deposit model):
+ * settlement.total should equal charge − deposit when no modifiers yet.
  */
 export function assertLedgerMatchesSettlement(input: {
   chargeFils: number;
@@ -87,11 +70,22 @@ export function assertLedgerMatchesSettlement(input: {
   settlementPaidFils: number;
   settlementRemainingFils: number;
   appliedPaymentFils: number;
+  lateFeeFils?: number;
+  adjustmentFils?: number;
+  discountFils?: number;
+  refundFils?: number;
 }): void {
-  const expectedTotal = input.chargeFils - input.depositFils;
+  const expectedTotal = computeSettlementTotalFils({
+    chargeFils: input.chargeFils,
+    depositFils: input.depositFils,
+    lateFeeFils: input.lateFeeFils ?? 0,
+    adjustmentFils: input.adjustmentFils ?? 0,
+    discountFils: input.discountFils ?? 0,
+    refundFils: input.refundFils ?? 0,
+  });
   if (input.settlementTotalFils !== expectedTotal) {
     throw BusinessException.invariant(
-      `Settlement total ${input.settlementTotalFils} ≠ charge-deposit ${expectedTotal}`,
+      `Settlement total ${input.settlementTotalFils} ≠ formula ${expectedTotal}`,
     );
   }
   if (input.settlementPaidFils !== input.appliedPaymentFils) {
@@ -104,10 +98,78 @@ export function assertLedgerMatchesSettlement(input: {
     paidFils: input.settlementPaidFils,
     remainingFils: input.settlementRemainingFils,
   });
-  const expectedRemaining = expectedTotal - input.appliedPaymentFils;
-  if (input.settlementRemainingFils !== expectedRemaining) {
+}
+
+export function assertRefundConsistency(input: {
+  refundFils: number;
+  postedRefundSumFils: number;
+}): void {
+  if (input.refundFils !== input.postedRefundSumFils) {
     throw BusinessException.invariant(
-      `Remaining ${input.settlementRemainingFils} ≠ charge-deposit-payments ${expectedRemaining}`,
+      `Settlement refundFils ${input.refundFils} ≠ posted refunds ${input.postedRefundSumFils}`,
     );
   }
+}
+
+export function assertAdjustmentConsistency(input: {
+  adjustmentFils: number;
+  postedAdjustmentSumFils: number;
+}): void {
+  if (input.adjustmentFils !== input.postedAdjustmentSumFils) {
+    throw BusinessException.invariant(
+      `Settlement adjustmentFils ${input.adjustmentFils} ≠ posted adjustments ${input.postedAdjustmentSumFils}`,
+    );
+  }
+}
+
+export function assertDiscountConsistency(input: {
+  discountFils: number;
+  postedDiscountSumFils: number;
+}): void {
+  if (input.discountFils !== input.postedDiscountSumFils) {
+    throw BusinessException.invariant(
+      `Settlement discountFils ${input.discountFils} ≠ posted discounts ${input.postedDiscountSumFils}`,
+    );
+  }
+}
+
+export function assertLateFeeConsistency(input: {
+  lateFeeFils: number;
+  postedLateFeeSumFils: number;
+}): void {
+  if (input.lateFeeFils !== input.postedLateFeeSumFils) {
+    throw BusinessException.invariant(
+      `Settlement lateFeeFils ${input.lateFeeFils} ≠ posted late fees ${input.postedLateFeeSumFils}`,
+    );
+  }
+}
+
+/** @deprecated Use assertSettlementComponentsMatchTotal — kept for callers expecting old name. */
+export function assertSettlementObligationFormula(input: {
+  chargeFils: number;
+  discountFils?: number;
+  lateFeeFils?: number;
+  refundFils?: number;
+  settlementTotalFils: number;
+  settlementPaidFils: number;
+  settlementRemainingFils: number;
+  depositFils?: number;
+  adjustmentFils?: number;
+}): void {
+  assertSettlementComponentsMatchTotal(
+    {
+      chargeFils: input.chargeFils,
+      depositFils: input.depositFils ?? 0,
+      lateFeeFils: input.lateFeeFils ?? 0,
+      adjustmentFils: input.adjustmentFils ?? 0,
+      discountFils: input.discountFils ?? 0,
+      refundFils: input.refundFils ?? 0,
+    },
+    input.settlementTotalFils,
+  );
+  assertSettlementBalanceInvariant({
+    totalFils: input.settlementTotalFils,
+    paidFils: input.settlementPaidFils,
+    remainingFils: input.settlementRemainingFils,
+  });
 }

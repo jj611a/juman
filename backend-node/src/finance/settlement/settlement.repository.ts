@@ -5,6 +5,26 @@ import { BusinessException } from '../../shared/errors/business.exception';
 
 export const settlementInclude = {
   history: { orderBy: { createdAt: 'desc' as const }, take: 50 },
+  refunds: {
+    where: { deletedAt: null, status: 'posted' },
+    orderBy: { createdAt: 'desc' as const },
+    take: 50,
+  },
+  adjustments: {
+    where: { deletedAt: null, status: 'posted' },
+    orderBy: { createdAt: 'desc' as const },
+    take: 50,
+  },
+  discounts: {
+    where: { deletedAt: null, status: 'posted' },
+    orderBy: { createdAt: 'desc' as const },
+    take: 50,
+  },
+  lateFees: {
+    where: { deletedAt: null, status: 'posted' },
+    orderBy: { createdAt: 'desc' as const },
+    take: 50,
+  },
   rental: {
     select: {
       id: true,
@@ -222,6 +242,76 @@ export class SettlementRepository {
         username: input.username ?? null,
       },
     });
+    return tx.rentalSettlement.findUniqueOrThrow({
+      where: { id: input.settlementId },
+      include: settlementInclude,
+    });
+  }
+
+  /**
+   * CAS recalculation after a modifier — concurrent-safe on SQLite.
+   */
+  async recalculateCas(
+    tx: Prisma.TransactionClient,
+    input: {
+      settlementId: string;
+      expectedTotal: number;
+      expectedPaid: number;
+      expectedRemaining: number;
+      fromStatus: string;
+      chargeFils: number;
+      depositFils: number;
+      lateFeeFils: number;
+      adjustmentFils: number;
+      discountFils: number;
+      refundFils: number;
+      totalFils: number;
+      remainingFils: number;
+      newStatus: string;
+      action: string;
+      amountFils?: number | null;
+      reason?: string | null;
+      userId?: string | null;
+      username?: string | null;
+    },
+  ): Promise<SettlementWithRelations | null> {
+    const result = await tx.rentalSettlement.updateMany({
+      where: {
+        id: input.settlementId,
+        deletedAt: null,
+        totalFils: input.expectedTotal,
+        paidFils: input.expectedPaid,
+        remainingFils: input.expectedRemaining,
+        status: input.fromStatus,
+      },
+      data: {
+        chargeFils: input.chargeFils,
+        depositFils: input.depositFils,
+        lateFeeFils: input.lateFeeFils,
+        adjustmentFils: input.adjustmentFils,
+        discountFils: input.discountFils,
+        refundFils: input.refundFils,
+        totalFils: input.totalFils,
+        remainingFils: input.remainingFils,
+        status: input.newStatus,
+        updatedBy: input.userId ?? null,
+      },
+    });
+    if (result.count !== 1) return null;
+
+    await tx.settlementHistory.create({
+      data: {
+        settlementId: input.settlementId,
+        oldStatus: input.fromStatus,
+        newStatus: input.newStatus,
+        action: input.action,
+        amountFils: input.amountFils ?? null,
+        reason: input.reason ?? null,
+        userId: input.userId ?? null,
+        username: input.username ?? null,
+      },
+    });
+
     return tx.rentalSettlement.findUniqueOrThrow({
       where: { id: input.settlementId },
       include: settlementInclude,

@@ -436,6 +436,89 @@ export class FinanceService {
   }
 
   /**
+   * Append-only ledger compensation for settlement modifiers (refund / adjustment /
+   * discount / late fee). SettlementService owns balances — this only posts ledger.
+   */
+  async postSettlementModifierInTx(
+    tx: Prisma.TransactionClient,
+    input: {
+      accountId: string;
+      settlementId: string;
+      type:
+        | typeof FINANCIAL_TX_TYPE.REFUND
+        | typeof FINANCIAL_TX_TYPE.ADJUSTMENT
+        | typeof FINANCIAL_TX_TYPE.DISCOUNT
+        | typeof FINANCIAL_TX_TYPE.LATE_FEE;
+      /** Absolute fils for refund/discount/late_fee; signed for adjustment. */
+      amountFils: number;
+      referenceType: string;
+      referenceId: string;
+      description: string;
+      movementKind: string;
+      /** in = reduces outstanding; out = increases. */
+      direction: string;
+    },
+    actor?: AuthPrincipal,
+  ) {
+    if (
+      input.type !== FINANCIAL_TX_TYPE.ADJUSTMENT &&
+      input.amountFils <= 0
+    ) {
+      throw BusinessException.validation('Modifier amount must be greater than zero');
+    }
+    if (
+      input.type === FINANCIAL_TX_TYPE.ADJUSTMENT &&
+      input.amountFils === 0
+    ) {
+      throw BusinessException.validation('Adjustment amount cannot be zero');
+    }
+
+    const account = await tx.financialAccount.findFirst({
+      where: { id: input.accountId, deletedAt: null },
+    });
+    if (!account) {
+      throw BusinessException.notFound('Financial account not found');
+    }
+    await this.repo.lockAccount(tx, account.id);
+
+    const absAmount = Math.abs(input.amountFils);
+    const txn = await this.repo.createTransaction(tx, {
+      accountId: account.id,
+      type: input.type,
+      amountFils: input.amountFils,
+      status: FINANCIAL_TX_STATUS.POSTED,
+      referenceType: input.referenceType,
+      referenceId: input.referenceId,
+      settlementId: input.settlementId,
+      description: input.description,
+      createdBy: actor?.userId ?? null,
+      updatedBy: actor?.userId ?? null,
+    });
+
+    await this.repo.createMovement(tx, {
+      accountId: account.id,
+      transactionId: txn.id,
+      direction: input.direction,
+      amountFils: absAmount,
+      currency: FINANCE_CURRENCY,
+      kind: input.movementKind,
+      createdBy: actor?.userId ?? null,
+    });
+
+    await this.repo.createAudit(tx, {
+      entityType: FINANCE_ENTITY_TRANSACTION,
+      entityId: txn.id,
+      action: input.type,
+      newValues: JSON.stringify(toTransactionPublic(txn)),
+      userId: actor?.userId ?? null,
+      username: actor?.username ?? null,
+      message: `settlement_${input.type}`,
+    });
+
+    return toTransactionPublic(txn);
+  }
+
+  /**
    * Standalone ledger payment — rejected when any open/partial settlement exists.
    * Rental obligations must use SettlementService.applyPayment.
    */

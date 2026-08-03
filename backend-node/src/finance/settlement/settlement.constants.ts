@@ -48,6 +48,35 @@ export const SETTLEMENT_ACTION = {
   MARKED_PAID: 'marked_paid',
   CLOSED: 'closed',
   CANCELLED: 'cancelled',
+  REFUND_APPLIED: 'refund_applied',
+  ADJUSTMENT_APPLIED: 'adjustment_applied',
+  DISCOUNT_APPLIED: 'discount_applied',
+  LATE_FEE_ASSESSED: 'late_fee_assessed',
+} as const;
+
+export const REFUND_STATUS = {
+  POSTED: 'posted',
+  VOIDED: 'voided',
+} as const;
+
+export const DISCOUNT_KIND = {
+  PERCENTAGE: 'percentage',
+  FIXED: 'fixed',
+} as const;
+
+export const DISCOUNT_BASIS = {
+  RENTAL: 'rental',
+  SETTLEMENT: 'settlement',
+} as const;
+
+export const LATE_FEE_KIND = {
+  FLAT: 'flat',
+  DAILY: 'daily',
+} as const;
+
+export const SETTLEMENT_MODIFIER_STATUS = {
+  POSTED: 'posted',
+  VOIDED: 'voided',
 } as const;
 
 export const SETTLEMENT_NUMBER_SETTING = {

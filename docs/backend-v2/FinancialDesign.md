@@ -1,112 +1,69 @@
-# Backend V2 Financial Design (Phase 6.1 + 6.2)
+# Backend V2 Financial Design (Phase 6.1–6.6)
 
 **Branch:** `backend-v2`  
 **Module:** `backend-node/src/finance`  
-**Role:** Accounting foundation + settlement completion authority.
+**Role:** Accounting foundation + **Settlement as sole financial authority**.
 
 ## Scope
 
-**In scope:** FinancialAccount, FinancialTransaction, Payment, MoneyMovement, FinancialAudit; Money value object (IQD fils); createCharge / registerDeposit / registerPayment; outstanding; Settlement (`RentalSettlement`, `SettlementHistory`); HTTP foundation; RBAC; rental checkout + complete integration.
+**In scope:** FinancialAccount, FinancialTransaction, Payment, MoneyMovement, FinancialAudit; Money VO (IQD fils); charge / deposit / payment; Settlement + Refund / Adjustment / Discount / LateFee domain; centralized formulas; HTTP; RBAC; rental checkout + complete.
 
-**Out of scope:** Late fees, penalties, invoices, reports, export, notifications.
+**Out of scope:** Reports, dashboards, analytics, invoices, late-fee **scheduler**, desktop integration.
 
-See also: `SettlementDesign.md` (Phase 6.2).
+See also: `SettlementDesign.md`.
 
 ## Architecture rules
 
 1. Financial is a **separate bounded context**.
-2. Rental **never** stores balances.
-3. Inventory **never** stores balances.
-4. Payments **never** mutate rental rows.
-5. `RentalsService` requests `FinanceService.createCharge` / `registerDeposit` and `SettlementService.createForRental`.
-6. `SettlementService` owns rental **balances** and **financial completion**.
-7. `FinanceService` publishes append-only ledger entries (charge, deposit, payment, movement).
-8. Ledger never owns rental balances — outstanding for accounts with settlements is Settlement remaining.
-9. Standalone `POST /finance/payments` is rejected while open/partial settlements exist.
-10. Settlement never edits Payment rows; it calls `registerPaymentInTx` to publish ledger history.
+2. Rental / inventory **never** store balances.
+3. **Every monetary change** passes through `SettlementService` (or checkout `*InTx` under Settlement create).
+4. Payments **never** mutate rental rows; Settlement **never** mutates Payment rows.
+5. Ledger is **append-only** (void = status change, not delete).
+6. Standalone `POST /finance/payments` rejected while open/partial settlements exist.
+7. Platform audit may sit outside Prisma TX; `FinancialAudit` / settlement history inside.
+
+## Authoritative formula (single source)
+
+`src/finance/settlement/settlement.formula.ts`:
+
+```
+Charges        = chargeFils − depositFils   // deposit reduces charges at checkout
+Settlement Total =
+  Charges
++ Late Fees
++ Adjustments        // signed
+− Discounts
+− Refunds
+
+Outstanding / remaining = Settlement Total − paidFils
+```
+
+Do **not** duplicate this arithmetic elsewhere.
+
+## Engines (Phase 6.6)
+
+| Engine | Entity | Ledger type | Effect on total |
+|--------|--------|-------------|-----------------|
+| Refund | `SettlementRefund` + `SettlementRefundHistory` | `refund` | − |
+| Adjustment | `SettlementAdjustment` | `adjustment` (signed) | ± |
+| Discount | `SettlementDiscount` (fixed / %) | `discount` | − |
+| Late fee | `SettlementLateFee` (flat / daily + max) | `late_fee` | + |
+
+HTTP (Settlement-owned):
+
+- `POST /settlements/:id/refund`
+- `POST /settlements/:id/adjustment` (`finance.adjustment`)
+- `POST /settlements/:id/discount`
+- `POST /settlements/:id/late-fee` — **assessment only**, no scheduler
 
 ## Money
 
-`Money` value object (`src/finance/money/money.value.ts`):
+`Money` value object — integer fils only; no floats.
 
-- Currency: **IQD only**
-- Storage: **integer fils** (1000 fils = 1 IQD)
-- No floating-point arithmetic in domain paths
-- Centralized add/subtract/validate via shared `Fils` helpers
-
-## Models
-
-### FinancialAccount
-One open ledger per customer (`customerId` unique). `accountNumber` FIN-########.
-
-### FinancialTransaction
-Types: `rental_charge` · `deposit` · `payment` · `refund` (foundation) · `adjustment`  
-Status: `pending` · `posted` · `voided`  
-Outstanding delta: charge/refund **+**; deposit/payment **-**; adjustment uses signed amount.
-
-### Payment
-Statuses: `pending` · `completed` · `cancelled` · `refunded` (foundation)  
-`paymentNumber` PAY-########. Completing a payment posts a `payment` transaction + money movement.
-
-### MoneyMovement
-Immutable trail: `in` / `out` with kind charge|deposit|payment|refund|adjustment.
-
-### FinancialAudit
-Append-only finance-domain audit (complements platform `AuditService`).
-
-### RentalSettlement / SettlementHistory
-See `SettlementDesign.md`. One settlement per rental; status decides financial completion.
-
-## FinancialService API
-
-| Method | Effect |
-|--------|--------|
-| `createCharge` | Post rental_charge; +outstanding |
-| `registerDeposit` | Post deposit; −outstanding |
-| `registerPayment` | Complete payment + post payment txn; −outstanding |
-| `registerPaymentInTx` | Same inside outer TX (used by Settlement) |
-| `outstandingForAccount` / `getOutstanding` | Sum posted deltas |
-| list accounts / transactions / payments | Read models |
-
-## Rental integration
-
-On checkout:
-
-1. Inventory/lifecycle TX completes
-2. `syncCheckoutFinance` → `createCharge` (+ optional `registerDeposit`)
-3. `SettlementService.createForRental` (total = charge − deposit)
-
-On complete (`return_pending → completed`):
-
-1. `SettlementService.assertFinanciallyComplete(rentalId)`
-2. Only then transition rental to `completed`
-
-Rental operational close ≠ financial completion unless Settlement says so.
-
-## HTTP
-
-| Method | Path | Permission |
-|--------|------|------------|
-| GET | `/finance/accounts` | finance.view |
-| GET | `/finance/transactions` | finance.view |
-| GET | `/finance/payments` | finance.view |
-| POST | `/finance/payments` | finance.payment |
-| GET | `/finance/outstanding` | finance.view |
-| GET | `/settlements` | finance.settlement.view |
-| GET | `/settlements/:id` | finance.settlement.view |
-| POST | `/settlements/:id/payment` | finance.settlement.manage |
-| POST | `/settlements/:id/close` | finance.settlement.manage |
-| POST | `/settlements/:id/cancel` | finance.settlement.manage |
-
-## RBAC
-
-`finance.view` · `finance.payment` · `finance.adjustment` · `finance.settlement.view` · `finance.settlement.manage`
-
-## Coverage / certification
+## Coverage
 
 ```bash
 pnpm test:cov:finance
 ```
 
-Phase 6.4 certification: `PHASE_6_ENGINEERING_CERTIFICATION.md` — overall **80**, **Reports NO-GO** (historical).  
-Phase 6.5: `PHASE_6_TRANSACTION_INTEGRITY.md` — atomic checkout + idempotency + cancel policy; integrity **94**. Reports still require approval.
+Gate: ≥95% on `src/finance/**`.

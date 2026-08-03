@@ -4,6 +4,7 @@ import { FinanceController } from './finance.controller';
 import { FinanceRepository } from './finance.repository';
 import { FinanceService } from './finance.service';
 import { SettlementController } from './settlement/settlement.controller';
+import { SettlementModifierService } from './settlement/settlement-modifier.service';
 import { SettlementRepository } from './settlement/settlement.repository';
 import { SettlementService } from './settlement/settlement.service';
 
@@ -14,6 +15,7 @@ import { SettlementService } from './settlement/settlement.service';
     FinanceRepository,
     FinanceService,
     SettlementRepository,
+    SettlementModifierService,
     SettlementService,
   ],
   exports: [FinanceService, SettlementService],

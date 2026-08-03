@@ -220,3 +220,11 @@
 - **Context:** Phase 6.4 Must-Fix: non-atomic checkout finance, deposit non-idempotency, rental↔settlement cancel decoupling.
 - **Decision:** (1) Checkout finance (`createForRentalInTx` → `createChargeInTx` / `registerDepositInTx`) runs inside `AvailabilityService.runExclusive` with inventory/rental. (2) `FinanceIdempotencyKey` for checkout/payment/charge/deposit. (3) Authoritative cancel policy: open unpaid → void ledger + cancel settlement; partial/paid → reject. (4) Charge/deposit/payment reference `settlementId`; unique ledger refs.
 - **Consequences:** Integrity score **94**. Reports still require product approval (refunds/late fees unbuilt). Report: `PHASE_6_TRANSACTION_INTEGRITY.md`.
+
+## ADR-V2-029 - Financial domain completion (Phase 6.6)
+
+- **Date:** 2026-08-03
+- **Status:** Accepted
+- **Context:** Need Settlement as sole money authority before Reports: refunds, adjustments, discounts, late-fee foundation, one formula.
+- **Decision:** (1) Settlement-owned engines for refund (entity + history), adjustment, discount (fixed/%), late fee (flat/daily/max, no scheduler). (2) Central formula in `settlement.formula.ts`: Total = (charge−deposit)+late+adj−discount−refund; Outstanding = Total−paid. (3) Append-only ledger via `postSettlementModifierInTx`; never mutate Payment. (4) Component columns on `RentalSettlement` + CAS recalculation.
+- **Consequences:** Financial domain feature-complete for rental money. Reports / dashboards / analytics / desktop still blocked pending approval. Docs: `FinancialDesign.md`, `SettlementDesign.md`.

@@ -149,6 +149,7 @@ export const CASHIER_PERMISSIONS: readonly string[] = [
   'rentals.cancel',
   'finance.view',
   'finance.payment',
+  'finance.adjustment',
   'finance.settlement.view',
   'finance.settlement.manage',
   'rental.settlement.view',

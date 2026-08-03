@@ -44,13 +44,23 @@ import {
   statusAfterPayment,
 } from './settlement.rules';
 import { decideRentalCancelFinance } from './rental-cancel.policy';
+import { SettlementModifierService } from './settlement-modifier.service';
 import { assertSettlementBalanceInvariant } from './settlement.integrity';
+import {
+  recalculateSettlementBalances,
+} from './settlement.formula';
 import {
   beginIdempotency,
   completeIdempotency,
   hashIdempotencyPayload,
   IDEMPOTENCY_SCOPE,
 } from '../idempotency/idempotency';
+import type {
+  SettlementAdjustmentDto,
+  SettlementDiscountDto,
+  SettlementLateFeeDto,
+  SettlementRefundDto,
+} from './dto/settlement-modifiers.dto';
 
 export type CreateSettlementInput = {
   rentalId: string;
@@ -70,6 +80,7 @@ export class SettlementService {
   constructor(
     private readonly repo: SettlementRepository,
     private readonly finance: FinanceService,
+    private readonly modifiers: SettlementModifierService,
     private readonly settings: SettingsService,
     private readonly audit: AuditService,
   ) {}
@@ -150,12 +161,17 @@ export class SettlementService {
 
     const charge = Money.ofNonNegativeFils(input.chargeFils);
     const deposit = Money.ofNonNegativeFils(input.depositFils ?? 0);
-    if (deposit.amountFils > charge.amountFils) {
-      throw BusinessException.validation(
-        'Deposit cannot exceed rental charge for settlement',
-      );
-    }
-    const total = charge.subtract(deposit);
+    const balances = recalculateSettlementBalances(
+      {
+        chargeFils: charge.amountFils,
+        depositFils: deposit.amountFils,
+        lateFeeFils: 0,
+        adjustmentFils: 0,
+        discountFils: 0,
+        refundFils: 0,
+      },
+      0,
+    );
     const account = await this.finance.ensureAccountForCustomerInTx(
       tx,
       input.customerId,
@@ -163,10 +179,7 @@ export class SettlementService {
     );
 
     const settlementNumber = await this.allocateNumber(tx);
-    const initialStatus =
-      total.amountFils === 0
-        ? SETTLEMENT_STATUS.PAID
-        : SETTLEMENT_STATUS.OPEN;
+    const initialStatus = balances.status;
 
     const row = await this.repo.create(
       tx,
@@ -175,9 +188,15 @@ export class SettlementService {
         rentalId: input.rentalId,
         accountId: account.id,
         customerId: input.customerId,
-        totalFils: total.amountFils,
+        chargeFils: charge.amountFils,
+        depositFils: deposit.amountFils,
+        lateFeeFils: 0,
+        adjustmentFils: 0,
+        discountFils: 0,
+        refundFils: 0,
+        totalFils: balances.totalFils,
         paidFils: 0,
-        remainingFils: total.amountFils,
+        remainingFils: balances.remainingFils,
         status: initialStatus,
         currency: FINANCE_CURRENCY,
         createdBy: actor?.userId ?? null,
@@ -495,6 +514,84 @@ export class SettlementService {
       actor: { userId: actor?.userId, username: actor?.username },
     });
     return toSettlementPublic(updated);
+  }
+
+  /** Credit-note refund — Settlement authority; never mutates Payment. */
+  async applyRefund(
+    id: string,
+    dto: SettlementRefundDto,
+    actor?: AuthPrincipal,
+  ) {
+    const settlement = await this.requireLive(id);
+    const result = await this.modifiers.applyRefund(settlement, dto, actor);
+    await this.audit.record({
+      module: FINANCE_MODULE,
+      entityType: SETTLEMENT_ENTITY,
+      entityId: id,
+      action: SETTLEMENT_ACTION.REFUND_APPLIED,
+      oldValues: toSettlementSnapshot(settlement),
+      newValues: result as never,
+      actor: { userId: actor?.userId, username: actor?.username },
+    });
+    return result;
+  }
+
+  async applyAdjustment(
+    id: string,
+    dto: SettlementAdjustmentDto,
+    actor?: AuthPrincipal,
+  ) {
+    const settlement = await this.requireLive(id);
+    const result = await this.modifiers.applyAdjustment(settlement, dto, actor);
+    await this.audit.record({
+      module: FINANCE_MODULE,
+      entityType: SETTLEMENT_ENTITY,
+      entityId: id,
+      action: SETTLEMENT_ACTION.ADJUSTMENT_APPLIED,
+      oldValues: toSettlementSnapshot(settlement),
+      newValues: result as never,
+      actor: { userId: actor?.userId, username: actor?.username },
+    });
+    return result;
+  }
+
+  async applyDiscount(
+    id: string,
+    dto: SettlementDiscountDto,
+    actor?: AuthPrincipal,
+  ) {
+    const settlement = await this.requireLive(id);
+    const result = await this.modifiers.applyDiscount(settlement, dto, actor);
+    await this.audit.record({
+      module: FINANCE_MODULE,
+      entityType: SETTLEMENT_ENTITY,
+      entityId: id,
+      action: SETTLEMENT_ACTION.DISCOUNT_APPLIED,
+      oldValues: toSettlementSnapshot(settlement),
+      newValues: result as never,
+      actor: { userId: actor?.userId, username: actor?.username },
+    });
+    return result;
+  }
+
+  /** Domain-only late fee assessment — no scheduler. */
+  async assessLateFee(
+    id: string,
+    dto: SettlementLateFeeDto,
+    actor?: AuthPrincipal,
+  ) {
+    const settlement = await this.requireLive(id);
+    const result = await this.modifiers.assessLateFee(settlement, dto, actor);
+    await this.audit.record({
+      module: FINANCE_MODULE,
+      entityType: SETTLEMENT_ENTITY,
+      entityId: id,
+      action: SETTLEMENT_ACTION.LATE_FEE_ASSESSED,
+      oldValues: toSettlementSnapshot(settlement),
+      newValues: result as never,
+      actor: { userId: actor?.userId, username: actor?.username },
+    });
+    return result;
   }
 
   /** Rental close/complete gate — only SettlementService decides financial completion. */

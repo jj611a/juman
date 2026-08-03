@@ -22,6 +22,8 @@ export const FINANCIAL_TX_TYPE = {
   PAYMENT: 'payment',
   REFUND: 'refund',
   ADJUSTMENT: 'adjustment',
+  DISCOUNT: 'discount',
+  LATE_FEE: 'late_fee',
 } as const;
 
 export type FinancialTxType =
@@ -53,6 +55,8 @@ export const MONEY_MOVEMENT_KIND = {
   PAYMENT: 'payment',
   REFUND: 'refund',
   ADJUSTMENT: 'adjustment',
+  DISCOUNT: 'discount',
+  LATE_FEE: 'late_fee',
 } as const;
 
 export const FINANCE_ACCOUNT_NUMBER_SETTING = {
@@ -98,6 +102,7 @@ export const FINANCE_PAYMENT_SORT_FIELDS = [
 /**
  * Effect of a posted transaction on customer outstanding balance (fils).
  * Positive = customer owes more; negative = customer owes less.
+ * Must stay aligned with settlement.formula (Phase 6.6).
  */
 export function outstandingDeltaFils(
   type: string,
@@ -105,10 +110,12 @@ export function outstandingDeltaFils(
 ): number {
   switch (type) {
     case FINANCIAL_TX_TYPE.RENTAL_CHARGE:
-    case FINANCIAL_TX_TYPE.REFUND:
+    case FINANCIAL_TX_TYPE.LATE_FEE:
       return amountFils;
     case FINANCIAL_TX_TYPE.DEPOSIT:
     case FINANCIAL_TX_TYPE.PAYMENT:
+    case FINANCIAL_TX_TYPE.REFUND:
+    case FINANCIAL_TX_TYPE.DISCOUNT:
       return -amountFils;
     case FINANCIAL_TX_TYPE.ADJUSTMENT:
       return amountFils; // signed amount already

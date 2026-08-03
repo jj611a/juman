@@ -154,5 +154,6 @@ Inventory mutations remain exclusive to `LifecycleService`.
 ## Financial (Phase 6)
 
 `FinanceModule` (`src/finance`) is the sole owner of money.  
-**Phase 6.5:** Checkout finance runs inside the same `AvailabilityService.runExclusive` TX as inventory/rental (`*InTx` APIs). Charges/deposits/payments reference `settlementId`. Idempotency via `FinanceIdempotencyKey`.  
-Docs: `FinancialDesign.md`, `SettlementDesign.md`, `PHASE_6_TRANSACTION_INTEGRITY.md`.
+**Phase 6.5:** Atomic checkout TX + idempotency + cancel policy.  
+**Phase 6.6:** Settlement owns refund / adjustment / discount / late-fee assessment; centralized formulas in `settlement.formula.ts`.  
+Docs: `FinancialDesign.md`, `SettlementDesign.md`.
