@@ -1,5 +1,5 @@
 import * as React from 'react'
-import { BusyIndicator, ErrorState, Grid, InlineMessage, KPICard } from '@/components/ui'
+import { BusyIndicator, ErrorState, Grid, InlineMessage, KPICard, SkeletonCard } from '@/components/ui'
 import { usePermission } from '@/hooks/usePermission'
 import { useDashboardReport } from '@/features/reports/hooks'
 import type { DashboardReportDto } from '@/services/domainTypes'
@@ -29,8 +29,8 @@ export function DashboardKpis(): React.ReactElement {
 
   if (!canView) {
     return (
-      <section aria-labelledby="dash-kpi-heading" className="space-y-3">
-        <h2 id="dash-kpi-heading" className="text-title text-foreground">
+      <section aria-labelledby="dash-kpi-heading" className="space-y-4">
+        <h2 id="dash-kpi-heading" className="text-title text-base-content">
           المؤشرات
         </h2>
         <InlineMessage variant="info">لا تملك صلاحية عرض التقارير</InlineMessage>
@@ -39,11 +39,19 @@ export function DashboardKpis(): React.ReactElement {
   }
 
   return (
-    <section aria-labelledby="dash-kpi-heading" className="space-y-3">
-      <h2 id="dash-kpi-heading" className="text-title text-foreground">
+    <section aria-labelledby="dash-kpi-heading" className="space-y-4">
+      <h2 id="dash-kpi-heading" className="text-title text-base-content">
         المؤشرات
       </h2>
-      {query.isLoading ? <BusyIndicator label="جاري التحميل…" /> : null}
+      {query.isLoading ? (
+        <Grid cols={2} gap={3}>
+          <SkeletonCard />
+          <SkeletonCard />
+          <SkeletonCard />
+          <SkeletonCard />
+        </Grid>
+      ) : null}
+      {query.isLoading ? <BusyIndicator label="جاري التحميل…" className="sr-only" /> : null}
       {query.isError ? (
         <ErrorState title="تعذر تحميل المؤشرات" message="تحقق من الاتصال ثم أعد المحاولة" onRetry={() => void query.refetch()} />
       ) : null}

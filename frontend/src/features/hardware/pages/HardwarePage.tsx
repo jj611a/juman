@@ -159,7 +159,7 @@ export default function HardwarePage(): React.ReactElement {
   const usbPrinters = printers.filter((p) => p.transport === 'usb')
 
   return (
-    <Page>
+    <Page className="animate-juman-in">
       <PageHeader
         title="الأجهزة"
         description="طابعة الإيصال والملصقات والماسح والدرج والكاميرا — إعدادات محطة العمل"

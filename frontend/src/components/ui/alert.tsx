@@ -4,13 +4,13 @@ import { Icon, type IconName } from '@/components/icons'
 import { IconButton } from '@/components/ui/icon-button'
 import { cn } from '@/utils/cn'
 
-const alertVariants = cva('relative flex w-full gap-3 rounded-md border px-4 py-3 text-body', {
+const alertVariants = cva('alert text-start shadow-sm', {
   variants: {
     variant: {
-      success: 'border-success/40 bg-success/10 text-foreground',
-      info: 'border-info/40 bg-info/10 text-foreground',
-      warning: 'border-warning/40 bg-warning/10 text-foreground',
-      danger: 'border-destructive/40 bg-destructive/10 text-foreground'
+      success: 'alert-success',
+      info: 'alert-info',
+      warning: 'alert-warning',
+      danger: 'alert-error'
     }
   },
   defaultVariants: { variant: 'info' }
@@ -21,13 +21,6 @@ const ALERT_ICON: Record<NonNullable<VariantProps<typeof alertVariants>['variant
   info: 'Info',
   warning: 'AlertTriangle',
   danger: 'CircleAlert'
-}
-
-const ICON_TONE: Record<string, string> = {
-  success: 'text-success',
-  info: 'text-info',
-  warning: 'text-warning',
-  danger: 'text-destructive'
 }
 
 export interface AlertProps
@@ -61,9 +54,7 @@ export function Alert({
       className={cn(alertVariants({ variant }), className)}
       {...props}
     >
-      {resolvedIcon ? (
-        <Icon name={resolvedIcon} size="sm" className={cn('mt-0.5 shrink-0', ICON_TONE[variant ?? 'info'])} />
-      ) : null}
+      {resolvedIcon ? <Icon name={resolvedIcon} size="sm" className="shrink-0" /> : null}
       <div className="min-w-0 flex-1">
         {title ? <AlertTitle>{title}</AlertTitle> : null}
         {description ? <AlertDescription>{description}</AlertDescription> : null}
@@ -84,12 +75,12 @@ export function Alert({
 }
 
 export function AlertTitle({ className, ...props }: React.HTMLAttributes<HTMLHeadingElement>): React.ReactElement {
-  return <h5 className={cn('text-caption font-medium leading-none tracking-tight', className)} {...props} />
+  return <h5 className={cn('text-caption font-semibold leading-none', className)} {...props} />
 }
 
 export function AlertDescription({
   className,
   ...props
 }: React.HTMLAttributes<HTMLParagraphElement>): React.ReactElement {
-  return <p className={cn('mt-1 text-caption text-muted-foreground', className)} {...props} />
+  return <p className={cn('mt-1 text-caption opacity-80', className)} {...props} />
 }

@@ -32,14 +32,14 @@ export function Sidebar({
   return (
     <aside
       className={cn(
-        'flex h-full flex-col border-e border-border bg-sidebar text-foreground',
+        'flex h-full flex-col border-e border-base-content/10 bg-neutral text-neutral-content',
         collapsed ? 'w-[4.5rem]' : 'w-full',
         className
       )}
       aria-label="التنقل الرئيسي"
       {...props}
     >
-      <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-3">
+      <div className="flex items-center justify-between gap-2 border-b border-base-content/10 px-3 py-3">
         <AppLogo collapsed={collapsed} />
         <IconButton
           type="button"
@@ -50,11 +50,11 @@ export function Sidebar({
           onClick={() => setCollapsed(!collapsed)}
         />
       </div>
-      <div className="border-b border-border px-2 py-2">
+      <div className="border-b border-base-content/10 px-2 py-2">
         <CompanySwitcher className="w-full" />
       </div>
       <ScrollArea className="flex-1 px-2 py-3">
-        <nav className="space-y-4" aria-label="أقسام التنقل">
+        <nav className={cn('w-full gap-1 p-0', collapsed && 'items-center')} aria-label="أقسام التنقل">
           {sections.map((section) => (
             <NavigationSection key={section.id} section={section} collapsed={collapsed} />
           ))}

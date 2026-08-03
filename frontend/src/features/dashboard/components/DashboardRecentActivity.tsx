@@ -3,7 +3,8 @@ import {
   AuditTimeline,
   BusyIndicator,
   EmptyState,
-  ErrorState
+  ErrorState,
+  SkeletonList
 } from '@/components/ui'
 import { usePermission } from '@/hooks/usePermission'
 import { useAuditLogsList } from '@/features/audit/hooks'
@@ -19,28 +20,31 @@ export function DashboardRecentActivity(): React.ReactElement | null {
   const rows = query.data?.data ?? []
 
   return (
-    <section aria-labelledby="dash-activity-heading" className="space-y-3">
-      <h2 id="dash-activity-heading" className="text-title text-foreground">
+    <section aria-labelledby="dash-activity-heading" className="space-y-4">
+      <h2 id="dash-activity-heading" className="text-title text-base-content">
         النشاط الأخير
       </h2>
-      {query.isLoading ? <BusyIndicator label="جاري التحميل…" /> : null}
-      {query.isError ? (
-        <ErrorState title="تعذر تحميل النشاط" message="تحقق من الاتصال ثم أعد المحاولة" onRetry={() => void query.refetch()} />
-      ) : null}
-      {!query.isLoading && !query.isError && rows.length === 0 ? (
-        <EmptyState title="لا يوجد نشاط" description="لم تُسجَّل أحداث تدقيق بعد" />
-      ) : null}
-      {rows.length > 0 ? (
-        <AuditTimeline
-          items={rows.map((row) => ({
-            id: row.id,
-            at: row.created_at,
-            actor: row.username ?? undefined,
-            action: row.action,
-            detail: [row.module, row.entity_type, row.message].filter(Boolean).join(' · ') || undefined
-          }))}
-        />
-      ) : null}
+      <div className="rounded-box border border-base-content/10 bg-base-300 p-4 shadow-sm">
+        {query.isLoading ? <SkeletonList items={5} /> : null}
+        {query.isLoading ? <BusyIndicator label="جاري التحميل…" className="sr-only" /> : null}
+        {query.isError ? (
+          <ErrorState title="تعذر تحميل النشاط" message="تحقق من الاتصال ثم أعد المحاولة" onRetry={() => void query.refetch()} />
+        ) : null}
+        {!query.isLoading && !query.isError && rows.length === 0 ? (
+          <EmptyState title="لا يوجد نشاط" description="لم تُسجَّل أحداث تدقيق بعد" />
+        ) : null}
+        {rows.length > 0 ? (
+          <AuditTimeline
+            items={rows.map((row) => ({
+              id: row.id,
+              at: row.created_at,
+              actor: row.username ?? undefined,
+              action: row.action,
+              detail: [row.module, row.entity_type, row.message].filter(Boolean).join(' · ') || undefined
+            }))}
+          />
+        ) : null}
+      </div>
     </section>
   )
 }

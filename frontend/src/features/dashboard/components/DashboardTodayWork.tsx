@@ -1,6 +1,6 @@
 import * as React from 'react'
 import { Link } from 'react-router'
-import { BusyIndicator, ErrorState, InlineMessage } from '@/components/ui'
+import { BusyIndicator, ErrorState, InlineMessage, SkeletonList } from '@/components/ui'
 import { usePermission, useAnyPermission } from '@/hooks/usePermission'
 import { useDashboardReport } from '@/features/reports/hooks'
 
@@ -15,8 +15,8 @@ export function DashboardTodayWork(): React.ReactElement {
 
   if (!canReports) {
     return (
-      <section aria-labelledby="dash-today-heading" className="space-y-3">
-        <h2 id="dash-today-heading" className="text-title text-foreground">
+      <section aria-labelledby="dash-today-heading" className="space-y-4">
+        <h2 id="dash-today-heading" className="text-title text-base-content">
           عمل اليوم
         </h2>
         <InlineMessage variant="info">لا تملك صلاحية عرض التقارير</InlineMessage>
@@ -61,11 +61,12 @@ export function DashboardTodayWork(): React.ReactElement {
     : []
 
   return (
-    <section aria-labelledby="dash-today-heading" className="space-y-3">
-      <h2 id="dash-today-heading" className="text-title text-foreground">
+    <section aria-labelledby="dash-today-heading" className="space-y-4">
+      <h2 id="dash-today-heading" className="text-title text-base-content">
         عمل اليوم
       </h2>
-      {query.isLoading ? <BusyIndicator label="جاري التحميل…" /> : null}
+      {query.isLoading ? <SkeletonList items={4} /> : null}
+      {query.isLoading ? <BusyIndicator label="جاري التحميل…" className="sr-only" /> : null}
       {query.isError ? (
         <ErrorState title="تعذر تحميل عمل اليوم" message="تحقق من الاتصال ثم أعد المحاولة" onRetry={() => void query.refetch()} />
       ) : null}
@@ -73,15 +74,15 @@ export function DashboardTodayWork(): React.ReactElement {
         <InlineMessage variant="info">لا توجد عناصر عمل متاحة لصلاحياتك</InlineMessage>
       ) : null}
       {rows.length > 0 ? (
-        <ul className="divide-y divide-border rounded-md border border-border">
+        <ul className="divide-y divide-base-content/10 overflow-hidden rounded-box border border-base-content/10 bg-base-300 shadow-sm">
           {rows.map((row) => (
             <li key={row.label}>
               <Link
                 to={row.to}
-                className="flex items-center justify-between gap-3 px-3 py-2.5 text-body text-foreground hover:bg-secondary/60"
+                className="juman-focus flex items-center justify-between gap-3 px-4 py-3 text-body text-base-content transition-colors hover:bg-base-content/5"
               >
                 <span>{row.label}</span>
-                <span className="font-medium tabular-nums text-brand" dir="ltr">
+                <span className="badge badge-primary badge-lg tabular-nums" dir="ltr">
                   {row.count}
                 </span>
               </Link>

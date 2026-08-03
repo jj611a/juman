@@ -123,7 +123,7 @@ export default function DressDetailPage(): React.ReactElement {
   const canEditBarcode = isLikelyAdmin || username === 'admin'
 
   return (
-    <Page size="lg" as="main">
+    <Page size="lg" as="main" className="animate-juman-in">
       {detailQuery.isLoading ? (
         <BusyIndicator label="جاري التحميل…" />
       ) : detailQuery.isError || !dress ? (

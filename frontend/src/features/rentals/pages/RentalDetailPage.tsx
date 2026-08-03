@@ -49,7 +49,7 @@ export default function RentalDetailPage(): React.ReactElement {
   if (!id) return <Navigate to="/rentals" replace />
 
   return (
-    <Page size="lg" as="main">
+    <Page size="lg" as="main" className="animate-juman-in">
       {detail.isLoading ? (
         <BusyIndicator label="جاري التحميل…" />
       ) : detail.isError || !rental ? (
@@ -85,17 +85,29 @@ export default function RentalDetailPage(): React.ReactElement {
           </InlineMessage>
 
           <div className="grid gap-4 sm:grid-cols-3">
-            <div className="rounded-md border border-border p-4">
-              <p className="text-caption text-muted-foreground">الإجمالي التقديري</p>
-              <MoneyDisplay value={rental.estimated_total} />
+            <div className="stats rounded-box border border-base-content/10 bg-base-300 shadow-sm">
+              <div className="stat px-4 py-3">
+                <div className="stat-title text-base-content/55">الإجمالي التقديري</div>
+                <div className="stat-value text-lg">
+                  <MoneyDisplay value={rental.estimated_total} />
+                </div>
+              </div>
             </div>
-            <div className="rounded-md border border-border p-4">
-              <p className="text-caption text-muted-foreground">الدفعة الأولية</p>
-              <MoneyDisplay value={rental.initial_payment_value} />
+            <div className="stats rounded-box border border-base-content/10 bg-base-300 shadow-sm">
+              <div className="stat px-4 py-3">
+                <div className="stat-title text-base-content/55">الدفعة الأولية</div>
+                <div className="stat-value text-lg">
+                  <MoneyDisplay value={rental.initial_payment_value} />
+                </div>
+              </div>
             </div>
-            <div className="rounded-md border border-border p-4">
-              <p className="text-caption text-muted-foreground">المتبقي</p>
-              <MoneyDisplay value={rental.remaining_balance} />
+            <div className="stats rounded-box border border-base-content/10 bg-base-300 shadow-sm">
+              <div className="stat px-4 py-3">
+                <div className="stat-title text-base-content/55">المتبقي</div>
+                <div className="stat-value text-lg text-primary">
+                  <MoneyDisplay value={rental.remaining_balance} />
+                </div>
+              </div>
             </div>
           </div>
 

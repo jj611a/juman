@@ -200,7 +200,7 @@ export function DiagnosticsPage(): React.ReactElement {
     <div
       className="flex h-screen min-h-0 flex-col bg-background text-foreground"
       dir="rtl"
-      data-theme="juman-dark"
+      data-theme="juman"
     >
       <header className="flex items-center justify-between border-b border-[var(--brand)]/30 bg-[var(--sidebar)] px-4 py-3">
         <div>

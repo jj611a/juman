@@ -267,7 +267,7 @@ export default function SettingsPage(): React.ReactElement {
     category === 'system' ? groupSystemSettings(filteredItems) : null
 
   return (
-    <Page size="lg" as="main">
+    <Page size="lg" as="main" className="animate-juman-in">
       <PageHeader
         title="الإعدادات"
         description="إدارة إعدادات النظام حسب الفئة"

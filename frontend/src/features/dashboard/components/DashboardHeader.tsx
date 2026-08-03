@@ -42,23 +42,23 @@ export function DashboardHeader(): React.ReactElement {
   }
 
   return (
-    <header className="space-y-3 border-b border-border pb-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
+    <header className="space-y-4 border-b border-base-content/10 pb-6">
+      <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="space-y-1">
-          <h1 className="text-display text-foreground">مرحباً، {userLabel}</h1>
+          <h1 className="text-display tracking-tight text-base-content">مرحباً، {userLabel}</h1>
           {companyName ? (
-            <p className="text-body text-muted-foreground">{companyName}</p>
+            <p className="text-body text-base-content/60">{companyName}</p>
           ) : null}
         </div>
         <StatusBadge tone={connectionTone}>{connectionLabel}</StatusBadge>
       </div>
       {asOf ? (
-        <p className="text-caption text-muted-foreground" dir="ltr">
+        <p className="text-caption text-base-content/50" dir="ltr">
           {new Date(asOf).toLocaleString('ar-IQ')}
           {tz ? ` · ${tz}` : ''}
         </p>
       ) : (
-        <p className="text-caption text-muted-foreground">لوحة التشغيل</p>
+        <p className="text-caption text-base-content/50">لوحة التشغيل</p>
       )}
     </header>
   )

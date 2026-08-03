@@ -21,27 +21,22 @@ export function StatusBar({
   return (
     <footer
       className={cn(
-        'flex items-center justify-between gap-3 border-t border-border bg-header px-4 py-1.5 text-caption text-muted-foreground',
+        'flex items-center justify-between gap-3 border-t border-base-content/10 bg-neutral px-4 py-1.5 text-caption text-base-content/55',
         className
       )}
       role="contentinfo"
       {...props}
     >
-      <div className="flex items-center gap-3 min-w-0">
-        <span
-          className={cn('inline-flex items-center gap-1.5', online ? 'text-success' : 'text-destructive')}
-        >
-          <span
-            aria-hidden
-            className={cn('size-1.5 rounded-full', online ? 'bg-success' : 'bg-destructive')}
-          />
+      <div className="flex min-w-0 items-center gap-3">
+        <span className={cn('inline-flex items-center gap-1.5', online ? 'text-success' : 'text-error')}>
+          <span className={cn('status status-sm', online ? 'status-success' : 'status-error')} />
           {online ? 'متصل' : 'غير متصل'}
         </span>
-        {name ? <span className="truncate">{name}</span> : null}
+        {name ? <span className="badge badge-ghost badge-sm truncate font-normal">{name}</span> : null}
       </div>
-      <div className="flex items-center gap-3 shrink-0">
-        {appVersion ? <span>التطبيق {appVersion}</span> : null}
-        {backendVersion ? <span>الخادم {backendVersion}</span> : null}
+      <div className="flex shrink-0 items-center gap-3">
+        {appVersion ? <span className="badge badge-outline badge-sm">التطبيق {appVersion}</span> : null}
+        {backendVersion ? <span className="badge badge-outline badge-sm">الخادم {backendVersion}</span> : null}
       </div>
     </footer>
   )

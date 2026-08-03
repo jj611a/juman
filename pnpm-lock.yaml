@@ -271,6 +271,9 @@ importers:
       '@vitest/coverage-v8':
         specifier: ^3.2.7
         version: 3.2.7(vitest@3.2.7(@types/debug@4.1.13)(@types/node@22.20.1)(jiti@2.7.0)(jsdom@26.1.0)(lightningcss@1.32.0)(terser@5.49.0)(tsx@4.23.1))
+      daisyui:
+        specifier: ^5.7.14
+        version: 5.7.14
       electron:
         specifier: ^35.1.5
         version: 35.7.5
@@ -3142,6 +3145,9 @@ packages:
   d3-timer@3.0.1:
     resolution: {integrity: sha512-ndfJ/JxxMd3nw31uyKoY2naivF+r29V+Lc0svZxe1JvvIRmi8hUsrMvdOwgS1o6uBHmiz91geQ0ylPP0aj1VUA==}
     engines: {node: '>=12'}
+
+  daisyui@5.7.14:
+    resolution: {integrity: sha512-mbEBc49mp6ueUNxVNPIQiX3mzYIirkST8EA3lLMKCkrWzpiM8Iy8eHjj+G6gitFQB73m9qFLPg75S4D1LDUw0g==}
 
   data-urls@5.0.0:
     resolution: {integrity: sha512-ZYP5VBHshaDAiVZxjbRVcFJpc+4xGgT0bK3vzy1HLN8jTO975HEbuYzZJcHoQEY5K1a0z8YayJkyVETa08eNTg==}
@@ -8457,6 +8463,8 @@ snapshots:
       d3-array: 3.2.4
 
   d3-timer@3.0.1: {}
+
+  daisyui@5.7.14: {}
 
   data-urls@5.0.0:
     dependencies:

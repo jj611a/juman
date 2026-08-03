@@ -28,7 +28,7 @@ export const Page = React.forwardRef<HTMLElement, PageProps>(
     <Comp
       ref={ref as never}
       className={cn(
-        'flex min-h-0 flex-1 flex-col gap-6 bg-surface',
+        'flex min-h-0 flex-1 flex-col gap-6 bg-base-200',
         pageSizeVariants({ size }),
         className
       )}
@@ -42,14 +42,14 @@ export function PageTitle({
   className,
   ...props
 }: React.HTMLAttributes<HTMLHeadingElement>): React.ReactElement {
-  return <h1 className={cn('text-h1 text-foreground', className)} {...props} />
+  return <h1 className={cn('text-h1 text-base-content tracking-tight', className)} {...props} />
 }
 
 export function PageSubtitle({
   className,
   ...props
 }: React.HTMLAttributes<HTMLParagraphElement>): React.ReactElement {
-  return <p className={cn('text-body text-muted-foreground', className)} {...props} />
+  return <p className={cn('text-body text-base-content/60', className)} {...props} />
 }
 
 export const PageActions = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
@@ -87,7 +87,7 @@ export function PageHeader({
 
   return (
     <header
-      className={cn('flex flex-col gap-3 border-b border-border pb-4', className)}
+      className={cn('flex flex-col gap-4 border-b border-base-content/10 pb-5', className)}
       {...props}
     >
       {hasComposition ? (
@@ -119,7 +119,7 @@ export const PageToolbar = React.forwardRef<HTMLDivElement, PageToolbarProps>(
       ref={ref}
       role="toolbar"
       className={cn(
-        'flex flex-wrap items-center gap-3 rounded-md border border-border bg-panel px-3 py-2',
+        'flex flex-wrap items-center gap-3 rounded-box border border-base-content/10 bg-base-300 px-3 py-2.5 shadow-sm',
         className
       )}
       {...props}
@@ -164,8 +164,8 @@ export const PageFooter = React.forwardRef<HTMLElement, PageFooterProps>(
     <footer
       ref={ref}
       className={cn(
-        'mt-auto flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4',
-        sticky && 'sticky bottom-0 z-[1] bg-surface/95 backdrop-blur-sm',
+        'mt-auto flex flex-wrap items-center justify-between gap-3 border-t border-base-content/10 pt-4',
+        sticky && 'sticky bottom-0 z-[1] bg-base-200/95 backdrop-blur-sm',
         className
       )}
       {...props}

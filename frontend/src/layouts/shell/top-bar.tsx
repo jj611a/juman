@@ -33,16 +33,16 @@ export function TopBar({
   return (
     <header
       className={cn(
-        'flex items-center justify-between gap-3 border-b border-border bg-header px-4 py-2',
+        'navbar min-h-14 border-b border-base-content/10 bg-neutral px-4 py-0 text-neutral-content',
         className
       )}
       {...props}
     >
-      <div className="min-w-0 flex-1 space-y-0.5">
-        {title ? <p className="truncate text-body font-semibold text-foreground">{title}</p> : null}
+      <div className="navbar-start min-w-0 flex-1 flex-col items-stretch gap-0.5 py-2">
+        {title ? <p className="truncate text-body font-semibold text-base-content">{title}</p> : null}
         <BreadcrumbHost items={breadcrumbs} />
       </div>
-      <div className="flex items-center gap-1">
+      <div className="navbar-end gap-1">
         <GlobalSearchButton
           disabled={!onSearch}
           title={!onSearch ? 'بحث عام (قريبًا)' : undefined}
@@ -63,11 +63,12 @@ export function TopBar({
         />
         <UserMenu onSignOut={onSignOut} />
         {showWindowControls ? (
-          <>
+          <div className="ms-1 join">
             <Button
               type="button"
               variant="ghost"
               size="sm"
+              className="join-item"
               aria-label="تصغير"
               onClick={() => void apiClient.desktop.window.minimize()}
             >
@@ -77,6 +78,7 @@ export function TopBar({
               type="button"
               variant="ghost"
               size="sm"
+              className="join-item"
               aria-label="تكبير"
               onClick={() => void apiClient.desktop.window.maximize()}
             >
@@ -86,12 +88,13 @@ export function TopBar({
               type="button"
               variant="ghost"
               size="sm"
+              className="join-item"
               aria-label="إغلاق"
               onClick={() => void apiClient.desktop.window.close()}
             >
               ×
             </Button>
-          </>
+          </div>
         ) : null}
       </div>
     </header>

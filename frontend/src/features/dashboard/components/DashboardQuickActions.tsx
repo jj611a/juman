@@ -1,6 +1,6 @@
 import * as React from 'react'
 import { Link } from 'react-router'
-import { Button, InlineMessage } from '@/components/ui'
+import { InlineMessage } from '@/components/ui'
 import { usePermission } from '@/hooks/usePermission'
 
 const ACTIONS: Array<{ label: string; to: string; permission: string }> = [
@@ -34,18 +34,22 @@ export function DashboardQuickActions(): React.ReactElement {
   const visible = ACTIONS.filter((a) => allowed.has(a.permission))
 
   return (
-    <section aria-labelledby="dash-actions-heading" className="space-y-3">
-      <h2 id="dash-actions-heading" className="text-title text-foreground">
+    <section aria-labelledby="dash-actions-heading" className="space-y-4">
+      <h2 id="dash-actions-heading" className="text-title text-base-content">
         إجراءات سريعة
       </h2>
       {visible.length === 0 ? (
         <InlineMessage variant="info">لا توجد إجراءات متاحة لصلاحياتك</InlineMessage>
       ) : (
-        <div className="flex flex-col gap-2">
+        <div className="grid gap-2 sm:grid-cols-2">
           {visible.map((action) => (
-            <Button key={action.to} asChild variant="outline" className="justify-start">
-              <Link to={action.to}>{action.label}</Link>
-            </Button>
+            <Link
+              key={action.to}
+              to={action.to}
+              className="btn btn-outline border-base-content/15 juman-focus justify-start font-medium hover:border-primary hover:bg-primary/10"
+            >
+              {action.label}
+            </Link>
           ))}
         </div>
       )}

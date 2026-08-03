@@ -27,7 +27,7 @@ export function Workspace({
   ...props
 }: WorkspaceProps): React.ReactElement {
   return (
-    <Comp className={cn('relative min-h-0 flex-1 overflow-auto bg-surface', className)} {...props}>
+    <Comp className={cn('relative min-h-0 flex-1 overflow-auto bg-base-200', className)} {...props}>
       {loading ? <LoadingOverlay message="جاري التحميل…" /> : null}
       {!loading && error ? (
         <div className="p-6">

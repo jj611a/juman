@@ -2,7 +2,7 @@ import * as React from 'react'
 import { cva, type VariantProps } from 'class-variance-authority'
 import { cn } from '@/utils/cn'
 
-const skeletonVariants = cva('animate-pulse rounded-md bg-muted', {
+const skeletonVariants = cva('skeleton rounded-md bg-base-200', {
   variants: {
     variant: {
       text: 'h-4 w-full',
@@ -42,7 +42,7 @@ export function SkeletonText({ lines = 3, className }: { lines?: number; classNa
 
 export function SkeletonCard({ className }: { className?: string }): React.ReactElement {
   return (
-    <div className={cn('flex flex-col gap-3 rounded-md border border-border p-4', className)}>
+    <div className={cn('card juman-surface flex flex-col gap-3 border border-base-content/10 p-5', className)}>
       <Skeleton variant="text" className="w-1/3" />
       <Skeleton variant="card" />
       <SkeletonText lines={2} />
@@ -53,7 +53,7 @@ export function SkeletonCard({ className }: { className?: string }): React.React
 export function SkeletonTable({ rows = 4, className }: { rows?: number; className?: string }): React.ReactElement {
   return (
     <div className={cn('flex flex-col gap-2', className)}>
-      <Skeleton variant="table" className="h-8" />
+      <Skeleton variant="table" className="h-9" />
       {Array.from({ length: rows }, (_, i) => (
         <Skeleton key={i} variant="table" />
       ))}

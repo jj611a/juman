@@ -122,42 +122,42 @@ export default function SettlementDetailPage(): React.ReactElement {
           </InlineMessage>
 
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <div className="rounded-md border border-border p-4">
+            <div className="rounded-box border border-base-content/10 bg-base-300 p-4 shadow-sm">
               <p className="text-caption text-muted-foreground">الإجمالي الخام</p>
               <MoneyDisplay value={settlement.gross_total} />
             </div>
-            <div className="rounded-md border border-border p-4">
+            <div className="rounded-box border border-base-content/10 bg-base-300 p-4 shadow-sm">
               <p className="text-caption text-muted-foreground">المستحق</p>
               <MoneyDisplay value={settlement.total_due} />
             </div>
-            <div className="rounded-md border border-border p-4">
+            <div className="rounded-box border border-base-content/10 bg-base-300 p-4 shadow-sm">
               <p className="text-caption text-muted-foreground">المدفوع</p>
               <MoneyDisplay value={settlement.total_paid} />
             </div>
-            <div className="rounded-md border border-border p-4">
+            <div className="rounded-box border border-base-content/10 bg-base-300 p-4 shadow-sm">
               <p className="text-caption text-muted-foreground">المتبقي</p>
               <MoneyDisplay value={settlement.remaining_balance} />
             </div>
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <div className="rounded-md border border-border p-4">
+            <div className="rounded-box border border-base-content/10 bg-base-300 p-4 shadow-sm">
               <p className="text-caption text-muted-foreground">إيجار</p>
               <MoneyDisplay value={settlement.rental_charge_amount} />
             </div>
-            <div className="rounded-md border border-border p-4">
+            <div className="rounded-box border border-base-content/10 bg-base-300 p-4 shadow-sm">
               <p className="text-caption text-muted-foreground">خصم الدفعة الأولية</p>
               <MoneyDisplay value={settlement.initial_payment_credit} />
             </div>
-            <div className="rounded-md border border-border p-4">
+            <div className="rounded-box border border-base-content/10 bg-base-300 p-4 shadow-sm">
               <p className="text-caption text-muted-foreground">غرامة تأخير</p>
               <MoneyDisplay value={settlement.late_penalty_amount} />
             </div>
-            <div className="rounded-md border border-border p-4">
+            <div className="rounded-box border border-base-content/10 bg-base-300 p-4 shadow-sm">
               <p className="text-caption text-muted-foreground">أضرار بسيطة</p>
               <MoneyDisplay value={settlement.minor_damage_penalty_amount} />
             </div>
-            <div className="rounded-md border border-border p-4">
+            <div className="rounded-box border border-base-content/10 bg-base-300 p-4 shadow-sm">
               <p className="text-caption text-muted-foreground">تعديلات يدوية</p>
               <MoneyDisplay value={settlement.manual_adjustment_amount} />
             </div>
@@ -170,7 +170,7 @@ export default function SettlementDetailPage(): React.ReactElement {
                 {(settlement.charges?.length ?? 0) === 0 ? (
                   <EmptyState title="لا رسوم" />
                 ) : (
-                  <ul className="divide-y divide-border rounded-md border border-border">
+                  <ul className="divide-y divide-base-content/10 rounded-box border border-base-content/10 bg-base-300">
                     {settlement.charges.map((charge) => (
                       <li key={charge.id} className="flex flex-wrap justify-between gap-2 px-4 py-3">
                         <div>
@@ -191,7 +191,7 @@ export default function SettlementDetailPage(): React.ReactElement {
                 {(settlement.payments?.length ?? 0) === 0 ? (
                   <EmptyState title="لا دفعات" />
                 ) : (
-                  <ul className="divide-y divide-border rounded-md border border-border">
+                  <ul className="divide-y divide-base-content/10 rounded-box border border-base-content/10 bg-base-300">
                     {settlement.payments.map((payment) => (
                       <li key={payment.id} className="flex flex-wrap justify-between gap-2 px-4 py-3">
                         <div>
@@ -215,7 +215,7 @@ export default function SettlementDetailPage(): React.ReactElement {
                 {(settlement.adjustments?.length ?? 0) === 0 ? (
                   <EmptyState title="لا تعديلات" />
                 ) : (
-                  <ul className="divide-y divide-border rounded-md border border-border">
+                  <ul className="divide-y divide-base-content/10 rounded-box border border-base-content/10 bg-base-300">
                     {settlement.adjustments.map((adj) => (
                       <li key={adj.id} className="flex flex-wrap justify-between gap-2 px-4 py-3">
                         <p>{adj.reason}</p>
@@ -229,7 +229,7 @@ export default function SettlementDetailPage(): React.ReactElement {
               <PermissionGuard
                 anyOf={['rental.settlement.collect', 'finance.settlement.manage']}
               >
-                <section className="space-y-3 rounded-md border border-border p-4">
+                <section className="space-y-3 rounded-box border border-base-content/10 bg-base-300 p-4 shadow-sm">
                   <h3 className="text-title text-foreground">تحصيل دفعة</h3>
                   {isClosed ? (
                     <InlineMessage variant="info">التسوية مغلقة — لا يمكن تحصيل دفعات.</InlineMessage>
@@ -299,7 +299,7 @@ export default function SettlementDetailPage(): React.ReactElement {
                   'finance.settlement.manage'
                 ]}
               >
-                <section className="space-y-3 rounded-md border border-border p-4">
+                <section className="space-y-3 rounded-box border border-base-content/10 bg-base-300 p-4 shadow-sm">
                   <h3 className="text-title text-foreground">تعديل يدوي</h3>
                   {isClosed ? (
                     <InlineMessage variant="info">التسوية مغلقة — لا يمكن التعديل.</InlineMessage>

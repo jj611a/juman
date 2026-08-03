@@ -38,13 +38,15 @@ export function NavigationSection({
   return (
     <div className="space-y-1">
       {!collapsed ? (
-        <p className="px-3 py-1 text-caption font-medium text-muted-foreground">{section.label}</p>
+        <p className="menu-title px-3 py-1 text-caption font-medium text-base-content/45">
+          {section.label}
+        </p>
       ) : (
         <p className="sr-only">{section.label}</p>
       )}
       <ul
         ref={listRef}
-        className={cn('space-y-0.5')}
+        className={cn('menu menu-md w-full gap-0.5 p-0')}
         role="list"
         onKeyDown={onKeyDown}
       >

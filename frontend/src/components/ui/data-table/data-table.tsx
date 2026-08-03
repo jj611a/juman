@@ -29,7 +29,6 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { IconButton } from '@/components/ui/icon-button'
 import { Pagination } from '@/components/ui/pagination'
-import { Spinner } from '@/components/ui/spinner'
 import { toTanStackColumns } from './create-data-column'
 import { applyRangeSelection } from './selection'
 import type {
@@ -316,22 +315,29 @@ export function DataTable<TData>({
         </div>
       ) : null}
 
-      <div className="relative overflow-auto rounded-md border border-border">
+      <div className="relative overflow-auto rounded-box border border-base-content/10 bg-base-300 shadow-sm">
         {isBusy ? (
-          <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/60">
-            <Spinner size="lg" tone="brand" label="جاري التحميل" />
+          <div className="absolute inset-0 z-10 flex items-center justify-center bg-base-100/60 backdrop-blur-[1px]">
+            <span
+              className="loading loading-spinner loading-lg text-primary"
+              role="status"
+              aria-label="جاري التحميل"
+            />
           </div>
         ) : null}
 
-        <table className="w-full caption-bottom text-caption" style={{ width: table.getCenterTotalSize() }}>
+        <table
+          className="table table-md w-full caption-bottom text-caption"
+          style={{ width: table.getCenterTotalSize() }}
+        >
           <thead
             className={cn(
-              'bg-panel text-muted-foreground',
-              stickyHeader && 'sticky top-0 z-[1] shadow-[0_1px_0_var(--border)]'
+              'bg-base-200 text-base-content/55',
+              stickyHeader && 'sticky top-0 z-[1] shadow-[0_1px_0_0_color-mix(in_oklab,var(--color-base-content)_12%,transparent)]'
             )}
           >
             {table.getHeaderGroups().map((hg) => (
-              <tr key={hg.id} className="border-b border-border">
+              <tr key={hg.id} className="border-b border-base-content/10">
                 {hg.headers.map((header) => {
                   const meta = header.column.columnDef.meta as { alignClass?: string } | undefined
                   const canSort = header.column.getCanSort()
@@ -340,9 +346,9 @@ export function DataTable<TData>({
                       key={header.id}
                       colSpan={header.colSpan}
                       className={cn(
-                        'relative h-10 px-3 font-medium whitespace-nowrap',
+                        'relative h-11 px-3 font-medium whitespace-nowrap',
                         meta?.alignClass,
-                        canSort && 'cursor-pointer select-none'
+                        canSort && 'cursor-pointer select-none hover:text-primary'
                       )}
                       style={{ width: header.getSize() }}
                       aria-sort={
@@ -382,8 +388,8 @@ export function DataTable<TData>({
                           onMouseDown={header.getResizeHandler()}
                           onTouchStart={header.getResizeHandler()}
                           className={cn(
-                            'absolute end-0 top-0 h-full w-1 cursor-col-resize touch-none select-none bg-transparent hover:bg-brand/40',
-                            header.column.getIsResizing() && 'bg-brand'
+                            'absolute end-0 top-0 h-full w-1 cursor-col-resize touch-none select-none bg-transparent hover:bg-primary/40',
+                            header.column.getIsResizing() && 'bg-primary'
                           )}
                         />
                       ) : null}
@@ -402,10 +408,10 @@ export function DataTable<TData>({
               </tr>
             ) : isSkeleton ? (
               Array.from({ length: pagination.pageSize }).map((_, i) => (
-                <tr key={`sk-${i}`} className="border-b border-border">
+                <tr key={`sk-${i}`} className="border-b border-base-content/10">
                   {table.getVisibleLeafColumns().map((col) => (
                     <td key={col.id} className="px-3 py-3">
-                      <div className="h-4 animate-pulse rounded bg-muted" />
+                      <div className="skeleton h-4 w-full animate-pulse rounded-md bg-base-200" />
                     </td>
                   ))}
                 </tr>
@@ -414,7 +420,7 @@ export function DataTable<TData>({
               <tr>
                 <td
                   colSpan={Math.max(1, table.getVisibleLeafColumns().length)}
-                  className="p-8 text-center text-muted-foreground"
+                  className="p-8 text-center text-base-content/55"
                 >
                   {empty ?? 'لا توجد بيانات'}
                 </td>
@@ -425,8 +431,8 @@ export function DataTable<TData>({
                   key={row.id}
                   data-state={row.getIsSelected() ? 'selected' : undefined}
                   className={cn(
-                    'border-b border-border transition-colors hover:bg-hover',
-                    row.getIsSelected() && 'bg-brand-subtle/40 border-s-2 border-s-brand'
+                    'border-b border-base-content/10 transition-colors duration-[var(--duration-fast)] hover:bg-base-content/5',
+                    row.getIsSelected() && 'bg-primary/10 shadow-[inset_-2px_0_0_0_var(--color-primary)]'
                   )}
                 >
                   {row.getVisibleCells().map((cell) => {
@@ -434,7 +440,7 @@ export function DataTable<TData>({
                     return (
                       <td
                         key={cell.id}
-                        className={cn('px-3 py-2.5 align-middle', meta?.alignClass)}
+                        className={cn('px-3 py-3 align-middle', meta?.alignClass)}
                         style={{ width: cell.column.getSize() }}
                       >
                         {flexRender(cell.column.columnDef.cell, cell.getContext())}

@@ -37,13 +37,12 @@ export function NavigationItem({ item, collapsed = false }: NavigationItemProps)
       data-nav-item=""
       className={({ isActive }) =>
         cn(
-          'flex items-center gap-2 rounded-md px-3 py-2 text-body transition-colors',
-          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+          'juman-focus flex items-center gap-2 rounded-field px-3 py-2.5 text-body transition-[background-color,color,box-shadow] duration-[var(--duration-fast)]',
           item.disabled || !item.href
             ? 'pointer-events-none opacity-[var(--disabled-opacity)]'
             : isActive
-              ? 'bg-brand-subtle text-brand'
-              : 'text-foreground-secondary hover:bg-hover hover:text-foreground',
+              ? 'bg-primary/15 font-medium text-primary shadow-[inset_-2px_0_0_0_var(--color-primary)]'
+              : 'text-base-content/70 hover:bg-base-content/5 hover:text-base-content',
           collapsed && 'justify-center px-2'
         )
       }

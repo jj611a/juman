@@ -1,5 +1,5 @@
 import * as React from 'react'
-import { Page } from '@/components/ui'
+import { Page, SkeletonCard } from '@/components/ui'
 import { DashboardHeader } from '../components/DashboardHeader'
 
 const DashboardKpis = React.lazy(() =>
@@ -19,16 +19,16 @@ const DashboardSystemStatus = React.lazy(() =>
 )
 
 function SectionFallback(): React.ReactElement {
-  return <div className="text-caption text-muted-foreground">جاري التحميل…</div>
+  return <SkeletonCard className="min-h-40" />
 }
 
 export default function OpsDashboardPage(): React.ReactElement {
   return (
-    <Page size="full" as="main" className="space-y-6">
+    <Page size="full" as="main" className="space-y-8 animate-juman-in">
       <DashboardHeader />
 
-      <div className="grid gap-6 lg:grid-cols-3">
-        <div className="space-y-6 lg:col-span-1">
+      <div className="grid gap-6 xl:grid-cols-12">
+        <div className="space-y-6 xl:col-span-5">
           <React.Suspense fallback={<SectionFallback />}>
             <DashboardKpis />
           </React.Suspense>
@@ -37,7 +37,7 @@ export default function OpsDashboardPage(): React.ReactElement {
           </React.Suspense>
         </div>
 
-        <div className="space-y-6 lg:col-span-1">
+        <div className="space-y-6 xl:col-span-4">
           <React.Suspense fallback={<SectionFallback />}>
             <DashboardQuickActions />
           </React.Suspense>
@@ -46,7 +46,7 @@ export default function OpsDashboardPage(): React.ReactElement {
           </React.Suspense>
         </div>
 
-        <div className="space-y-6 lg:col-span-1">
+        <div className="space-y-6 xl:col-span-3">
           <React.Suspense fallback={<SectionFallback />}>
             <DashboardSystemStatus />
           </React.Suspense>

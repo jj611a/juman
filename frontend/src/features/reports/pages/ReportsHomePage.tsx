@@ -53,25 +53,32 @@ export default function ReportsHomePage(): React.ReactElement {
   if (!canView) return <Navigate to="/forbidden" replace />
 
   return (
-    <Page size="lg" as="main">
+    <Page size="lg" as="main" className="animate-juman-in">
       <PageHeader title="التقارير" description="تقارير تشغيلية ومالية — القيم من الخادم فقط." />
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {CATEGORIES.map((cat) => {
           if (cat.financial && !canFinancial) return null
           return (
-            <Link key={cat.to} to={cat.to} className="block rounded-md focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background">
-              <Card className="h-full transition-colors hover:border-brand">
+            <Link
+              key={cat.to}
+              to={cat.to}
+              className="block rounded-box focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            >
+              <Card variant="interactive" className="h-full juman-elevate">
                 <CardHeader>
                   <CardTitle>{cat.title}</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <p className="text-caption text-muted-foreground">{cat.description}</p>
+                  <p className="text-caption text-base-content/60">{cat.description}</p>
                 </CardContent>
               </Card>
             </Link>
           )
         })}
       </div>
+      <p className="mt-4 text-caption text-base-content/45">
+        التصدير المتاح: CSV / JSON. PDF و Excel غير مفعّلين في Backend V2.
+      </p>
     </Page>
   )
 }

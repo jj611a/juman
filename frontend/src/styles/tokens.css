@@ -4,6 +4,7 @@
  */
 
 :root,
+[data-theme='juman'],
 [data-theme='juman-dark'] {
   /* Brand (gold accent) */
   --brand: #c6a75e;

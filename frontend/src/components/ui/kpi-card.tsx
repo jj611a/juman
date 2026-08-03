@@ -1,6 +1,5 @@
 import * as React from 'react'
 import { Icon, type IconName } from '@/components/icons'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Spinner } from '@/components/ui/spinner'
 import { cn } from '@/utils/cn'
 
@@ -31,34 +30,38 @@ export function KPICard({
     trend === 'up'
       ? 'text-success'
       : trend === 'down'
-        ? 'text-destructive'
-        : 'text-muted-foreground'
+        ? 'text-error'
+        : 'text-base-content/50'
 
   return (
-    <Card className={cn(className)} {...props}>
-      <CardHeader className="flex flex-row items-start justify-between gap-2 space-y-0 pb-2">
-        <CardTitle className="text-caption font-medium text-muted-foreground">{title}</CardTitle>
-        {icon ? <Icon name={icon} size="sm" className="text-brand" /> : null}
-      </CardHeader>
-      <CardContent>
+    <div
+      className={cn(
+        'stats stats-vertical w-full overflow-hidden rounded-box border border-base-content/10 bg-base-300 shadow-sm juman-elevate',
+        className
+      )}
+      {...props}
+    >
+      <div className="stat gap-1 px-5 py-4">
+        <div className="stat-title flex items-center justify-between gap-2 text-caption text-base-content/60">
+          <span>{title}</span>
+          {icon ? <Icon name={icon} size="sm" className="text-primary" /> : null}
+        </div>
         {loading ? (
           <div className="flex h-10 items-center" role="status">
             <Spinner size="md" tone="muted" label={null} />
           </div>
         ) : (
           <>
-            <p className="text-h2 text-foreground">{value}</p>
-            {subtitle ? (
-              <p className="mt-1 text-caption text-muted-foreground">{subtitle}</p>
-            ) : null}
+            <div className="stat-value text-h2 text-base-content">{value}</div>
+            {subtitle ? <div className="stat-desc text-caption text-base-content/55">{subtitle}</div> : null}
             {trendLabel || trend ? (
-              <p className={cn('mt-1 text-caption', trendClass)}>
+              <div className={cn('stat-desc text-caption', trendClass)}>
                 {trendLabel ?? (trend === 'up' ? '↑' : trend === 'down' ? '↓' : '→')}
-              </p>
+              </div>
             ) : null}
           </>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   )
 }

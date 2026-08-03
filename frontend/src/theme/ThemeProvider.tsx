@@ -6,7 +6,7 @@ import { themeMeta } from '@/theme/tokens'
 export { themeMeta }
 
 /**
- * Applies the official immutable Juman theme (v1: juman-dark only),
+ * Applies the official immutable Juman theme (daisyUI `juman`),
  * Arabic RTL, and UI scale. Kept for future multi-theme extensibility
  * without exposing a theme switcher in v1.
  */

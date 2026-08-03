@@ -14,12 +14,18 @@ export function FormSection({
   ...props
 }: FormSectionProps): React.ReactElement {
   return (
-    <section className={cn('flex flex-col gap-4', className)} {...props}>
-      <header className="flex flex-col gap-1">
-        <h3 className="text-h3 text-foreground">{title}</h3>
-        {description ? <p className="text-body text-muted-foreground">{description}</p> : null}
-      </header>
+    <fieldset
+      className={cn(
+        'fieldset rounded-box border border-base-content/10 bg-base-300 p-5 shadow-sm',
+        className
+      )}
+      {...props}
+    >
+      <legend className="fieldset-legend px-1 text-h3 text-base-content">{title}</legend>
+      {description ? (
+        <p className="mb-4 text-body text-base-content/60">{description}</p>
+      ) : null}
       <div className="flex flex-col gap-4">{children}</div>
-    </section>
+    </fieldset>
   )
 }

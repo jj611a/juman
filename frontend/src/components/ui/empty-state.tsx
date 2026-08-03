@@ -23,18 +23,25 @@ export function EmptyState({
 }: EmptyStateProps): React.ReactElement {
   return (
     <div
-      className={cn('flex flex-col items-center justify-center gap-3 px-6 py-12 text-center', className)}
+      className={cn(
+        'flex flex-col items-center justify-center gap-4 px-8 py-16 text-center animate-juman-in',
+        className
+      )}
       {...props}
     >
       {illustration ?? (
-        <div className="flex size-12 items-center justify-center rounded-md border border-border bg-panel">
-          <Icon name={icon} size="md" className="text-muted-foreground" />
+        <div className="flex size-14 items-center justify-center rounded-box border border-base-content/10 bg-base-200 shadow-sm">
+          <Icon name={icon} size="md" className="text-primary" />
         </div>
       )}
-      <h3 className="text-title text-foreground">{title}</h3>
-      {description ? <p className="max-w-md text-body text-muted-foreground">{description}</p> : null}
+      <div className="space-y-2">
+        <h3 className="text-title text-base-content">{title}</h3>
+        {description ? (
+          <p className="mx-auto max-w-md text-body text-base-content/60">{description}</p>
+        ) : null}
+      </div>
       {(primaryAction || secondaryAction) && (
-        <div className="mt-2 flex flex-wrap items-center justify-center gap-2">
+        <div className="mt-1 flex flex-wrap items-center justify-center gap-2">
           {primaryAction}
           {secondaryAction}
         </div>

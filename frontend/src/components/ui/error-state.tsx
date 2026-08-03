@@ -29,26 +29,31 @@ export function ErrorState({
   return (
     <div
       role="alert"
-      className={cn('flex flex-col items-center justify-center gap-3 px-6 py-12 text-center', className)}
+      className={cn(
+        'flex flex-col items-center justify-center gap-4 px-8 py-16 text-center animate-juman-in',
+        className
+      )}
       {...props}
     >
-      <div className="flex size-12 items-center justify-center rounded-md border border-destructive/40 bg-destructive/10">
-        <Icon name="CircleAlert" size="md" className="text-destructive" />
+      <div className="alert alert-error max-w-md shadow-sm">
+        <Icon name="CircleAlert" size="md" className="shrink-0" />
+        <div className="text-start">
+          <h3 className="text-title font-semibold">{title}</h3>
+          <p className="mt-1 text-body opacity-90">{message}</p>
+          {errorCode ? (
+            <p className="mt-2 text-caption opacity-70" dir="ltr">
+              {errorCode}
+            </p>
+          ) : null}
+        </div>
       </div>
-      <h3 className="text-title text-foreground">{title}</h3>
-      <p className="max-w-md text-body text-muted-foreground">{message}</p>
-      {errorCode ? (
-        <p className="text-caption text-muted-foreground" dir="ltr">
-          {errorCode}
-        </p>
-      ) : null}
       {onRetry ? (
         <Button type="button" variant="secondary" onClick={onRetry}>
           {retryLabel}
         </Button>
       ) : null}
       {showDetails ? (
-        <pre className="mt-2 max-w-full overflow-auto rounded-md border border-border bg-panel p-3 text-start text-[11px] text-muted-foreground">
+        <pre className="mt-2 max-w-full overflow-auto rounded-box border border-base-content/10 bg-base-200 p-3 text-start text-[11px] text-base-content/60">
           {details}
         </pre>
       ) : null}

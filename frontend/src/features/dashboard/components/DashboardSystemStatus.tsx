@@ -31,13 +31,13 @@ export function DashboardSystemStatus(): React.ReactElement | null {
   const latestBackup = backups.data?.data?.[0]
 
   return (
-    <section aria-labelledby="dash-system-heading" className="space-y-3">
+    <section aria-labelledby="dash-system-heading" className="space-y-4">
       <div className="flex items-center justify-between gap-2">
-        <h2 id="dash-system-heading" className="text-title text-foreground">
+        <h2 id="dash-system-heading" className="text-title text-base-content">
           حالة النظام
         </h2>
         {canSystem ? (
-          <Link to="/system/status" className="text-caption text-brand hover:underline">
+          <Link to="/system/status" className="link link-hover text-caption text-primary">
             التفاصيل
           </Link>
         ) : null}
@@ -48,11 +48,11 @@ export function DashboardSystemStatus(): React.ReactElement | null {
         <ErrorState title="تعذر تحميل الحالة" message="تحقق من الاتصال ثم أعد المحاولة" onRetry={() => void health.refetch()} />
       ) : null}
 
-      <dl className="space-y-2 rounded-md border border-border p-3 text-sm">
+      <dl className="space-y-3 rounded-box border border-base-content/10 bg-base-300 p-4 text-sm shadow-sm">
         {canSystem && health.data ? (
           <>
             <div className="flex justify-between gap-2">
-              <dt className="text-muted-foreground">التطبيق</dt>
+              <dt className="text-base-content/55">التطبيق</dt>
               <dd>
                 <StatusBadge
                   tone={
@@ -67,8 +67,8 @@ export function DashboardSystemStatus(): React.ReactElement | null {
               </dd>
             </div>
             <div className="flex justify-between gap-2">
-              <dt className="text-muted-foreground">قاعدة البيانات</dt>
-              <dd className="text-foreground" dir="ltr">
+              <dt className="text-base-content/55">قاعدة البيانات</dt>
+              <dd className="text-base-content" dir="ltr">
                 {String(health.data.database)}
               </dd>
             </div>
@@ -77,8 +77,8 @@ export function DashboardSystemStatus(): React.ReactElement | null {
 
         {canSystem && version.data ? (
           <div className="flex justify-between gap-2">
-            <dt className="text-muted-foreground">الإصدار</dt>
-            <dd className="text-foreground" dir="ltr">
+            <dt className="text-base-content/55">الإصدار</dt>
+            <dd className="text-base-content" dir="ltr">
               {version.data.version}
               {version.data.api ? ` · API ${version.data.api}` : ''}
             </dd>
@@ -87,8 +87,8 @@ export function DashboardSystemStatus(): React.ReactElement | null {
 
         {canBackup ? (
           <div className="flex justify-between gap-2">
-            <dt className="text-muted-foreground">النسخ الاحتياطي</dt>
-            <dd className="text-foreground">
+            <dt className="text-base-content/55">النسخ الاحتياطي</dt>
+            <dd className="text-base-content">
               {backups.isError ? (
                 <InlineMessage variant="error">تعذر التحميل</InlineMessage>
               ) : latestBackup ? (
@@ -99,7 +99,7 @@ export function DashboardSystemStatus(): React.ReactElement | null {
                     : ''}
                 </span>
               ) : !backups.isLoading ? (
-                <span className="text-muted-foreground">لا توجد نسخ</span>
+                <span className="text-base-content/50">لا توجد نسخ</span>
               ) : null}
             </dd>
           </div>

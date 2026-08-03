@@ -1,10 +1,11 @@
 /**
- * Typed design-token registry for Juman v1.0 (juman-dark).
+ * Typed design-token registry for Juman v1.0 (daisyUI theme `juman`).
  * Source of truth for CSS variable names - keep in sync with styles/tokens.css.
+ * Alias `juman-dark` remains valid on document for backward compatibility.
  */
 
-export const THEME_ID = 'juman-dark' as const
-export type ThemeId = typeof THEME_ID
+export const THEME_ID = 'juman' as const
+export type ThemeId = typeof THEME_ID | 'juman-dark'
 
 export const THEME_MODE = 'dark' as const
 export type ThemeMode = typeof THEME_MODE
