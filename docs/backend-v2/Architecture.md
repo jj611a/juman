@@ -1,6 +1,6 @@
 # Backend V2 Architecture
 
-**Status:** Phase 4.3 Inventory Engineering Certification  
+**Status:** Phase 8.1 End-to-End System Certification (CONDITIONAL GO)  
 **Branch:** `backend-v2`  
 **Spec source:** `backend-python/` (read-only Python FastAPI stack)
 
@@ -20,8 +20,8 @@ SQLite → data/juman.db (WAL, foreign_keys, busy_timeout)
 
 - Desktop-first, single-machine, offline-first
 - Zero manual database configuration (no PostgreSQL)
-- Single installer packaging path (Electron + Nest sidecar) — Phase 8 (8.0 frontend compat done; packaging later)
-- Electron renderer adapts to Nest V2 via `frontend/src/services/v2` façade (ADR-V2-031) — no Python `/api/v1`
+- Single installer packaging path (Electron + Nest sidecar) — Phase 8 (8.0 façade + 8.1 E2E cert done; packaging later)
+- Electron renderer adapts to Nest V2 via `frontend/src/services/v2` façade (ADR-V2-031/032) — no Python `/api/v1`
 - Same business behavior as Python V1, reimplemented cleanly (not ported line-by-line)
 
 ## Runtime directories
@@ -163,3 +163,9 @@ Docs: `FinancialDesign.md`, `SettlementDesign.md`.
 ## Reporting engine (Phase 7.0)
 
 `ReportsModule` (`src/reports`) is **read-only**. It aggregates Inventory / Rental / Settlement / Finance via Prisma and never calls domain write services or recalculates settlement formulas. Export: CSV/JSON implemented; PDF/Excel adapters stubbed. Docs: `ReportingDesign.md`.
+
+## Desktop integration (Phase 8.0–8.1)
+
+- **8.0:** `frontend/src/services/v2` façade maps Nest camelCase to legacy UI envelopes; nav pruned for absent HTTP modules (ADR-V2-031).
+- **8.1:** Full E2E certification harness (`backend-node/scripts/cert-phase81-e2e.cjs`) + matrix/report under `docs/certification/`. Integration fixes limited to FE permissions/status bridging; Settlement formulas untouched (ADR-V2-032).
+- **Still deferred:** Nest sidecar packaging, settings HTTP, Nest-oriented diagnostics, hardware E2E, removing `legacyBridge`.

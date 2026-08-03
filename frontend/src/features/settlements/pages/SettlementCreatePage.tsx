@@ -10,14 +10,17 @@ import {
   TextInput,
   BusyIndicator
 } from '@/components/ui'
-import { usePermission } from '@/hooks/usePermission'
+import { useAnyPermission } from '@/hooks/usePermission'
 import { toAppError } from '@/lib/errors/appError'
 import type { RentalDto } from '@/services/domainTypes'
 import { useRentalsList } from '@/features/rentals/hooks'
 import { useCreateSettlement } from '../hooks'
 
 export default function SettlementCreatePage(): React.ReactElement {
-  const canCreate = usePermission('rental.settlement.create')
+  const canCreate = useAnyPermission([
+    'rental.settlement.create',
+    'finance.settlement.manage'
+  ])
   const navigate = useNavigate()
   const [selectedRentalId, setSelectedRentalId] = React.useState<string | null>(null)
   const [notes, setNotes] = React.useState('')

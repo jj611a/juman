@@ -12,7 +12,7 @@ import {
   SearchBar,
   TextInput
 } from '@/components/ui'
-import { usePermission } from '@/hooks/usePermission'
+import { useAnyPermission } from '@/hooks/usePermission'
 import { apiClient } from '@/services/apiClient'
 import { AvailabilityPreview } from '../components/AvailabilityPreview'
 import { WizardSteps } from '../components/WizardSteps'
@@ -29,8 +29,8 @@ type ItemDraft = {
 }
 
 export default function ReservationWizardPage(): React.ReactElement {
-  const canCreate = usePermission('reservation.create')
-  const canConfirm = usePermission('reservation.update')
+  const canCreate = useAnyPermission(['reservation.create', 'reservations.create'])
+  const canConfirm = useAnyPermission(['reservation.update', 'reservations.create'])
   const navigate = useNavigate()
   const [step, setStep] = React.useState(0)
   const [customerQ, setCustomerQ] = React.useState('')

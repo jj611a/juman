@@ -10,7 +10,7 @@ import {
   PageHeader,
   TextInput
 } from '@/components/ui'
-import { usePermission } from '@/hooks/usePermission'
+import { useAnyPermission } from '@/hooks/usePermission'
 import { useUnsavedChangesGuard } from '@/hooks/useUnsavedChangesGuard'
 import { AvailabilityPreview } from '../components/AvailabilityPreview'
 import { useReservation, useUpdateReservation } from '../hooks'
@@ -18,7 +18,7 @@ import { emptyToNull, toIsoDateTime } from '../schemas'
 
 export default function ReservationEditPage(): React.ReactElement {
   const { id } = useParams<{ id: string }>()
-  const canUpdate = usePermission('reservation.update')
+  const canUpdate = useAnyPermission(['reservation.update', 'reservations.create'])
   const navigate = useNavigate()
   const detail = useReservation(id)
   const updateMutation = useUpdateReservation(id ?? '')

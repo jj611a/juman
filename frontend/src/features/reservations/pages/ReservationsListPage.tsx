@@ -22,14 +22,14 @@ import {
   type DataSortingState,
   type FilterFieldDef
 } from '@/components/ui'
-import { usePermission } from '@/hooks/usePermission'
+import { useAnyPermission } from '@/hooks/usePermission'
 import { apiClient } from '@/services/apiClient'
 import type { ReservationDto } from '@/services/domainTypes'
 import { useCancelReservation, useConfirmReservation, useReservationsList } from '../hooks'
 import { RESERVATION_STATUS_MAP } from '../statusMap'
 
 export default function ReservationsListPage(): React.ReactElement {
-  const canView = usePermission('reservation.view')
+  const canView = useAnyPermission(['reservation.view', 'reservations.view'])
   const navigate = useNavigate()
   const [customerQ, setCustomerQ] = React.useState('')
   const [customerId, setCustomerId] = React.useState<string | undefined>()
@@ -177,7 +177,7 @@ export default function ReservationsListPage(): React.ReactElement {
         description="مسودات وتأكيدات حجز الفساتين"
         actions={
           <PageActions>
-            <PermissionGuard permission="reservation.create">
+            <PermissionGuard anyOf={['reservation.create', 'reservations.create']}>
               <Button type="button" onClick={() => void navigate('/reservations/new')}>
                 حجز جديد
               </Button>

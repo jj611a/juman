@@ -240,6 +240,65 @@ describe('v2 domain mappers', () => {
       notes: undefined,
       idempotencyKey: undefined
     })
+    expect(mapSettlementV2ToLegacy({ ...s, status: 'open' }).status).toBe('OPEN')
+    expect(mapSettlementV2ToLegacy({ ...s, status: 'partially_paid' }).status).toBe(
+      'PARTIALLY_PAID'
+    )
+    expect(mapSettlementV2ToLegacy({ ...s, status: 'cancelled' }).status).toBe('VOIDED')
+    expect(mapSettlementV2ToLegacy({ ...s, status: 'closed' }).status).toBe('PAID')
+  })
+
+  it('normalizes rental/reservation status case for StatusChip maps', () => {
+    const reservation = mapReservationV2ToLegacy({
+      id: 'r1',
+      reservationNumber: 'RSV-1',
+      customerId: 'c1',
+      startDate: '2026-01-01',
+      expectedCheckoutDate: '2026-01-02',
+      expectedReturnDate: '2026-01-05',
+      status: 'confirmed',
+      items: [],
+      createdAt: 'a',
+      updatedAt: 'b'
+    })
+    expect(reservation.status).toBe('CONFIRMED')
+    expect(
+      mapReservationV2ToLegacy({
+        ...{
+          id: 'r1',
+          reservationNumber: 'RSV-1',
+          customerId: 'c1',
+          startDate: '2026-01-01',
+          expectedCheckoutDate: '2026-01-02',
+          expectedReturnDate: '2026-01-05',
+          status: 'checked_out',
+          items: [],
+          createdAt: 'a',
+          updatedAt: 'b'
+        }
+      }).status
+    ).toBe('CONVERTED_TO_RENTAL')
+
+    expect(
+      mapRentalV2ToLegacy({
+        id: 'l1',
+        rentalNumber: 'RNT-1',
+        customerId: 'c1',
+        rentalDate: '2026-01-01',
+        expectedReturnDate: '2026-01-05',
+        status: 'return_pending',
+        items: [],
+        createdAt: 'a',
+        updatedAt: 'b'
+      }).status
+    ).toBe('RETURN_PENDING')
+  })
+
+  it('bridgeListQuery lowercases status for Nest validators', () => {
+    expect(bridgeListQuery({ status: 'OPEN' })?.status).toBe('open')
+    expect(bridgeListQuery({ status: 'PARTIALLY_PAID' })?.status).toBe('partially_paid')
+    expect(bridgeListQuery({ status: 'RETURN_PENDING' })?.status).toBe('return_pending')
+    expect(bridgeListQuery({ status: 'VOIDED' })?.status).toBe('cancelled')
   })
 
   it('maps dashboard and financial reports', () => {

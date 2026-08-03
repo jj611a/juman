@@ -19,7 +19,7 @@ import {
   TextInput,
   BusyIndicator
 } from '@/components/ui'
-import { usePermission } from '@/hooks/usePermission'
+import { useAnyPermission } from '@/hooks/usePermission'
 import { apiClient } from '@/services/apiClient'
 import type { RentalDto } from '@/services/domainTypes'
 import { WizardSteps } from '@/features/reservations/components/WizardSteps'
@@ -35,7 +35,7 @@ type ItemDraft = {
 }
 
 export default function RentalCheckoutPage(): React.ReactElement {
-  const canCreate = usePermission('rental.create')
+  const canCreate = useAnyPermission(['rental.create', 'rentals.create', 'rentals.checkout'])
   const navigate = useNavigate()
   const [params] = useSearchParams()
   const reservationId = params.get('reservationId')

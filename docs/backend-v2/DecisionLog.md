@@ -244,3 +244,11 @@
 - **Context:** Electron UI still spoke Python V1 shapes (`/api/v1`, snake_case envelopes, `/dresses`, `/rental-settlements`). Nest V2 is camelCase at root paths on `:8787`. Redesigning every screen is out of scope; installer packaging is deferred.
 - **Decision:** Keep UI layouts; introduce `frontend/src/services/v2/{contracts,legacyBridge,unsupported}.ts` and rewrite `apiClient` to call Nest paths while returning legacy envelopes. Hide nav entries without V2 HTTP (calendar, returns, processing, sales, users, roles, system). Prefer spawning/detecting `backend-node` over Python venv. Auth stays in SessionManager. PDF/Excel export buttons disabled; csv/json helpers call `/reports/export`.
 - **Consequences:** Ops domains (customers/items/reservations/rentals/settlements/reports/media/health) work against Nest. Unsupported modules throw `V2_UNSUPPORTED`. Docs: `frontend/docs/API_COMPATIBILITY_REPORT.md`, `FRONTEND_BACKEND_V2_COMPATIBILITY.md`. Packaging cutover remains later Phase 8/10 work.
+
+## ADR-V2-032 - Phase 8.1 end-to-end certification (no business redesign)
+
+- **Date:** 2026-08-03
+- **Status:** Accepted
+- **Context:** After Phase 8.0 façade, the product needed proof that Electron + Nest + Prisma + SQLite behave as one system. Certification found UI/backend mismatches (permission key families, status case, unsupported daily report blocking summary) without discovering Settlement formula bugs.
+- **Decision:** Certify via Nest HTTP harness (`cert-phase81-e2e.cjs`) + matrix/report under `docs/certification/`. Fix **only** integration/state/API-mapping bugs on the frontend (and façade). Do **not** change Settlement formulas, remove `legacyBridge`, redesign UI, or ship installer cutover. Accept WARNINGs for settings/hardware/diagnostics/packaging debt and scaled stress.
+- **Consequences:** **CONDITIONAL GO** (overall **84/100**) for Nest ops desktop path; **NO-GO** for store installer until Phase 8.2+. Wait for explicit approval before packaging/settings/hardware work.

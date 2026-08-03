@@ -10,16 +10,16 @@
 | 5 | Rental Engine | **5.1–5.4 DONE** |
 | 6 | Financial Engine | **6.1–6.6 DONE** — domain complete |
 | 7 | Reports & Analytics | **7.0 DONE** — reporting engine (read-only) |
-| 8 | Desktop Integration | **8.0 DONE** — frontend Nest compat façade (packaging later) |
+| 8 | Desktop Integration | **8.0–8.1 DONE** — compat façade + E2E cert (packaging later) |
 | 9 | Testing & Hardening | Parity suites |
 | 10 | Production & Installer | Cutover |
 
 ## Current milestone
 
-**Phase 8.0 Frontend↔Nest compatibility complete.**  
-Electron `apiClient` talks to Nest on `:8787` via `src/services/v2` façade (legacy envelopes preserved). Nav pruned for modules without V2 HTTP. Installer packaging / Nest sidecar bundling remains later Phase 8/10 work.
+**Phase 8.1 Full E2E system certification complete (CONDITIONAL GO, overall 84/100).**  
+Harness: 53 PASS / 6 WARNING / 0 FAIL. Settlement formula OK. Frontend integration bugs (permissions, status case, report daily block) fixed without backend rule changes. Artifacts: `docs/certification/PHASE_8_END_TO_END_{MATRIX,REPORT}.md`.
 
-**STOP:** Do **not** change Settlement formulas, redesign UI layouts, or cut over installer packaging until explicitly approved. Next: Phase 8 packaging / Phase 9 hardening on approval.
+**STOP:** Do **not** remove `legacyBridge`, redesign UI, change Settlement formulas, or cut over installer packaging until explicitly approved. Next: Phase 8.2 packaging / diagnostics Nest cutover / settings / hardware — on approval.
 
 ## Completion rule
 

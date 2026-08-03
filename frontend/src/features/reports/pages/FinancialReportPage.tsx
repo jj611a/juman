@@ -47,7 +47,8 @@ export default function FinancialReportPage(): React.ReactElement {
   const canView = usePermission('reports.financial.view')
   const { from, to, setFrom, setTo, params, isValid } = useReportDateRange()
   const summary = useFinancialSummaryReport(params, canView && isValid)
-  const daily = useFinancialDailyReport(params, canView && isValid)
+  // V2 exposes aggregate /reports/financial only — never call financial/daily.
+  const daily = useFinancialDailyReport(params, false)
 
   if (!canView) return <Navigate to="/forbidden" replace />
 
@@ -68,12 +69,10 @@ export default function FinancialReportPage(): React.ReactElement {
       >
         {!isValid ? (
           <EmptyState title="نطاق تاريخ غير صالح" />
-        ) : summary.isLoading || daily.isLoading ? (
+        ) : summary.isLoading ? (
           <BusyIndicator label="جاري التحميل…" />
         ) : summary.isError ? (
           <ErrorState title="تعذر تحميل الملخص المالي" onRetry={() => void summary.refetch()} />
-        ) : daily.isError ? (
-          <ErrorState title="تعذر تحميل financial/daily" onRetry={() => void daily.refetch()} />
         ) : summaryData ? (
           <div className="space-y-8">
             <Grid cols={3} gap={4}>
@@ -90,8 +89,21 @@ export default function FinancialReportPage(): React.ReactElement {
               <h3 className="text-title text-foreground">
                 financial/daily ({daily.data?.timezone ?? '—'}) — sparse days[]
               </h3>
-              {chartData.length === 0 ? (
-                <EmptyState title="لا أيام في days[]" description="لا zero-fill — عرض فقط ما يُرجعه الخادم." />
+              {!daily.isFetched ? (
+                <EmptyState
+                  title="التوزيع اليومي غير متاح في Backend V2"
+                  description="يُعرض الملخص الإجمالي أعلاه من /reports/financial."
+                />
+              ) : daily.isError ? (
+                <ErrorState
+                  title="تعذر تحميل financial/daily"
+                  onRetry={() => void daily.refetch()}
+                />
+              ) : chartData.length === 0 ? (
+                <EmptyState
+                  title="لا أيام في days[]"
+                  description="لا zero-fill — عرض فقط ما يُرجعه الخادم."
+                />
               ) : (
                 <>
                   <ReportLineChart

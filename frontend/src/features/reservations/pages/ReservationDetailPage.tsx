@@ -16,7 +16,7 @@ import {
   StatusChip,
   BusyIndicator
 } from '@/components/ui'
-import { usePermission } from '@/hooks/usePermission'
+import { useAnyPermission, usePermission } from '@/hooks/usePermission'
 import { apiClient } from '@/services/apiClient'
 import { AvailabilityPreview } from '../components/AvailabilityPreview'
 import {
@@ -31,7 +31,7 @@ import { RESERVATION_STATUS_MAP } from '../statusMap'
 export default function ReservationDetailPage(): React.ReactElement {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
-  const canView = usePermission('reservation.view')
+  const canView = useAnyPermission(['reservation.view', 'reservations.view'])
   const canAudit = usePermission('audit.view')
   const [cancelOpen, setCancelOpen] = React.useState(false)
   const [allAvailable, setAllAvailable] = React.useState<boolean | null>(null)
@@ -88,7 +88,7 @@ export default function ReservationDetailPage(): React.ReactElement {
             actions={
               <div className="flex flex-wrap gap-2">
                 {isDraft ? (
-                  <PermissionGuard permission="reservation.update">
+                  <PermissionGuard anyOf={['reservation.update', 'reservations.create']}>
                     <Button
                       type="button"
                       variant="secondary"
@@ -99,7 +99,7 @@ export default function ReservationDetailPage(): React.ReactElement {
                   </PermissionGuard>
                 ) : null}
                 {isDraft ? (
-                  <PermissionGuard permission="reservation.update">
+                  <PermissionGuard anyOf={['reservation.update', 'reservations.create']}>
                     <Button
                       type="button"
                       disabled={allAvailable === false || confirmMutation.isPending}
@@ -110,7 +110,9 @@ export default function ReservationDetailPage(): React.ReactElement {
                   </PermissionGuard>
                 ) : null}
                 {isConfirmed ? (
-                  <PermissionGuard permission="rental.create">
+                  <PermissionGuard
+                    anyOf={['rental.create', 'rentals.create', 'reservations.checkout']}
+                  >
                     <Button
                       type="button"
                       onClick={() => void navigate(`/rentals/new?reservationId=${id}`)}
@@ -120,7 +122,7 @@ export default function ReservationDetailPage(): React.ReactElement {
                   </PermissionGuard>
                 ) : null}
                 {isConfirmed ? (
-                  <PermissionGuard permission="reservation.update">
+                  <PermissionGuard anyOf={['reservation.update', 'reservations.expire']}>
                     <Button
                       type="button"
                       variant="outline"
@@ -132,7 +134,7 @@ export default function ReservationDetailPage(): React.ReactElement {
                   </PermissionGuard>
                 ) : null}
                 {isDraft || isConfirmed ? (
-                  <PermissionGuard permission="reservation.cancel">
+                  <PermissionGuard anyOf={['reservation.cancel', 'reservations.cancel']}>
                     <Button type="button" variant="danger" onClick={() => setCancelOpen(true)}>
                       إلغاء
                     </Button>

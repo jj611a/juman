@@ -24,7 +24,7 @@ import {
   type DataSortingState,
   type FilterFieldDef
 } from '@/components/ui'
-import { usePermission } from '@/hooks/usePermission'
+import { useAnyPermission } from '@/hooks/usePermission'
 import type { SettlementDto } from '@/services/domainTypes'
 import { useSettlementsList } from '../hooks'
 import { SETTLEMENT_STATUS_MAP } from '../statusMap'
@@ -57,7 +57,7 @@ function sortSettlements(rows: SettlementDto[], sorting: DataSortingState): Sett
 }
 
 export default function SettlementsListPage(): React.ReactElement {
-  const canView = usePermission('rental.settlement.view')
+  const canView = useAnyPermission(['rental.settlement.view', 'finance.settlement.view'])
   const navigate = useNavigate()
   const [viewPreset, setViewPreset] = React.useState<'all' | 'outstanding'>('all')
   const [rentalId, setRentalId] = React.useState('')
@@ -253,7 +253,9 @@ export default function SettlementsListPage(): React.ReactElement {
         description="التسوية المالية بعد الإرجاع والفحص"
         actions={
           <PageActions>
-            <PermissionGuard permission="rental.settlement.create">
+            <PermissionGuard
+              anyOf={['rental.settlement.create', 'finance.settlement.manage']}
+            >
               <Button type="button" onClick={() => void navigate('/settlements/new')}>
                 تسوية جديدة
               </Button>

@@ -136,6 +136,11 @@ export function bridgeListQuery(
       out.to = value
       continue
     }
+    if (key === 'status' && typeof value === 'string') {
+      // Nest validates lowercase enums (`open`, `return_pending`); UI sends UPPER_SNAKE.
+      out.status = statusQueryToV2(value)
+      continue
+    }
     out[key] = value
   }
   return Object.keys(out).length ? out : undefined
@@ -169,6 +174,48 @@ function iso(value: unknown): string {
 function isoOrNull(value: unknown): string | null {
   if (value == null || value === '') return null
   return iso(value)
+}
+
+/** Uppercase snake token: `partially_paid` / `PARTIALLY_PAID` → `PARTIALLY_PAID`. */
+function statusToken(status: unknown): string {
+  return String(status ?? '')
+    .trim()
+    .toUpperCase()
+    .replace(/-/g, '_')
+}
+
+/**
+ * Nest stores lowercase statuses; legacy UI maps/comparisons are UPPER_SNAKE.
+ * Alias only where legacy codes diverge from V2.
+ */
+const STATUS_QUERY_LEGACY_TO_V2: Record<string, string> = {
+  VOIDED: 'cancelled',
+  CONVERTED_TO_RENTAL: 'checked_out'
+}
+
+function statusQueryToV2(value: string): string {
+  const token = statusToken(value)
+  return STATUS_QUERY_LEGACY_TO_V2[token] ?? token.toLowerCase()
+}
+
+function mapSettlementStatusToLegacy(status: unknown): SettlementDto['status'] {
+  const s = statusToken(status)
+  if (s === 'PARTIALLY_PAID') return 'PARTIALLY_PAID'
+  if (s === 'PAID' || s === 'CLOSED') return 'PAID'
+  if (s === 'CANCELLED' || s === 'VOIDED') return 'VOIDED'
+  return 'OPEN'
+}
+
+function mapReservationStatusToLegacy(status: unknown): string {
+  const s = statusToken(status)
+  if (s === 'CHECKED_OUT' || s === 'COMPLETED' || s === 'CONVERTED_TO_RENTAL') {
+    return 'CONVERTED_TO_RENTAL'
+  }
+  return s || 'DRAFT'
+}
+
+function mapRentalStatusToLegacy(status: unknown): string {
+  return statusToken(status) || 'DRAFT'
 }
 
 // --- Customer ---
@@ -361,7 +408,7 @@ export function mapReservationV2ToLegacy(r: V2Reservation): ReservationDto {
     reservation_at: iso(r.startDate),
     rental_start_at: iso(r.expectedCheckoutDate || r.startDate),
     expected_return_at: iso(r.expectedReturnDate),
-    status: r.status,
+    status: mapReservationStatusToLegacy(r.status),
     notes: r.notes ?? null,
     items: (r.items ?? []).map((i) => ({
       id: i.id,
@@ -408,7 +455,7 @@ export function mapRentalV2ToLegacy(r: V2Rental): RentalDto {
     reservation_id: r.reservationId ?? null,
     rental_at: iso(r.rentalDate),
     expected_return_at: iso(r.expectedReturnDate),
-    status: r.status,
+    status: mapRentalStatusToLegacy(r.status),
     initial_payment_type: 'FIXED_AMOUNT',
     initial_payment_rate: null,
     initial_payment_value: 0,
@@ -473,7 +520,7 @@ export function mapSettlementV2ToLegacy(s: V2Settlement): SettlementDto {
     settlement_number: s.settlementNumber,
     rental_id: s.rentalId,
     return_id: '',
-    status: s.status as SettlementDto['status'],
+    status: mapSettlementStatusToLegacy(s.status),
     rental_charge_amount: s.chargeFils ?? 0,
     initial_payment_credit: s.depositFils ?? 0,
     late_penalty_amount: s.lateFeeFils ?? 0,
@@ -491,8 +538,8 @@ export function mapSettlementV2ToLegacy(s: V2Settlement): SettlementDto {
     adjustments: (s.adjustments ?? []).map((a) => ({
       id: a.id,
       settlement_id: s.id,
-      amount: a.amountFils,
-      reason: a.reason,
+      amount: a.amountFils ?? 0,
+      reason: a.reason ?? '',
       created_at: iso(a.createdAt),
       updated_at: iso(a.createdAt),
       created_by: null
@@ -506,8 +553,9 @@ export function mapSettlementPaymentBodyToV2(
   body: SettlementPaymentCreateBody | Record<string, unknown>
 ): Record<string, unknown> {
   const b = body as Record<string, unknown>
+  const amountRaw = b.amountFils ?? b.amount
   return {
-    amountFils: b.amountFils ?? b.amount,
+    amountFils: typeof amountRaw === 'number' ? amountRaw : Number(amountRaw),
     method: b.method ?? b.payment_method ?? 'CASH',
     notes: b.notes ?? undefined,
     idempotencyKey: b.idempotencyKey ?? undefined
@@ -518,8 +566,9 @@ export function mapSettlementAdjustmentBodyToV2(
   body: SettlementAdjustmentCreateBody | Record<string, unknown>
 ): Record<string, unknown> {
   const b = body as Record<string, unknown>
+  const amountRaw = b.amountFils ?? b.amount
   return {
-    amountFils: b.amountFils ?? b.amount,
+    amountFils: typeof amountRaw === 'number' ? amountRaw : Number(amountRaw),
     reason: b.reason,
     idempotencyKey: b.idempotencyKey ?? undefined
   }

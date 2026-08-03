@@ -1,0 +1,462 @@
+{
+  "phase": "8.1",
+  "title": "Full End-to-End System Certification",
+  "generatedAt": "2026-08-03T09:28:07.424Z",
+  "migrateMs": 7191,
+  "startupMs": 2064,
+  "memRssMbAfterBoot": 131,
+  "memRssMbAfterStress": 231,
+  "timings": {
+    "auth.wrong_password": 297,
+    "auth.login_bootstrap": 280,
+    "auth.change_password": 593,
+    "auth.relogin": 310,
+    "auth.session_bearer": 17,
+    "auth.session_refresh_header": 330,
+    "auth.me": 16,
+    "auth.unauthenticated": 7,
+    "customers.crud": 186,
+    "inventory.taxonomy_and_items": 733,
+    "reservations.flow": 276,
+    "rentals.walkin_checkout_return": 670,
+    "rentals.reservation_checkout": 90,
+    "reports.suite": 114,
+    "stress.bulk": 26056,
+    "auth.logout": 47
+  },
+  "cases": [
+    {
+      "id": "AUTH-01",
+      "area": "auth",
+      "result": "PASS",
+      "risk": "high",
+      "detail": "status=401"
+    },
+    {
+      "id": "AUTH-02",
+      "area": "auth",
+      "result": "PASS",
+      "risk": "critical",
+      "detail": "status=200 hasAccess=true"
+    },
+    {
+      "id": "AUTH-03",
+      "area": "auth",
+      "result": "PASS",
+      "risk": "high",
+      "detail": "perms=99"
+    },
+    {
+      "id": "AUTH-04",
+      "area": "auth",
+      "result": "PASS",
+      "risk": "high",
+      "detail": "status=200"
+    },
+    {
+      "id": "AUTH-05",
+      "area": "auth",
+      "result": "PASS",
+      "risk": "critical",
+      "detail": "status=200"
+    },
+    {
+      "id": "AUTH-06",
+      "area": "auth",
+      "result": "PASS",
+      "risk": "high",
+      "detail": "status=200"
+    },
+    {
+      "id": "AUTH-07",
+      "area": "auth",
+      "result": "PASS",
+      "risk": "high",
+      "detail": "status=200 hasTokens=true"
+    },
+    {
+      "id": "AUTH-08",
+      "area": "auth",
+      "result": "PASS",
+      "risk": "medium",
+      "detail": "status=200"
+    },
+    {
+      "id": "AUTH-09",
+      "area": "auth",
+      "result": "PASS",
+      "risk": "critical",
+      "detail": "status=401"
+    },
+    {
+      "id": "CUS-01",
+      "area": "customers",
+      "result": "PASS",
+      "risk": "critical",
+      "detail": "status=201"
+    },
+    {
+      "id": "CUS-02",
+      "area": "customers",
+      "result": "PASS",
+      "risk": "high",
+      "detail": "status=409"
+    },
+    {
+      "id": "CUS-03",
+      "area": "customers",
+      "result": "PASS",
+      "risk": "high",
+      "detail": "status=200"
+    },
+    {
+      "id": "CUS-04",
+      "area": "customers",
+      "result": "PASS",
+      "risk": "high",
+      "detail": "total=1"
+    },
+    {
+      "id": "CUS-05",
+      "area": "customers",
+      "result": "PASS",
+      "risk": "high",
+      "detail": "status=200"
+    },
+    {
+      "id": "CUS-06",
+      "area": "customers",
+      "result": "PASS",
+      "risk": "high",
+      "detail": "status=200"
+    },
+    {
+      "id": "INV-01",
+      "area": "inventory",
+      "result": "PASS",
+      "risk": "high",
+      "detail": "taxonomy created"
+    },
+    {
+      "id": "INV-02",
+      "area": "inventory",
+      "result": "PASS",
+      "risk": "critical",
+      "detail": "status=201 life=available"
+    },
+    {
+      "id": "INV-03",
+      "area": "inventory",
+      "result": "PASS",
+      "risk": "medium",
+      "detail": "total=2"
+    },
+    {
+      "id": "MED-01",
+      "area": "media",
+      "result": "PASS",
+      "risk": "high",
+      "detail": "status=201 msg="
+    },
+    {
+      "id": "MED-02",
+      "area": "media",
+      "result": "PASS",
+      "risk": "medium",
+      "detail": "status=201"
+    },
+    {
+      "id": "MED-03",
+      "area": "media",
+      "result": "PASS",
+      "risk": "medium",
+      "detail": "status=200"
+    },
+    {
+      "id": "MED-04",
+      "area": "media",
+      "result": "PASS",
+      "risk": "medium",
+      "detail": "status=200"
+    },
+    {
+      "id": "INV-04",
+      "area": "inventory",
+      "result": "PASS",
+      "risk": "medium",
+      "detail": "status=200"
+    },
+    {
+      "id": "INV-05",
+      "area": "inventory",
+      "result": "PASS",
+      "risk": "medium",
+      "detail": "status=200"
+    },
+    {
+      "id": "RES-01",
+      "area": "reservations",
+      "result": "PASS",
+      "risk": "critical",
+      "detail": "status=201 body=\"confirmed\""
+    },
+    {
+      "id": "RES-02",
+      "area": "reservations",
+      "result": "PASS",
+      "risk": "critical",
+      "detail": "status=409"
+    },
+    {
+      "id": "RES-03",
+      "area": "reservations",
+      "result": "PASS",
+      "risk": "high",
+      "detail": "status=200"
+    },
+    {
+      "id": "REN-01",
+      "area": "rentals",
+      "result": "PASS",
+      "risk": "critical",
+      "detail": "status=201"
+    },
+    {
+      "id": "REN-02",
+      "area": "rentals",
+      "result": "PASS",
+      "risk": "critical",
+      "detail": "status=200"
+    },
+    {
+      "id": "REN-03",
+      "area": "rentals",
+      "result": "PASS",
+      "risk": "high",
+      "detail": "idempotent status=200"
+    },
+    {
+      "id": "FIN-01",
+      "area": "finance",
+      "result": "PASS",
+      "risk": "critical",
+      "detail": "settlement=ac4b6c61-e682-4d97-89c9-252047a09ece"
+    },
+    {
+      "id": "FIN-02",
+      "area": "finance",
+      "result": "PASS",
+      "risk": "critical",
+      "detail": "total=6000 expected=6000"
+    },
+    {
+      "id": "FIN-03",
+      "area": "finance",
+      "result": "PASS",
+      "risk": "critical",
+      "detail": "status=200"
+    },
+    {
+      "id": "FIN-04",
+      "area": "finance",
+      "result": "PASS",
+      "risk": "high",
+      "detail": "status=200"
+    },
+    {
+      "id": "FIN-05",
+      "area": "finance",
+      "result": "PASS",
+      "risk": "high",
+      "detail": "status=200"
+    },
+    {
+      "id": "FIN-06",
+      "area": "finance",
+      "result": "PASS",
+      "risk": "high",
+      "detail": "status=200"
+    },
+    {
+      "id": "FIN-07",
+      "area": "finance",
+      "result": "PASS",
+      "risk": "critical",
+      "detail": "pay rem status=200"
+    },
+    {
+      "id": "FIN-08",
+      "area": "finance",
+      "result": "WARNING",
+      "risk": "medium",
+      "detail": "status=400"
+    },
+    {
+      "id": "REN-04",
+      "area": "rentals",
+      "result": "PASS",
+      "risk": "critical",
+      "detail": "status=200"
+    },
+    {
+      "id": "RES-04",
+      "area": "reservations",
+      "result": "PASS",
+      "risk": "critical",
+      "detail": "status=200"
+    },
+    {
+      "id": "RPT-01",
+      "area": "reports",
+      "result": "PASS",
+      "risk": "high",
+      "detail": "activeRentals=2"
+    },
+    {
+      "id": "RPT-02",
+      "area": "reports",
+      "result": "PASS",
+      "risk": "high",
+      "detail": "revenue=5975"
+    },
+    {
+      "id": "RPT-03",
+      "area": "reports",
+      "result": "PASS",
+      "risk": "medium",
+      "detail": "rows=2"
+    },
+    {
+      "id": "RPT-04",
+      "area": "reports",
+      "result": "PASS",
+      "risk": "medium",
+      "detail": "items=2"
+    },
+    {
+      "id": "RPT-05",
+      "area": "reports",
+      "result": "PASS",
+      "risk": "high",
+      "detail": "csv status=200"
+    },
+    {
+      "id": "RPT-06",
+      "area": "reports",
+      "result": "PASS",
+      "risk": "high",
+      "detail": "json status=200"
+    },
+    {
+      "id": "RPT-07",
+      "area": "reports",
+      "result": "PASS",
+      "risk": "low",
+      "detail": "pdf stub status=400"
+    },
+    {
+      "id": "RPT-08",
+      "area": "reports",
+      "result": "PASS",
+      "risk": "medium",
+      "detail": "status=200"
+    },
+    {
+      "id": "STR-01",
+      "area": "stress",
+      "result": "PASS",
+      "risk": "high",
+      "detail": "total=122 listMs=40"
+    },
+    {
+      "id": "STR-02",
+      "area": "stress",
+      "result": "PASS",
+      "risk": "high",
+      "detail": "rentalsOk=40/40"
+    },
+    {
+      "id": "STR-03",
+      "area": "stress",
+      "result": "PASS",
+      "risk": "medium",
+      "detail": "dashboardMs=19"
+    },
+    {
+      "id": "STR-04",
+      "area": "stress",
+      "result": "PASS",
+      "risk": "medium",
+      "detail": "rssBoot=131 rssAfter=231 delta=100"
+    },
+    {
+      "id": "AUTH-10",
+      "area": "auth",
+      "result": "PASS",
+      "risk": "high",
+      "detail": "status=200"
+    },
+    {
+      "id": "AUTH-11",
+      "area": "auth",
+      "result": "PASS",
+      "risk": "high",
+      "detail": "post-logout status=401"
+    },
+    {
+      "id": "ARCH-01",
+      "area": "architecture",
+      "result": "WARNING",
+      "risk": "medium",
+      "detail": "Nest responses camelCase; Electron façade maps to legacy envelopes (Phase 8.0)"
+    },
+    {
+      "id": "ARCH-02",
+      "area": "architecture",
+      "result": "WARNING",
+      "risk": "medium",
+      "detail": "Settings/Audit/Calendar/Users HTTP absent — nav pruned; not runtime failures"
+    },
+    {
+      "id": "ARCH-03",
+      "area": "architecture",
+      "result": "WARNING",
+      "risk": "high",
+      "detail": "Diagnostics UI still references PostgreSQL/Python — packaging debt"
+    },
+    {
+      "id": "HW-01",
+      "area": "hardware",
+      "result": "WARNING",
+      "risk": "medium",
+      "detail": "Hardware paths are local IPC — not exercised in Nest HTTP harness"
+    },
+    {
+      "id": "SET-01",
+      "area": "settings",
+      "result": "WARNING",
+      "risk": "medium",
+      "detail": "No Nest settings HTTP — V2_UNSUPPORTED in frontend"
+    }
+  ],
+  "stress": {
+    "customersMs": 4106,
+    "customers": 80,
+    "itemsMs": 13130,
+    "items": 120,
+    "listItemsMs": 40,
+    "rentalsMs": 8761,
+    "rentalsOk": 40,
+    "dashboardMs": 19
+  },
+  "formula": {
+    "chargeFils": 7000,
+    "depositFils": 1000,
+    "totalFils": 6000,
+    "remainingFils": 6000,
+    "expectedTotal": 6000,
+    "expectedRem": 6000,
+    "ok": true
+  },
+  "errors": []
+}

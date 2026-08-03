@@ -1,7 +1,7 @@
 # Backend V2 Progress Canvas
 
-**Live canvas:** `juman-backend-v2-roadmap.canvas.tsx`  
-**Branch:** `backend-v2` — **Updated:** 2026-08-03 — **Overall ~93%**
+**Live canvas:** Cursor canvases `phase-81-e2e-certification.canvas.tsx` (cert summary)  
+**Branch:** `backend-v2` — **Updated:** 2026-08-03 — **Overall ~94%**
 
 ```
 Phase 0  Architecture                    DONE
@@ -14,9 +14,10 @@ Phase 6  Financial                       DONE (6.1–6.6)
 Phase 7  Reports
          7.0 Reporting engine            DONE (read-only)
 Phase 8  Desktop Integration
-         8.0 Frontend↔Nest compat        DONE (façade; packaging later)
+         8.0 Frontend↔Nest compat        DONE (façade)
+         8.1 E2E system certification    DONE (CONDITIONAL GO; 84/100)
 Phase 9+ Hardening / Production          WAITING
 ```
 
-**YOU ARE HERE:** Phase 8.0 frontend compatibility migration complete (Electron → Nest V2 via façade).  
-**Next:** Remaining Phase 8 sidecar/packaging work + Phase 9 hardening — only after explicit approval. Do not change Settlement formulas.
+**YOU ARE HERE:** Phase 8.1 full end-to-end certification complete — **CONDITIONAL GO** (Nest ops path).  
+**Next:** Phase 8.2 packaging / diagnostics / settings / hardware — only after explicit approval. Do not change Settlement formulas. Do not remove `legacyBridge`.

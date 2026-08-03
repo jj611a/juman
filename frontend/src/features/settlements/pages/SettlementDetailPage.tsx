@@ -22,7 +22,7 @@ import {
   TextInput,
   BusyIndicator
 } from '@/components/ui'
-import { usePermission } from '@/hooks/usePermission'
+import { useAnyPermission, usePermission } from '@/hooks/usePermission'
 import { toAppError } from '@/lib/errors/appError'
 import { apiClient } from '@/services/apiClient'
 import type { SettlementPaymentMethod } from '@/services/domainTypes'
@@ -51,11 +51,18 @@ const PAYMENT_METHOD_LABELS: Record<SettlementPaymentMethod, string> = {
 export default function SettlementDetailPage(): React.ReactElement {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
-  const canView = usePermission('rental.settlement.view')
-  const canCollect = usePermission('rental.settlement.collect')
-  const canAdjust = usePermission('rental.settlement.adjust')
+  const canView = useAnyPermission(['rental.settlement.view', 'finance.settlement.view'])
+  const canCollect = useAnyPermission([
+    'rental.settlement.collect',
+    'finance.settlement.manage'
+  ])
+  const canAdjust = useAnyPermission([
+    'rental.settlement.adjust',
+    'finance.adjustment',
+    'finance.settlement.manage'
+  ])
   const canAudit = usePermission('audit.view')
-  const canViewRental = usePermission('rental.view')
+  const canViewRental = useAnyPermission(['rental.view', 'rentals.view'])
 
   const [payAmount, setPayAmount] = React.useState<number | null>(null)
   const [payMethod, setPayMethod] = React.useState<SettlementPaymentMethod>('CASH')
@@ -64,7 +71,8 @@ export default function SettlementDetailPage(): React.ReactElement {
 
   const detail = useSettlement(id)
   const settlement = detail.data?.data
-  const isClosed = settlement?.status === 'PAID' || settlement?.status === 'VOIDED'
+  const closedStatuses = new Set(['PAID', 'VOIDED', 'CLOSED', 'CANCELLED'])
+  const isClosed = settlement ? closedStatuses.has(String(settlement.status).toUpperCase()) : false
 
   const collectMutation = useCollectSettlementPayment(id ?? '', settlement?.rental_id)
   const adjustMutation = useAdjustSettlement(id ?? '', settlement?.rental_id)
@@ -218,7 +226,9 @@ export default function SettlementDetailPage(): React.ReactElement {
                 )}
               </section>
 
-              <PermissionGuard permission="rental.settlement.collect">
+              <PermissionGuard
+                anyOf={['rental.settlement.collect', 'finance.settlement.manage']}
+              >
                 <section className="space-y-3 rounded-md border border-border p-4">
                   <h3 className="text-title text-foreground">تحصيل دفعة</h3>
                   {isClosed ? (
@@ -282,7 +292,13 @@ export default function SettlementDetailPage(): React.ReactElement {
                 </section>
               </PermissionGuard>
 
-              <PermissionGuard permission="rental.settlement.adjust">
+              <PermissionGuard
+                anyOf={[
+                  'rental.settlement.adjust',
+                  'finance.adjustment',
+                  'finance.settlement.manage'
+                ]}
+              >
                 <section className="space-y-3 rounded-md border border-border p-4">
                   <h3 className="text-title text-foreground">تعديل يدوي</h3>
                   {isClosed ? (

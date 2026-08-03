@@ -16,7 +16,7 @@ import {
   TextInput,
   BusyIndicator
 } from '@/components/ui'
-import { usePermission } from '@/hooks/usePermission'
+import { useAnyPermission, usePermission } from '@/hooks/usePermission'
 import { apiClient } from '@/services/apiClient'
 import { useRental, useRentalAudit, useUpdateRental } from '../hooks'
 import { RENTAL_STATUS_MAP } from '../statusMap'
@@ -24,9 +24,9 @@ import { RENTAL_STATUS_MAP } from '../statusMap'
 export default function RentalDetailPage(): React.ReactElement {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
-  const canView = usePermission('rental.view')
+  const canView = useAnyPermission(['rental.view', 'rentals.view'])
   const canAudit = usePermission('audit.view')
-  const canUpdate = usePermission('rental.update')
+  const canUpdate = useAnyPermission(['rental.update', 'rentals.checkout'])
   const [notes, setNotes] = React.useState('')
   const [editingNotes, setEditingNotes] = React.useState(false)
 
@@ -66,7 +66,7 @@ export default function RentalDetailPage(): React.ReactElement {
             actions={
               <div className="flex flex-wrap gap-2">
                 {rental.reservation_id ? (
-                  <PermissionGuard permission="reservation.view">
+                  <PermissionGuard anyOf={['reservation.view', 'reservations.view']}>
                     <Button
                       type="button"
                       variant="outline"
@@ -136,7 +136,8 @@ export default function RentalDetailPage(): React.ReactElement {
 
               <section className="space-y-3">
                 <h3 className="text-title text-foreground">ملاحظات</h3>
-                {canUpdate && rental.status === 'ACTIVE' ? (
+                {canUpdate &&
+                (rental.status === 'ACTIVE' || rental.status === 'CHECKED_OUT') ? (
                   editingNotes ? (
                     <div className="space-y-2">
                       <TextInput

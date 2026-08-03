@@ -22,14 +22,14 @@ import {
   type DataSortingState,
   type FilterFieldDef
 } from '@/components/ui'
-import { usePermission } from '@/hooks/usePermission'
+import { useAnyPermission } from '@/hooks/usePermission'
 import { apiClient } from '@/services/apiClient'
 import type { RentalDto } from '@/services/domainTypes'
 import { useRentalsList } from '../hooks'
 import { RENTAL_STATUS_MAP } from '../statusMap'
 
 export default function RentalsListPage(): React.ReactElement {
-  const canView = usePermission('rental.view')
+  const canView = useAnyPermission(['rental.view', 'rentals.view'])
   const navigate = useNavigate()
   const [customerQ, setCustomerQ] = React.useState('')
   const [customerId, setCustomerId] = React.useState<string | undefined>()
@@ -157,7 +157,7 @@ export default function RentalsListPage(): React.ReactElement {
         description="تسليم الفساتين والمدفوعات الأولية"
         actions={
           <PageActions>
-            <PermissionGuard permission="rental.create">
+            <PermissionGuard anyOf={['rental.create', 'rentals.create', 'rentals.checkout']}>
               <Button type="button" onClick={() => void navigate('/rentals/new')}>
                 تأجير جديد
               </Button>
