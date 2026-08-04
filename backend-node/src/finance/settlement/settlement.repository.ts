@@ -33,6 +33,14 @@ export const settlementInclude = {
       customerId: true,
     },
   },
+  sale: {
+    select: {
+      id: true,
+      saleNumber: true,
+      status: true,
+      customerId: true,
+    },
+  },
   account: {
     select: {
       id: true,
@@ -92,7 +100,42 @@ export class SettlementRepository {
   ): Promise<SettlementWithRelations | null> {
     const client = tx ?? this.prisma;
     return client.rentalSettlement.findFirst({
-      where: { rentalId, deletedAt: null },
+      where: {
+        deletedAt: null,
+        OR: [
+          { rentalId },
+          { entityType: 'rental', entityId: rentalId },
+        ],
+      },
+      include: settlementInclude,
+    });
+  }
+
+  findByEntity(
+    entityType: string,
+    entityId: string,
+    tx?: Prisma.TransactionClient,
+  ): Promise<SettlementWithRelations | null> {
+    const client = tx ?? this.prisma;
+    return client.rentalSettlement.findFirst({
+      where: { entityType, entityId, deletedAt: null },
+      include: settlementInclude,
+    });
+  }
+
+  findBySaleId(
+    saleId: string,
+    tx?: Prisma.TransactionClient,
+  ): Promise<SettlementWithRelations | null> {
+    const client = tx ?? this.prisma;
+    return client.rentalSettlement.findFirst({
+      where: {
+        deletedAt: null,
+        OR: [
+          { saleId },
+          { entityType: 'sale', entityId: saleId },
+        ],
+      },
       include: settlementInclude,
     });
   }

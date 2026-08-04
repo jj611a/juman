@@ -66,6 +66,8 @@ export type CreateChargeInput = {
   description?: string | null;
   /** Optional client idempotency key (scope finance.charge). */
   idempotencyKey?: string | null;
+  /** Defaults to rental_charge for back-compat; sales must pass sale_charge. */
+  chargeType?: typeof FINANCIAL_TX_TYPE.RENTAL_CHARGE | typeof FINANCIAL_TX_TYPE.SALE_CHARGE;
 };
 
 export type RegisterDepositInput = {
@@ -249,8 +251,11 @@ export class FinanceService {
     );
     if (began.kind === 'replay') return began.response;
 
+    const chargeType =
+      input.chargeType ?? FINANCIAL_TX_TYPE.RENTAL_CHARGE;
+
     const existing = await this.repo.findPostedByReference(
-      FINANCIAL_TX_TYPE.RENTAL_CHARGE,
+      chargeType,
       input.referenceType,
       input.referenceId,
       tx,
@@ -272,13 +277,13 @@ export class FinanceService {
 
     const txn = await this.repo.createTransaction(tx, {
       accountId: account.id,
-      type: FINANCIAL_TX_TYPE.RENTAL_CHARGE,
+      type: chargeType,
       amountFils: money.amountFils,
       status: FINANCIAL_TX_STATUS.POSTED,
       referenceType: input.referenceType,
       referenceId: input.referenceId,
       settlementId: input.settlementId ?? null,
-      description: input.description?.trim() || 'rental_charge',
+      description: input.description?.trim() || chargeType,
       createdBy: actor?.userId ?? null,
       updatedBy: actor?.userId ?? null,
     });
@@ -551,11 +556,16 @@ export class FinanceService {
     dto: CreatePaymentDto,
     paymentNumber: string,
     actor?: AuthPrincipal,
+    options?: {
+      ledgerType?: typeof FINANCIAL_TX_TYPE.PAYMENT | typeof FINANCIAL_TX_TYPE.SALE_PAYMENT;
+    },
   ) {
     const money = Money.ofNonNegativeFils(dto.amountFils);
     if (money.isZero()) {
       throw BusinessException.validation('Payment amount must be greater than zero');
     }
+
+    const ledgerType = options?.ledgerType ?? FINANCIAL_TX_TYPE.PAYMENT;
 
     const account = await tx.financialAccount.findFirst({
       where: { id: dto.accountId, deletedAt: null },
@@ -582,13 +592,13 @@ export class FinanceService {
 
     const txn = await this.repo.createTransaction(tx, {
       accountId: account.id,
-      type: FINANCIAL_TX_TYPE.PAYMENT,
+      type: ledgerType,
       amountFils: money.amountFils,
       status: FINANCIAL_TX_STATUS.POSTED,
       referenceType: 'payment',
       referenceId: pending.id,
       settlementId: dto.settlementId ?? null,
-      description: 'payment',
+      description: ledgerType,
       createdBy: actor?.userId ?? null,
       updatedBy: actor?.userId ?? null,
     });
@@ -682,7 +692,11 @@ export class FinanceService {
         settlementId,
         status: FINANCIAL_TX_STATUS.POSTED,
         type: {
-          in: [FINANCIAL_TX_TYPE.RENTAL_CHARGE, FINANCIAL_TX_TYPE.DEPOSIT],
+          in: [
+            FINANCIAL_TX_TYPE.RENTAL_CHARGE,
+            FINANCIAL_TX_TYPE.DEPOSIT,
+            FINANCIAL_TX_TYPE.SALE_CHARGE,
+          ],
         },
       },
     });

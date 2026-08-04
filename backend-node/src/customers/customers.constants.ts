@@ -44,6 +44,11 @@ export const CUSTOMER_DEFAULT_PREFIX = 'CUS';
 export const CUSTOMER_DEFAULT_SEPARATOR = '-';
 export const CUSTOMER_DEFAULT_PADDING = 8;
 
+/** System Walk-in customer (Phase 6.7) — anonymous sales settle here. */
+export const WALK_IN_CUSTOMER_NUMBER = 'WALK-IN';
+export const WALK_IN_CUSTOMER_PHONE = '07000000000';
+export const WALK_IN_CUSTOMER_NAME = 'عميل نقدي (Walk-in)';
+
 export const CUSTOMER_NAME_MAX = 200;
 export const CUSTOMER_PHONE_MAX = 50;
 export const CUSTOMER_ADDRESS_MAX = 500;

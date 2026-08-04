@@ -310,6 +310,7 @@ model Customer {
 
   rentals Rental[]
   reservations Reservation[]
+  sales Sale[]
   financialAccounts FinancialAccount[]
 
   @@index([fullName])
@@ -443,6 +444,7 @@ model Item {
   stateHistory ItemStateHistory[]
   rentalItems RentalItem[]
   reservationItems ReservationItem[]
+  saleItems SaleItem[]
 
   @@index([displayName])
   @@index([internalCode])
@@ -787,14 +789,21 @@ model FinancialAudit {
   @@index([createdAt])
 }
 
-/// Per-rental financial obligation tracker (Phase 6.2+). SettlementService alone decides completion.
+/// Polymorphic financial obligation tracker (Phase 6.2+ / 6.7). SettlementService alone decides completion.
+/// entityType+entityId is source of truth; rentalId kept for rental back-compat (nullable for sales).
 model RentalSettlement {
   id               String    @id @default(uuid())
   settlementNumber String    @unique
-  rentalId         String    @unique
+  /// rental | sale
+  entityType       String    @default("rental")
+  entityId         String
+  /// Legacy FK — set when entityType=rental; null for sales.
+  rentalId         String?   @unique
+  /// Convenience FK when entityType=sale; null for rentals.
+  saleId           String?   @unique
   accountId        String
   customerId       String
-  /// Gross rental charge (fils) before deposit / modifiers.
+  /// Gross charge (fils) before deposit / modifiers.
   chargeFils       Int       @default(0)
   /// Deposit applied at checkout — reduces effective charges (not a Payment).
   depositFils      Int       @default(0)
@@ -822,7 +831,8 @@ model RentalSettlement {
   updatedBy        String?
   deletedBy        String?
 
-  rental       Rental                  @relation(fields: [rentalId], references: [id])
+  rental       Rental?                 @relation(fields: [rentalId], references: [id])
+  sale         Sale?                   @relation(fields: [saleId], references: [id])
   account      FinancialAccount        @relation(fields: [accountId], references: [id])
   history      SettlementHistory[]
   transactions FinancialTransaction[]
@@ -832,14 +842,94 @@ model RentalSettlement {
   discounts    SettlementDiscount[]
   lateFees     SettlementLateFee[]
 
+  @@unique([entityType, entityId])
   @@index([settlementNumber])
+  @@index([entityType, entityId])
   @@index([rentalId])
+  @@index([saleId])
   @@index([accountId])
   @@index([customerId])
   @@index([status])
   @@index([deletedAt])
   @@index([createdAt])
   @@index([status, deletedAt])
+}
+
+/// Permanent sale document (Phase 6.7) — inventory sold via LifecycleService; money via Settlement.
+model Sale {
+  id           String    @id @default(uuid())
+  saleNumber   String    @unique
+  /// Null = Walk-in system customer at finance time.
+  customerId   String?
+  status       String    @default("draft")
+  subtotalFils Int       @default(0)
+  discountFils Int       @default(0)
+  taxFils      Int       @default(0)
+  totalFils    Int       @default(0)
+  notes        String?
+  completedAt  DateTime?
+  deletedAt    DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  createdBy    String?
+  updatedBy    String?
+  deletedBy    String?
+
+  customer   Customer?     @relation(fields: [customerId], references: [id])
+  items      SaleItem[]
+  history    SaleHistory[]
+  settlement RentalSettlement?
+
+  @@index([saleNumber])
+  @@index([customerId])
+  @@index([status])
+  @@index([deletedAt])
+  @@index([createdAt])
+  @@index([completedAt])
+  @@index([status, deletedAt])
+}
+
+model SaleItem {
+  id               String   @id @default(uuid())
+  saleId           String
+  itemId           String
+  priceFils        Int      @default(0)
+  discountFils     Int      @default(0)
+  /// Future-proof; Phase 6.7 enforces quantity = 1 (one physical Item).
+  quantity         Int      @default(1)
+  totalFils        Int      @default(0)
+  barcodeSnapshot  String?
+  itemNameSnapshot String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  createdBy        String?
+
+  sale Sale @relation(fields: [saleId], references: [id])
+  item Item @relation(fields: [itemId], references: [id])
+
+  @@unique([saleId, itemId])
+  @@index([saleId])
+  @@index([itemId])
+  @@index([barcodeSnapshot])
+}
+
+model SaleHistory {
+  id        String   @id @default(uuid())
+  saleId    String
+  oldStatus String
+  newStatus String
+  action    String
+  reason    String?
+  userId    String?
+  username  String?
+  createdAt DateTime @default(now())
+
+  sale Sale @relation(fields: [saleId], references: [id])
+
+  @@index([saleId])
+  @@index([action])
+  @@index([newStatus])
+  @@index([createdAt])
 }
 
 /// Append-only settlement status / payment / modifier history.

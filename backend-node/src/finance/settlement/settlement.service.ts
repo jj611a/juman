@@ -10,7 +10,7 @@ import {
 import { normalizeSearchQuery } from '../../shared/search/search';
 import { normalizeSort } from '../../shared/sorting/sorting';
 import type { AuthPrincipal } from '../../shared/types';
-import { FINANCE_CURRENCY, FINANCE_MODULE } from '../finance.constants';
+import { FINANCE_CURRENCY, FINANCE_MODULE, FINANCIAL_TX_TYPE, SETTLEMENT_ENTITY_TYPE, type SettlementEntityType } from '../finance.constants';
 import { FinanceService } from '../finance.service';
 import { Money } from '../money/money.value';
 import type {
@@ -44,6 +44,7 @@ import {
   statusAfterPayment,
 } from './settlement.rules';
 import { decideRentalCancelFinance } from './rental-cancel.policy';
+import { decideSaleCancelFinance } from './sale-cancel.policy';
 import { SettlementModifierService } from './settlement-modifier.service';
 import { assertSettlementBalanceInvariant } from './settlement.integrity';
 import {
@@ -68,6 +69,14 @@ export type CreateSettlementInput = {
   /** Gross charge before deposit. */
   chargeFils: number;
   /** Deposit already registered on the ledger (reduces settlement total). */
+  depositFils?: number;
+};
+
+export type CreateEntitySettlementInput = {
+  entityType: SettlementEntityType;
+  entityId: string;
+  customerId: string;
+  chargeFils: number;
   depositFils?: number;
 };
 
@@ -126,6 +135,7 @@ export class SettlementService {
   /**
    * Create settlement after rental checkout charges/deposits.
    * Idempotent per rentalId. Prefer createForRentalInTx inside checkout TX.
+   * Façade over polymorphic createForEntityInTx.
    */
   async createForRental(input: CreateSettlementInput, actor?: AuthPrincipal) {
     const existing = await this.repo.findByRentalId(input.rentalId);
@@ -156,7 +166,29 @@ export class SettlementService {
     input: CreateSettlementInput,
     actor?: AuthPrincipal,
   ) {
-    const existing = await this.repo.findByRentalId(input.rentalId, tx);
+    return this.createForEntityInTx(
+      tx,
+      {
+        entityType: SETTLEMENT_ENTITY_TYPE.RENTAL,
+        entityId: input.rentalId,
+        customerId: input.customerId,
+        chargeFils: input.chargeFils,
+        depositFils: input.depositFils,
+      },
+      actor,
+    );
+  }
+
+  async createForEntityInTx(
+    tx: Prisma.TransactionClient,
+    input: CreateEntitySettlementInput,
+    actor?: AuthPrincipal,
+  ) {
+    const existing = await this.repo.findByEntity(
+      input.entityType,
+      input.entityId,
+      tx,
+    );
     if (existing) return toSettlementPublic(existing);
 
     const charge = Money.ofNonNegativeFils(input.chargeFils);
@@ -181,11 +213,17 @@ export class SettlementService {
     const settlementNumber = await this.allocateNumber(tx);
     const initialStatus = balances.status;
 
+    const isRental = input.entityType === SETTLEMENT_ENTITY_TYPE.RENTAL;
+    const isSale = input.entityType === SETTLEMENT_ENTITY_TYPE.SALE;
+
     const row = await this.repo.create(
       tx,
       {
         settlementNumber,
-        rentalId: input.rentalId,
+        entityType: input.entityType,
+        entityId: input.entityId,
+        rentalId: isRental ? input.entityId : null,
+        saleId: isSale ? input.entityId : null,
         accountId: account.id,
         customerId: input.customerId,
         chargeFils: charge.amountFils,
@@ -206,7 +244,7 @@ export class SettlementService {
         oldStatus: SETTLEMENT_STATUS.OPEN,
         newStatus: initialStatus,
         action: SETTLEMENT_ACTION.CREATED,
-        reason: 'checkout',
+        reason: isSale ? 'sale_confirm' : 'checkout',
         userId: actor?.userId ?? null,
         username: actor?.username ?? null,
       },
@@ -214,6 +252,154 @@ export class SettlementService {
 
     assertSettlementBalanceInvariant(row);
     return toSettlementPublic(row);
+  }
+
+  /**
+   * Move settlement to another customer's financial account before completion.
+   * Used when cashier assigns a real customer to a Walk-in sale.
+   */
+  async reassignCustomerInTx(
+    tx: Prisma.TransactionClient,
+    settlementId: string,
+    customerId: string,
+    actor?: AuthPrincipal,
+  ) {
+    const live = await tx.rentalSettlement.findFirst({
+      where: { id: settlementId, deletedAt: null },
+    });
+    if (!live) {
+      throw BusinessException.notFound('Settlement not found');
+    }
+    if (
+      live.status === SETTLEMENT_STATUS.CANCELLED ||
+      live.status === SETTLEMENT_STATUS.CLOSED
+    ) {
+      throw BusinessException.conflict(
+        'Cannot reassign customer on cancelled/closed settlement',
+      );
+    }
+    if (live.customerId === customerId) {
+      return this.repo.findById(settlementId);
+    }
+
+    const account = await this.finance.ensureAccountForCustomerInTx(
+      tx,
+      customerId,
+      actor,
+    );
+
+    // Move posted obligation ledger rows to the new account.
+    await tx.financialTransaction.updateMany({
+      where: {
+        settlementId,
+        status: { in: ['posted', 'pending'] },
+      },
+      data: {
+        accountId: account.id,
+        updatedBy: actor?.userId ?? null,
+      },
+    });
+
+    await tx.rentalSettlement.update({
+      where: { id: settlementId },
+      data: {
+        customerId,
+        accountId: account.id,
+        updatedBy: actor?.userId ?? null,
+      },
+    });
+
+    await tx.settlementHistory.create({
+      data: {
+        settlementId,
+        oldStatus: live.status,
+        newStatus: live.status,
+        action: 'customer_reassigned',
+        reason: `customer:${live.customerId}→${customerId}`,
+        userId: actor?.userId ?? null,
+        username: actor?.username ?? null,
+      },
+    });
+
+    return tx.rentalSettlement.findFirst({
+      where: { id: settlementId, deletedAt: null },
+      include: {
+        history: { orderBy: { createdAt: 'desc' as const }, take: 50 },
+        refunds: { where: { deletedAt: null, status: 'posted' }, take: 50 },
+        adjustments: { where: { deletedAt: null, status: 'posted' }, take: 50 },
+        discounts: { where: { deletedAt: null, status: 'posted' }, take: 50 },
+        lateFees: { where: { deletedAt: null, status: 'posted' }, take: 50 },
+        rental: {
+          select: {
+            id: true,
+            rentalNumber: true,
+            status: true,
+            customerId: true,
+          },
+        },
+        sale: {
+          select: {
+            id: true,
+            saleNumber: true,
+            status: true,
+            customerId: true,
+          },
+        },
+        account: {
+          select: {
+            id: true,
+            accountNumber: true,
+            customerId: true,
+            status: true,
+          },
+        },
+      },
+    });
+  }
+
+  async applySaleCancelPolicyInTx(
+    tx: Prisma.TransactionClient,
+    saleId: string,
+    reason?: string,
+    actor?: AuthPrincipal,
+  ) {
+    const settlement = await this.repo.findBySaleId(saleId, tx);
+    const decision = decideSaleCancelFinance(settlement);
+    if (decision.kind === 'none' || decision.kind === 'already_cancelled') {
+      return decision;
+    }
+    if (decision.kind !== 'cancel_open_unpaid') return decision;
+
+    await this.finance.voidSettlementObligationLedgerInTx(
+      tx,
+      decision.settlementId,
+      actor,
+    );
+
+    const from = settlement!.status as SettlementStatus;
+    const updated = await this.repo.transitionStatus(tx, {
+      settlementId: decision.settlementId,
+      from,
+      to: SETTLEMENT_STATUS.CANCELLED,
+      action: SETTLEMENT_ACTION.CANCELLED,
+      reason: reason?.trim() || 'sale_cancelled',
+      userId: actor?.userId ?? null,
+      username: actor?.username ?? null,
+      extra: { cancelledAt: new Date() },
+    });
+    if (!updated) {
+      throw BusinessException.conflict('Concurrent settlement cancel rejected');
+    }
+    return { kind: 'cancel_open_unpaid' as const, settlement: updated };
+  }
+
+  findBySaleId(saleId: string, tx?: Prisma.TransactionClient) {
+    return this.repo.findBySaleId(saleId, tx);
+  }
+
+  /** Exposed for nested TX payment CAS from SalesTransactionService. */
+  get settlementRepo() {
+    return this.repo;
   }
 
   /**
@@ -333,6 +519,12 @@ export class SettlementService {
         },
         paymentNumber,
         actor,
+        {
+          ledgerType:
+            live.entityType === SETTLEMENT_ENTITY_TYPE.SALE
+              ? FINANCIAL_TX_TYPE.SALE_PAYMENT
+              : FINANCIAL_TX_TYPE.PAYMENT,
+        },
       );
 
       const newPaid = live.paidFils + amount.amountFils;
@@ -478,16 +670,19 @@ export class SettlementService {
     const settlement = await this.requireLive(id);
     if (!canCancel(settlement.status)) {
       throw BusinessException.conflict(
-        `Cannot cancel settlement in status ${settlement.status}`,
+        `لا يمكن إلغاء التسوية في الحالة ${settlement.status}`,
       );
     }
     if (settlement.paidFils > 0) {
       throw BusinessException.conflict(
-        'Cannot cancel settlement with applied payments',
+        'لا يمكن إلغاء التسوية بعد تحصيل دفعات — يلزم الاسترداد أولاً',
       );
     }
     const from = settlement.status as SettlementStatus;
     const updated = await this.repo.client.$transaction(async (tx) => {
+      // Keep ledger aligned with rental-cancel policy: void charge/deposit.
+      await this.finance.voidSettlementObligationLedgerInTx(tx, id, actor);
+
       const row = await this.repo.transitionStatus(tx, {
         settlementId: id,
         from,

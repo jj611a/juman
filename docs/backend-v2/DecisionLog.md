@@ -11,10 +11,18 @@
 ## ADR-V2-002 - Rename `backend/` to `backend-python/`
 
 - **Date:** 2026-08-01
-- **Status:** Accepted
+- **Status:** Superseded by ADR-V2-034
 - **Context:** Clear separation of V1 spec vs V2 implementation.
 - **Decision:** On branch `backend-v2`, rename source tree to `backend-python/`. Installer *runtime* folder name `%INSTDIR%\backend\` stays for V1 packaging until Phase 8.
 - **Consequences:** Repo scripts that stage from source must use `backend-python`.
+
+## ADR-V2-034 - Remove `backend-python/` entirely
+
+- **Date:** 2026-08-04
+- **Status:** Accepted
+- **Context:** Nest V2 is the product backend; keeping a full FastAPI tree invites dual-stack drift and packaging confusion.
+- **Decision:** Delete `backend-python/` from the repository. Retire Python staging/build scripts (`deployment/scripts/build-backend.ps1`, `stage-backend-runtime.ps1`) with hard failures pointing at `backend-node/`.
+- **Consequences:** Historical ADRs under `docs/ADR/*` that reference FastAPI remain as archive; do not restore Python for runtime. Installer Nest cutover remains Phase 8.2+.
 
 ## ADR-V2-003 - Dev HTTP port 8787
 
@@ -252,3 +260,19 @@
 - **Context:** After Phase 8.0 façade, the product needed proof that Electron + Nest + Prisma + SQLite behave as one system. Certification found UI/backend mismatches (permission key families, status case, unsupported daily report blocking summary) without discovering Settlement formula bugs.
 - **Decision:** Certify via Nest HTTP harness (`cert-phase81-e2e.cjs`) + matrix/report under `docs/certification/`. Fix **only** integration/state/API-mapping bugs on the frontend (and façade). Do **not** change Settlement formulas, remove `legacyBridge`, redesign UI, or ship installer cutover. Accept WARNINGs for settings/hardware/diagnostics/packaging debt and scaled stress.
 - **Consequences:** **CONDITIONAL GO** (overall **84/100**) for Nest ops desktop path; **NO-GO** for store installer until Phase 8.2+. Wait for explicit approval before packaging/settings/hardware work.
+
+## ADR-V2-033 - Frontend complete rebuild (freeze legacy)
+
+- **Date:** 2026-08-03
+- **Status:** Accepted (Phase 1 complete; feature modules gated)
+- **Context:** Compatibility façade (ADR-V2-031) cannot carry a 10-year product. Snake_case bridges, `V2_UNSUPPORTED` holes, and dual permission families obscure Nest as source of truth.
+- **Decision:** Freeze UI at `frontend-legacy/`. New `frontend/` consumes Nest camelCase DTOs via Electron IPC only (Main owns JWT). daisyUI theme `juman` preserves brand gold `#c6a75e`. Phase 1 delivers architecture, design system, shell, backend feature map, and gap analysis — **no feature CRUD until approval**.
+- **Consequences:** Dual trees temporarily. Calendar/users/settings/audit UIs blocked until Nest HTTP exists. Docs: `docs/frontend/*`.
+
+## ADR-V2-035 - Phase 6.7 Sales domain + polymorphic Settlement
+
+- **Date:** 2026-08-04
+- **Status:** Accepted
+- **Context:** Permanent item sales must not bolt onto Rentals or invent SaleSettlement. Settlement was rental-only (`rentalId` required). FinancialAccount is 1:1 per customer; anonymous sales need a stable account.
+- **Decision:** (1) Polymorphic Settlement via `entityType` + `entityId` (`rental` | `sale`); keep `rentalId`/`saleId` convenience FKs; no second settlement table. (2) System Walk-in customer (`WALK-IN`) + account for anonymous sales; reassign customer before completion moves settlement account. (3) `SalesTransactionService` orchestrates Lifecycle/Settlement/Finance inside `AvailabilityService.runExclusive`. (4) New ledger types `sale_charge` / `sale_payment` (plus reserved modifier types). (5) Lifecycle allows `available → sold`; sold remains terminal except `retired`.
+- **Consequences:** Rentals stay compatible via `createForRental*` façades. Sales HTTP is backend-only (no POS). Coverage interim gate ~89% lines — remediate toward 95%. Docs: `SalesDesign.md`, `PHASE_6_7_SALES_ENGINE_REPORT.md`.

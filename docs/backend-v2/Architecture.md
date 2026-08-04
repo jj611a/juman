@@ -2,7 +2,8 @@
 
 **Status:** Phase 8.1 End-to-End System Certification (CONDITIONAL GO)  
 **Branch:** `backend-v2`  
-**Spec source:** `backend-python/` (read-only Python FastAPI stack)
+**Source of truth:** `backend-node/` (NestJS + Prisma + SQLite)  
+**Note:** `backend-python/` (FastAPI V1) was **removed** 2026-08-04.
 
 ## Target runtime
 
@@ -22,7 +23,7 @@ SQLite → data/juman.db (WAL, foreign_keys, busy_timeout)
 - Zero manual database configuration (no PostgreSQL)
 - Single installer packaging path (Electron + Nest sidecar) — Phase 8 (8.0 façade + 8.1 E2E cert done; packaging later)
 - Electron renderer adapts to Nest V2 via `frontend/src/services/v2` façade (ADR-V2-031/032) — no Python `/api/v1`
-- Same business behavior as Python V1, reimplemented cleanly (not ported line-by-line)
+- Same business domains as legacy V1, reimplemented in Nest (Python tree removed 2026-08-04)
 
 ## Runtime directories
 
@@ -75,7 +76,8 @@ src/
   rentals/        Rental workflow core (Phase 5.1)
   reservations/   Reservation engine (Phase 5.2)
   availability/   Sole calendar allocator (Phase 5.4)
-  finance/        Financial foundation + Settlement (6.1–6.6)
+  finance/        Financial foundation + Settlement (6.1–6.7 polymorphic)
+  sales/          Permanent sale engine (Phase 6.7)
   reports/        Read-only reporting engine (Phase 7.0)
 ```
 
@@ -92,13 +94,14 @@ src/
 
 - Users/roles admin HTTP CRUD (beyond unlock)
 - Availability calendar UI / late-fee **scheduler** / invoices / PDF-Excel report renderers
-- Laundry / inspection / sales workflows
+- Laundry / inspection workflows
+- POS / sales UI (Sales **backend** domain exists — Phase 6.7)
 - Barcode hardware adapters / label printing
 - Electron process management / installer Nest packaging
 
 ## Python V1
 
-`backend-python/` remains the official behavioral specification until full parity. Do not modify its application code on this track.
+Nest `backend-node/` is the only backend in-repo. Historical FastAPI ADRs under `docs/ADR/` are archival.
 
 See `SharedFoundation.md` for Phase 3.1 contracts.
 
@@ -158,11 +161,15 @@ Inventory mutations remain exclusive to `LifecycleService`.
 `FinanceModule` (`src/finance`) is the sole owner of money.  
 **Phase 6.5:** Atomic checkout TX + idempotency + cancel policy.  
 **Phase 6.6:** Settlement owns refund / adjustment / discount / late-fee assessment; centralized formulas in `settlement.formula.ts`.  
-Docs: `FinancialDesign.md`, `SettlementDesign.md`.
+**Phase 6.7:** Polymorphic Settlement (`entityType` rental|sale) + Sales domain. Docs: `FinancialDesign.md`, `SettlementDesign.md`, `SalesDesign.md`.
+
+## Sales domain (Phase 6.7)
+
+`SalesModule` (`src/sales`) owns permanent sale documents. Orchestration via `SalesTransactionService`. Lifecycle `sold` is terminal for rent flows. Docs: `SalesDesign.md`, `PHASE_6_7_SALES_ENGINE_REPORT.md`.
 
 ## Reporting engine (Phase 7.0)
 
-`ReportsModule` (`src/reports`) is **read-only**. It aggregates Inventory / Rental / Settlement / Finance via Prisma and never calls domain write services or recalculates settlement formulas. Export: CSV/JSON implemented; PDF/Excel adapters stubbed. Docs: `ReportingDesign.md`.
+`ReportsModule` (`src/reports`) is **read-only**. It aggregates Inventory / Rental / Settlement / Finance via Prisma and never calls domain write services or recalculates settlement formulas. Export: CSV/JSON implemented; PDF/Excel adapters stubbed. Future: sales revenue aggregates without redesign. Docs: `ReportingDesign.md`.
 
 ## Desktop integration (Phase 8.0–8.1)
 

@@ -53,6 +53,7 @@ import {
 import { toSettlementPublic } from './settlement.mapper';
 import {
   SettlementRepository,
+  settlementInclude,
   type SettlementWithRelations,
 } from './settlement.repository';
 
@@ -613,45 +614,7 @@ export class SettlementModifierService {
   ): Promise<SettlementWithRelations> {
     const live = await tx.rentalSettlement.findFirst({
       where: { id, deletedAt: null },
-      include: {
-        history: { orderBy: { createdAt: 'desc' as const }, take: 50 },
-        refunds: {
-          where: { deletedAt: null, status: 'posted' },
-          orderBy: { createdAt: 'desc' as const },
-          take: 50,
-        },
-        adjustments: {
-          where: { deletedAt: null, status: 'posted' },
-          orderBy: { createdAt: 'desc' as const },
-          take: 50,
-        },
-        discounts: {
-          where: { deletedAt: null, status: 'posted' },
-          orderBy: { createdAt: 'desc' as const },
-          take: 50,
-        },
-        lateFees: {
-          where: { deletedAt: null, status: 'posted' },
-          orderBy: { createdAt: 'desc' as const },
-          take: 50,
-        },
-        rental: {
-          select: {
-            id: true,
-            rentalNumber: true,
-            status: true,
-            customerId: true,
-          },
-        },
-        account: {
-          select: {
-            id: true,
-            accountNumber: true,
-            customerId: true,
-            status: true,
-          },
-        },
-      },
+      include: settlementInclude,
     });
     if (!live) throw BusinessException.notFound('Settlement not found');
     this.assertMutable(live);

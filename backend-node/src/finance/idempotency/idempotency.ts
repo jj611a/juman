@@ -7,6 +7,9 @@ export const IDEMPOTENCY_SCOPE = {
   SETTLEMENT_PAYMENT: 'settlement.payment',
   FINANCE_CHARGE: 'finance.charge',
   FINANCE_DEPOSIT: 'finance.deposit',
+  SALE_CONFIRM: 'sale.confirm',
+  SALE_COMPLETE: 'sale.complete',
+  SALE_PAYMENT: 'sale.payment',
 } as const;
 
 export type IdempotencyScope =

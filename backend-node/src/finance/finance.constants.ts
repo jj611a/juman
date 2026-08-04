@@ -24,6 +24,11 @@ export const FINANCIAL_TX_TYPE = {
   ADJUSTMENT: 'adjustment',
   DISCOUNT: 'discount',
   LATE_FEE: 'late_fee',
+  SALE_CHARGE: 'sale_charge',
+  SALE_PAYMENT: 'sale_payment',
+  SALE_DISCOUNT: 'sale_discount',
+  SALE_ADJUSTMENT: 'sale_adjustment',
+  SALE_REFUND: 'sale_refund',
 } as const;
 
 export type FinancialTxType =
@@ -77,6 +82,15 @@ export const FINANCE_DEFAULT_SEPARATOR = '-';
 export const FINANCE_DEFAULT_PADDING = 8;
 
 export const FINANCE_REFERENCE_RENTAL = 'rental';
+export const FINANCE_REFERENCE_SALE = 'sale';
+
+export const SETTLEMENT_ENTITY_TYPE = {
+  RENTAL: 'rental',
+  SALE: 'sale',
+} as const;
+
+export type SettlementEntityType =
+  (typeof SETTLEMENT_ENTITY_TYPE)[keyof typeof SETTLEMENT_ENTITY_TYPE];
 
 export const FINANCE_ACCOUNT_SORT_FIELDS = [
   'createdAt',
@@ -110,12 +124,17 @@ export function outstandingDeltaFils(
 ): number {
   switch (type) {
     case FINANCIAL_TX_TYPE.RENTAL_CHARGE:
+    case FINANCIAL_TX_TYPE.SALE_CHARGE:
     case FINANCIAL_TX_TYPE.LATE_FEE:
+    case FINANCIAL_TX_TYPE.SALE_ADJUSTMENT:
       return amountFils;
     case FINANCIAL_TX_TYPE.DEPOSIT:
     case FINANCIAL_TX_TYPE.PAYMENT:
+    case FINANCIAL_TX_TYPE.SALE_PAYMENT:
     case FINANCIAL_TX_TYPE.REFUND:
+    case FINANCIAL_TX_TYPE.SALE_REFUND:
     case FINANCIAL_TX_TYPE.DISCOUNT:
+    case FINANCIAL_TX_TYPE.SALE_DISCOUNT:
       return -amountFils;
     case FINANCIAL_TX_TYPE.ADJUSTMENT:
       return amountFils; // signed amount already

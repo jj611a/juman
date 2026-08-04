@@ -2,13 +2,13 @@
 
 **Branch:** `backend-v2`  
 **Module:** `backend-node/src/reports`  
-**Role:** Read-only reporting engine over Inventory, Rental, Settlement, and Finance data.
+**Role:** Read-only reporting engine over Inventory, Rental, Settlement, Finance, and (future) Sales data.
 
 ## Scope
 
 **In scope:** Dashboard KPIs; financial / rental / inventory / customer reports; shared filters; export abstraction (CSV + JSON implemented; PDF/Excel adapters stubbed); RBAC; Prisma aggregates; report indexes.
 
-**Out of scope:** Mutating Inventory / Rentals / Finance / Settlement / Ledger; changing settlement formulas; late-fee scheduler; invoices; Electron integration; PDF/Excel rendering.
+**Out of scope:** Mutating Inventory / Rentals / Sales / Finance / Settlement / Ledger; changing settlement formulas; late-fee scheduler; invoices; Electron integration; PDF/Excel rendering; **Phase 6.7 sales aggregates (deferred — Settlement `entityType=sale` is already queryable without redesign)**.
 
 ## Architecture rules
 

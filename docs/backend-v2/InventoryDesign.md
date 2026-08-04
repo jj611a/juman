@@ -8,7 +8,7 @@
 
 **In scope:** Category, Brand, Color, Size, Item CRUD; soft delete/restore; search/filter; MediaReference attachments + ItemBarcode; **lifecycle state machine** + history + availability predicates; Phase 4.4 integrity remediation.
 
-**Out of scope:** reservations, rentals, availability calendar, penalties, laundry/inspection workflows, payments/sales execution.
+**Out of scope:** reservations, rentals, availability calendar, penalties, laundry/inspection workflows, payments (**sales execution is Phase 6.7 — see SalesDesign.md**).
 
 ## Two status dimensions
 
@@ -72,6 +72,7 @@ stateDiagram-v2
   cleaning --> available
   available --> for_sale
   for_sale --> sold
+  available --> sold
   available --> maintenance
   maintenance --> available
   available --> retired

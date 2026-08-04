@@ -5,12 +5,22 @@ export function toSettlementPublic(row: SettlementWithRelations) {
   return {
     id: row.id,
     settlementNumber: row.settlementNumber,
+    entityType: row.entityType,
+    entityId: row.entityId,
     rentalId: row.rentalId,
+    saleId: row.saleId,
     rental: row.rental
       ? {
           id: row.rental.id,
           rentalNumber: row.rental.rentalNumber,
           status: row.rental.status,
+        }
+      : null,
+    sale: row.sale
+      ? {
+          id: row.sale.id,
+          saleNumber: row.sale.saleNumber,
+          status: row.sale.status,
         }
       : null,
     accountId: row.accountId,
@@ -101,7 +111,10 @@ export function toSettlementPublic(row: SettlementWithRelations) {
 export function toSettlementSnapshot(row: {
   id: string;
   settlementNumber: string;
-  rentalId: string;
+  rentalId?: string | null;
+  saleId?: string | null;
+  entityType?: string;
+  entityId?: string;
   status: string;
   totalFils: number;
   paidFils: number;
@@ -110,7 +123,10 @@ export function toSettlementSnapshot(row: {
   return {
     id: row.id,
     settlementNumber: row.settlementNumber,
-    rentalId: row.rentalId,
+    entityType: row.entityType ?? null,
+    entityId: row.entityId ?? null,
+    rentalId: row.rentalId ?? null,
+    saleId: row.saleId ?? null,
     status: row.status,
     totalFils: row.totalFils,
     paidFils: row.paidFils,

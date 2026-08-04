@@ -6,21 +6,22 @@
 
 ## Scope
 
-**In scope:** FinancialAccount, FinancialTransaction, Payment, MoneyMovement, FinancialAudit; Money VO (IQD fils); charge / deposit / payment; Settlement + Refund / Adjustment / Discount / LateFee domain; centralized formulas; HTTP; RBAC; rental checkout + complete.
+**In scope:** FinancialAccount, FinancialTransaction, Payment, MoneyMovement, FinancialAudit; Money VO (IQD fils); charge / deposit / payment; Settlement + Refund / Adjustment / Discount / LateFee domain; centralized formulas; HTTP; RBAC; rental checkout + complete; **Phase 6.7 polymorphic settlement for sales** (`sale_charge` / `sale_payment`).
 
 **Out of scope:** Dashboards as a separate product surface beyond Reports HTTP; invoices; late-fee **scheduler**; desktop integration. Reporting reads Settlement/Finance/Payment aggregates but lives in `ReportsModule` — see `ReportingDesign.md`.
 
-See also: `SettlementDesign.md`.
+See also: `SettlementDesign.md`, `SalesDesign.md`.
 
 ## Architecture rules
 
 1. Financial is a **separate bounded context**.
-2. Rental / inventory **never** store balances.
+2. Rental / inventory / sales **never** store balances.
 3. **Every monetary change** passes through `SettlementService` (or checkout `*InTx` under Settlement create).
-4. Payments **never** mutate rental rows; Settlement **never** mutates Payment rows.
+4. Payments **never** mutate rental/sale rows; Settlement **never** mutates Payment rows.
 5. Ledger is **append-only** (void = status change, not delete).
 6. Standalone `POST /finance/payments` rejected while open/partial settlements exist.
 7. Platform audit may sit outside Prisma TX; `FinancialAudit` / settlement history inside.
+8. Sales use `sale_*` ledger types — never `rental_charge` for sale obligations.
 
 ## Authoritative formula (single source)
 

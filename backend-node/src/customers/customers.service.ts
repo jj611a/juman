@@ -29,6 +29,9 @@ import {
   CUSTOMER_NUMBER_SETTING,
   CUSTOMER_SORT_FIELDS,
   CUSTOMER_STATUS,
+  WALK_IN_CUSTOMER_NAME,
+  WALK_IN_CUSTOMER_NUMBER,
+  WALK_IN_CUSTOMER_PHONE,
   type CustomerSortField,
 } from './customers.constants';
 import type { CreateCustomerDto } from './dto/create-customer.dto';
@@ -131,6 +134,11 @@ export class CustomersService {
 
   async softDelete(id: string, actor?: AuthPrincipal): Promise<Customer> {
     const existing = await this.requireLive(id);
+    if (existing.customerNumber === WALK_IN_CUSTOMER_NUMBER) {
+      throw BusinessException.conflict(
+        'Cannot delete the system Walk-in customer',
+      );
+    }
     const deleted = await this.repo.softDelete(id, actor?.userId);
     await this.audit.recordSoftDelete(
       CUSTOMER_MODULE,
@@ -140,6 +148,30 @@ export class CustomersService {
       { userId: actor?.userId, username: actor?.username },
     );
     return deleted;
+  }
+
+  /** Idempotent system Walk-in customer for anonymous sales (Phase 6.7). */
+  async ensureWalkInCustomer(): Promise<Customer> {
+    const existing = await this.repo.findAnyByNumber(WALK_IN_CUSTOMER_NUMBER);
+    if (existing) {
+      if (existing.deletedAt) {
+        return this.repo.restore(existing.id, undefined);
+      }
+      return existing;
+    }
+    const phone = normalizePhone(WALK_IN_CUSTOMER_PHONE);
+    return this.repo.create({
+      customerNumber: WALK_IN_CUSTOMER_NUMBER,
+      fullName: WALK_IN_CUSTOMER_NAME,
+      phone: phone.display,
+      phoneNormalized: phone.normalized,
+      status: CUSTOMER_STATUS.ACTIVE,
+      notes: 'System Walk-in customer for anonymous sales — do not delete',
+    });
+  }
+
+  isWalkInCustomer(customer: { customerNumber: string }): boolean {
+    return customer.customerNumber === WALK_IN_CUSTOMER_NUMBER;
   }
 
   async restore(id: string, actor?: AuthPrincipal): Promise<Customer> {

@@ -22,6 +22,7 @@ import { RentalsModule } from './rentals/rentals.module';
 import { ReportsModule } from './reports/reports.module';
 import { ReservationsModule } from './reservations/reservations.module';
 import { RolesModule } from './roles/roles.module';
+import { SalesModule } from './sales/sales.module';
 import { SettingsModule } from './settings/settings.module';
 import { UsersModule } from './users/users.module';
 
@@ -49,6 +50,7 @@ import { UsersModule } from './users/users.module';
     FinanceModule,
     RentalsModule,
     ReservationsModule,
+    SalesModule,
     ReportsModule,
     HealthModule,
   ],
