@@ -72,7 +72,6 @@ stateDiagram-v2
   cleaning --> available
   available --> for_sale
   for_sale --> sold
-  available --> sold
   available --> maintenance
   maintenance --> available
   available --> retired

@@ -55,7 +55,7 @@ Seeded `WALK-IN` customer + FinancialAccount on boot. Anonymous sales settle the
 
 ## Lifecycle
 
-Allowed sell edges: `available → sold`, `available → for_sale → sold`.  
+Allowed sell edges: `available → for_sale → sold` only (public `available → sold` removed in Phase 6.7.1).  
 Sold is terminal for rent/reserve/restore; only `sold → retired` remains. Soft-delete blocked for `sold` and `for_sale`.
 
 ## Settlement polymorphism

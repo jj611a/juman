@@ -1,0 +1,120 @@
+{
+  "phase": "6.7.1",
+  "generatedAt": "2026-08-05T08:00:02.160Z",
+  "checks": [
+    {
+      "id": "rbac.anon",
+      "name": "Anonymous requests return 401",
+      "status": "PASS"
+    },
+    {
+      "id": "rbac.forbidden",
+      "name": "Inventory role gets 403 on sales; admin gets 200",
+      "status": "PASS",
+      "detail": "denied=403,403,403,403,403,403,403,403 admin=200"
+    },
+    {
+      "id": "hold.steal",
+      "name": "Second confirm on held item returns 409",
+      "status": "PASS",
+      "detail": "status=409"
+    },
+    {
+      "id": "concurrency.confirm",
+      "name": "Concurrent confirm yields ≥1 success and exactly 1 settlement",
+      "status": "PASS",
+      "detail": "oks=1 settlements=1"
+    },
+    {
+      "id": "settlement.cancel.blocked",
+      "name": "HTTP settlement cancel blocked for live sale",
+      "status": "PASS",
+      "detail": "status=409"
+    },
+    {
+      "id": "complete.cancelled.settlement",
+      "name": "Complete rejects cancelled settlement",
+      "status": "PASS",
+      "detail": "status=409"
+    },
+    {
+      "id": "reassign.after.pay",
+      "name": "Complete with customer after payment returns 409",
+      "status": "PASS",
+      "detail": "status=409 body={\"success\":false,\"code\":\"domain.conflict\",\"message\":\"Cannot reassign customer after payments — money is on the current a"
+    },
+    {
+      "id": "lifecycle.sold.terminal",
+      "name": "sold→available and sold→rented rejected",
+      "status": "PASS"
+    },
+    {
+      "id": "sale.completed.irreversible",
+      "name": "Cannot cancel completed sale",
+      "status": "PASS"
+    },
+    {
+      "id": "walkin.unique",
+      "name": "Single WALK-IN customer and account after 100 anonymous confirms",
+      "status": "PASS",
+      "detail": "customers=1 accounts=1 saleSettlements=105"
+    },
+    {
+      "id": "softdelete.confirmed",
+      "name": "softDelete rejects confirmed sale",
+      "status": "PASS"
+    },
+    {
+      "id": "softdelete.cancelled",
+      "name": "softDelete allows cancelled sale",
+      "status": "PASS"
+    },
+    {
+      "id": "api.bad.uuid",
+      "name": "Bad UUID rejected",
+      "status": "PASS"
+    },
+    {
+      "id": "api.bad.payload",
+      "name": "Empty items rejected",
+      "status": "PASS"
+    },
+    {
+      "id": "api.idempotency",
+      "name": "Confirm idempotency replay matches",
+      "status": "PASS"
+    },
+    {
+      "id": "money.charge",
+      "name": "Settlement charge equals sale total",
+      "status": "PASS"
+    },
+    {
+      "id": "money.ledger",
+      "name": "sale_charge posted",
+      "status": "PASS"
+    },
+    {
+      "id": "money.cancel.rollback",
+      "name": "Cancel voids charge and restores available",
+      "status": "PASS"
+    },
+    {
+      "id": "rollback.integrity",
+      "name": "Mid-TX failure after charge rolls back sale/settlement/ledger/hold",
+      "status": "PASS",
+      "detail": "http=500 sale=draft st=none charges=0 life=available"
+    },
+    {
+      "id": "lifecycle.no.direct.sold",
+      "name": "available→sold rejected on public transition",
+      "status": "PASS",
+      "detail": "status=409"
+    }
+  ],
+  "summary": {
+    "total": 20,
+    "pass": 20,
+    "fail": 0
+  }
+}

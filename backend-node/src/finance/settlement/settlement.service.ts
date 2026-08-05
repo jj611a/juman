@@ -278,6 +278,11 @@ export class SettlementService {
         'Cannot reassign customer on cancelled/closed settlement',
       );
     }
+    if (live.paidFils > 0) {
+      throw BusinessException.conflict(
+        'Cannot reassign customer after payments — money is on the current account',
+      );
+    }
     if (live.customerId === customerId) {
       return this.repo.findById(settlementId);
     }
@@ -397,11 +402,6 @@ export class SettlementService {
     return this.repo.findBySaleId(saleId, tx);
   }
 
-  /** Exposed for nested TX payment CAS from SalesTransactionService. */
-  get settlementRepo() {
-    return this.repo;
-  }
-
   /**
    * Cancel open unpaid settlement for a rental cancel (same TX as inventory unwind).
    * Voids charge/deposit ledger rows. Rejects partial/paid (refund required).
@@ -495,70 +495,29 @@ export class SettlementService {
         }
       }
 
-      await this.repo.lockSettlement(tx, settlement.id);
-      const live = await tx.rentalSettlement.findFirst({
-        where: { id: settlement.id, deletedAt: null },
-      });
-      if (!live || !canApplyPayment(live.status)) {
-        throw BusinessException.conflict('Settlement not open for payment');
-      }
-      if (amount.amountFils > live.remainingFils) {
-        throw BusinessException.validation(
-          'Payment exceeds settlement remaining balance',
-        );
-      }
-
-      const payment = await this.finance.registerPaymentInTx(
+      const applied = await this.applyPaymentInTx(
         tx,
+        id,
         {
-          accountId: live.accountId,
-          settlementId: live.id,
           amountFils: amount.amountFils,
           method: dto.method,
           notes: dto.notes,
         },
         paymentNumber,
         actor,
-        {
-          ledgerType:
-            live.entityType === SETTLEMENT_ENTITY_TYPE.SALE
-              ? FINANCIAL_TX_TYPE.SALE_PAYMENT
-              : FINANCIAL_TX_TYPE.PAYMENT,
-        },
       );
 
-      const newPaid = live.paidFils + amount.amountFils;
-      const newRemaining = live.remainingFils - amount.amountFils;
-      const newStatus = statusAfterPayment(newRemaining, newPaid);
-
-      const updated = await this.repo.applyPaymentCas(tx, {
-        settlementId: live.id,
-        expectedRemaining: live.remainingFils,
-        fromStatus: live.status,
-        amountFils: amount.amountFils,
-        newPaid,
-        newRemaining,
-        newStatus,
-        paymentId: payment.id,
-        userId: actor?.userId ?? null,
-        username: actor?.username ?? null,
-      });
-      if (!updated) {
-        throw BusinessException.conflict('Concurrent settlement payment rejected');
-      }
-      assertSettlementBalanceInvariant(updated);
-
-      const pub = toSettlementPublic(updated);
+      const pub = toSettlementPublic(applied.settlement);
       if (idemKey) {
         await completeIdempotency(tx, {
           scope: IDEMPOTENCY_SCOPE.SETTLEMENT_PAYMENT,
           key: idemKey,
           resourceType: SETTLEMENT_ENTITY,
-          resourceId: updated.id,
+          resourceId: applied.settlement.id,
           response: pub,
         });
       }
-      return { updated, payment, pub };
+      return { updated: applied.settlement, payment: applied.payment, pub };
     });
 
     if ('replay' in result && result.replay) {
@@ -579,6 +538,73 @@ export class SettlementService {
     });
 
     return result.pub!;
+  }
+
+  /**
+   * Apply payment inside an outer business TX (sale complete / exclusive lock).
+   * Caller allocates paymentNumber (prefer allocatePaymentNumberInTx).
+   */
+  async applyPaymentInTx(
+    tx: Prisma.TransactionClient,
+    settlementId: string,
+    dto: { amountFils: number; method?: string; notes?: string },
+    paymentNumber: string,
+    actor?: AuthPrincipal,
+  ) {
+    await this.repo.lockSettlement(tx, settlementId);
+    const live = await tx.rentalSettlement.findFirst({
+      where: { id: settlementId, deletedAt: null },
+    });
+    if (!live || !canApplyPayment(live.status)) {
+      throw BusinessException.conflict('Settlement not open for payment');
+    }
+    const payAmount = Money.ofNonNegativeFils(dto.amountFils);
+    if (payAmount.amountFils > live.remainingFils) {
+      throw BusinessException.validation(
+        'Payment exceeds settlement remaining balance',
+      );
+    }
+
+    const payment = await this.finance.registerPaymentInTx(
+      tx,
+      {
+        accountId: live.accountId,
+        settlementId: live.id,
+        amountFils: payAmount.amountFils,
+        method: dto.method,
+        notes: dto.notes,
+      },
+      paymentNumber,
+      actor,
+      {
+        ledgerType:
+          live.entityType === SETTLEMENT_ENTITY_TYPE.SALE
+            ? FINANCIAL_TX_TYPE.SALE_PAYMENT
+            : FINANCIAL_TX_TYPE.PAYMENT,
+      },
+    );
+
+    const newPaid = live.paidFils + payAmount.amountFils;
+    const newRemaining = live.remainingFils - payAmount.amountFils;
+    const newStatus = statusAfterPayment(newRemaining, newPaid);
+
+    const updated = await this.repo.applyPaymentCas(tx, {
+      settlementId: live.id,
+      expectedRemaining: live.remainingFils,
+      fromStatus: live.status,
+      amountFils: payAmount.amountFils,
+      newPaid,
+      newRemaining,
+      newStatus,
+      paymentId: payment.id,
+      userId: actor?.userId ?? null,
+      username: actor?.username ?? null,
+    });
+    if (!updated) {
+      throw BusinessException.conflict('Concurrent settlement payment rejected');
+    }
+    assertSettlementBalanceInvariant(updated);
+    return { settlement: updated, payment };
   }
 
   async markPaid(id: string, reason?: string, actor?: AuthPrincipal) {
@@ -668,6 +694,19 @@ export class SettlementService {
 
   async cancel(id: string, body?: SettlementActionDto, actor?: AuthPrincipal) {
     const settlement = await this.requireLive(id);
+    if (
+      settlement.entityType === SETTLEMENT_ENTITY_TYPE.SALE &&
+      settlement.saleId
+    ) {
+      const sale = await this.repo.client.sale.findFirst({
+        where: { id: settlement.saleId, deletedAt: null },
+      });
+      if (sale && sale.status !== 'cancelled') {
+        throw BusinessException.conflict(
+          'Cancel the sale document first — settlement cancel alone is not allowed for live sales',
+        );
+      }
+    }
     if (!canCancel(settlement.status)) {
       throw BusinessException.conflict(
         `لا يمكن إلغاء التسوية في الحالة ${settlement.status}`,

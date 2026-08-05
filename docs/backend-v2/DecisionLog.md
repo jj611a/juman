@@ -274,5 +274,13 @@
 - **Date:** 2026-08-04
 - **Status:** Accepted
 - **Context:** Permanent item sales must not bolt onto Rentals or invent SaleSettlement. Settlement was rental-only (`rentalId` required). FinancialAccount is 1:1 per customer; anonymous sales need a stable account.
-- **Decision:** (1) Polymorphic Settlement via `entityType` + `entityId` (`rental` | `sale`); keep `rentalId`/`saleId` convenience FKs; no second settlement table. (2) System Walk-in customer (`WALK-IN`) + account for anonymous sales; reassign customer before completion moves settlement account. (3) `SalesTransactionService` orchestrates Lifecycle/Settlement/Finance inside `AvailabilityService.runExclusive`. (4) New ledger types `sale_charge` / `sale_payment` (plus reserved modifier types). (5) Lifecycle allows `available → sold`; sold remains terminal except `retired`.
-- **Consequences:** Rentals stay compatible via `createForRental*` façades. Sales HTTP is backend-only (no POS). Coverage interim gate ~89% lines — remediate toward 95%. Docs: `SalesDesign.md`, `PHASE_6_7_SALES_ENGINE_REPORT.md`.
+- **Decision:** (1) Polymorphic Settlement via `entityType` + `entityId` (`rental` | `sale`); keep `rentalId`/`saleId` convenience FKs; no second settlement table. (2) System Walk-in customer (`WALK-IN`) + account for anonymous sales; reassign customer before completion moves settlement account. (3) `SalesTransactionService` orchestrates Lifecycle/Settlement/Finance inside `AvailabilityService.runExclusive`. (4) New ledger types `sale_charge` / `sale_payment` (plus reserved modifier types). (5) Lifecycle path for sales is `available → for_sale → sold` (public `available → sold` removed in 6.7.1); sold remains terminal except `retired`.
+- **Consequences:** Rentals stay compatible via `createForRental*` façades. Sales HTTP is backend-only (no POS). Interim coverage remediated in Phase 6.7.1. Docs: `SalesDesign.md`, `PHASE_6_7_SALES_ENGINE_REPORT.md`, `PHASE_6_7_1_SALES_CERTIFICATION.md`.
+
+## ADR-V2-036 - Phase 6.7.1 Sales integrity certification
+
+- **Date:** 2026-08-05
+- **Status:** Accepted
+- **Context:** Phase 6.7 shipped CONDITIONAL GO (~89% coverage) with integrity gaps: foreign hold steal, complete-after-cancelled-settlement, payment outside exclusive lock, Walk-in race outside TX, soft-delete unguarded, permission over-breadth, public `available→sold`.
+- **Decision:** Harden Sales to Rentals/Finance engineering parity without new features. Enforce hold ownership, live-settlement complete gate, exclusive TX + idempotency for pay/cancel, in-TX Walk-in resolve, soft-delete policy, tightened RBAC, create-time sellability, and remove public `available→sold`. Certify with real business suites (`sales-certification-671`) writing `cert_sales_671.json`. Coverage gate ≥95% statements/lines/functions on `src/sales/**`.
+- **Consequences:** Sales backend is certified **PASS** (overall 93). POS / returns / receipts / sales reports remain blocked pending approval. Docs: `PHASE_6_7_1_SALES_CERTIFICATION.md`.

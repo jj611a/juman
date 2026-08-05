@@ -11,7 +11,6 @@ import {
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import {
   RequireAnyPermission,
-  RequirePermissions,
 } from '../auth/decorators/require-permissions.decorator';
 import type { AuthPrincipal } from '../shared/types';
 import {
@@ -54,12 +53,7 @@ export class SalesController {
 
   @Post(':id/confirm')
   @HttpCode(200)
-  @RequireAnyPermission(
-    SALE_PERMISSION.CREATE,
-    SALE_PERMISSION.COMPLETE,
-    SALE_PERMISSION_LEGACY.CREATE,
-    SALE_PERMISSION_LEGACY.UPDATE,
-  )
+  @RequireAnyPermission(SALE_PERMISSION.COMPLETE, SALE_PERMISSION_LEGACY.UPDATE)
   confirm(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() body: SaleActionDto,
@@ -70,7 +64,7 @@ export class SalesController {
 
   @Post(':id/payment')
   @HttpCode(200)
-  @RequireAnyPermission(SALE_PERMISSION.PAYMENT, SALE_PERMISSION_LEGACY.UPDATE)
+  @RequireAnyPermission(SALE_PERMISSION.PAYMENT)
   payment(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() body: SalePaymentDto,
@@ -81,7 +75,7 @@ export class SalesController {
 
   @Post(':id/complete')
   @HttpCode(200)
-  @RequireAnyPermission(SALE_PERMISSION.COMPLETE, SALE_PERMISSION_LEGACY.UPDATE)
+  @RequireAnyPermission(SALE_PERMISSION.COMPLETE)
   complete(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() body: SaleCompleteDto,
@@ -98,6 +92,6 @@ export class SalesController {
     @Body() body: SaleActionDto,
     @CurrentUser() user: AuthPrincipal,
   ) {
-    return this.sales.cancel(id, body?.reason, user);
+    return this.sales.cancel(id, body, user);
   }
 }

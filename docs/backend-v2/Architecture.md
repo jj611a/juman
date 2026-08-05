@@ -163,9 +163,9 @@ Inventory mutations remain exclusive to `LifecycleService`.
 **Phase 6.6:** Settlement owns refund / adjustment / discount / late-fee assessment; centralized formulas in `settlement.formula.ts`.  
 **Phase 6.7:** Polymorphic Settlement (`entityType` rental|sale) + Sales domain. Docs: `FinancialDesign.md`, `SettlementDesign.md`, `SalesDesign.md`.
 
-## Sales domain (Phase 6.7)
+## Sales domain (Phase 6.7 / 6.7.1)
 
-`SalesModule` (`src/sales`) owns permanent sale documents. Orchestration via `SalesTransactionService`. Lifecycle `sold` is terminal for rent flows. Docs: `SalesDesign.md`, `PHASE_6_7_SALES_ENGINE_REPORT.md`.
+`SalesModule` (`src/sales`) owns permanent sale documents. Orchestration via `SalesTransactionService` inside `AvailabilityService.runExclusive`. Lifecycle path: `available → for_sale → sold` (public `available → sold` removed). Sold is terminal for rent flows. Phase 6.7.1 certified integrity/rollback/concurrency/RBAC — docs: `SalesDesign.md`, `PHASE_6_7_SALES_ENGINE_REPORT.md`, `PHASE_6_7_1_SALES_CERTIFICATION.md`.
 
 ## Reporting engine (Phase 7.0)
 

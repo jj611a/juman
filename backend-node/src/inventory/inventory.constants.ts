@@ -81,7 +81,7 @@ export const ITEM_LIFECYCLE_TRANSITIONS: Readonly<
   [ITEM_LIFECYCLE.AVAILABLE]: [
     ITEM_LIFECYCLE.RESERVED,
     ITEM_LIFECYCLE.FOR_SALE,
-    ITEM_LIFECYCLE.SOLD,
+    // available → sold only via Sales hold path (for_sale → sold); not a public edge.
     ITEM_LIFECYCLE.MAINTENANCE,
     ITEM_LIFECYCLE.RETIRED,
     ITEM_LIFECYCLE.LOST,

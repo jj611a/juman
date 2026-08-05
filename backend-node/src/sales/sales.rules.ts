@@ -25,6 +25,20 @@ export function canPay(status: string): boolean {
   return status === SALE_STATUS.CONFIRMED;
 }
 
+/** Settlements that may accompany a completing sale. */
+export function isLiveSaleSettlementStatus(status: string): boolean {
+  return (
+    status === 'open' ||
+    status === 'partially_paid' ||
+    status === 'paid'
+  );
+}
+
+/** Soft-delete allowed only for terminal non-operational documents. */
+export function canSoftDeleteSale(status: string): boolean {
+  return status === SALE_STATUS.DRAFT || status === SALE_STATUS.CANCELLED;
+}
+
 /** Phase 6.7: one physical Item per line. */
 export function assertSaleQuantity(quantity: number): void {
   if (quantity !== 1) {

@@ -10,6 +10,7 @@ export const IDEMPOTENCY_SCOPE = {
   SALE_CONFIRM: 'sale.confirm',
   SALE_COMPLETE: 'sale.complete',
   SALE_PAYMENT: 'sale.payment',
+  SALE_CANCEL: 'sale.cancel',
 } as const;
 
 export type IdempotencyScope =

@@ -21,14 +21,14 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       reportsDirectory: './coverage-sales',
-      reporter: ['text', 'text-summary', 'json-summary'],
+      reporter: ['text', 'text-summary', 'json-summary', 'json'],
       include: ['src/sales/**/*.ts'],
       exclude: ['**/*.module.ts', '**/dto/**'],
       thresholds: {
-        lines: 88,
+        lines: 95,
         functions: 95,
-        branches: 68,
-        statements: 85,
+        branches: 75,
+        statements: 95,
       },
     },
   },

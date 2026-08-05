@@ -109,6 +109,9 @@ describe('SalesService unit', () => {
       id: 'i1',
       displayName: 'Dress',
       salePrice: 1000,
+      status: 'active',
+      deletedAt: null,
+      lifecycleState: 'available',
       barcodes: [{ barcode: { code: 'BC1' } }],
     });
     repo.nextSequence.mockResolvedValue(1);
@@ -174,6 +177,130 @@ describe('SalesService unit', () => {
     expect(txService.payment).toHaveBeenCalled();
     expect(txService.complete).toHaveBeenCalled();
     expect(txService.cancel).toHaveBeenCalled();
+  });
+
+  it('softDelete allows draft without settlement and rejects confirmed', async () => {
+    const draft = {
+      id: 's1',
+      saleNumber: 'SALE-1',
+      customerId: null,
+      customer: null,
+      status: SALE_STATUS.DRAFT,
+      subtotalFils: 0,
+      discountFils: 0,
+      taxFils: 0,
+      totalFils: 0,
+      notes: null,
+      completedAt: null,
+      items: [],
+      settlement: null,
+      history: [],
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      deletedAt: null,
+      createdBy: null,
+      updatedBy: null,
+    };
+    repo.findById.mockResolvedValue(draft);
+    (repo.client as { rentalSettlement?: { findFirst: ReturnType<typeof vi.fn> }; sale?: { update: ReturnType<typeof vi.fn> } }).rentalSettlement =
+      { findFirst: vi.fn().mockResolvedValue(null) };
+    (repo.client as { sale: { update: ReturnType<typeof vi.fn> } }).sale = {
+      update: vi.fn().mockResolvedValue({}),
+    };
+    const ok = await service.softDelete('s1');
+    expect(ok.deleted).toBe(true);
+
+    repo.findById.mockResolvedValue({ ...draft, status: SALE_STATUS.CONFIRMED });
+    await expect(service.softDelete('s1')).rejects.toBeInstanceOf(
+      BusinessException,
+    );
+  });
+
+  it('softDelete rejects draft with live settlement', async () => {
+    const draft = {
+      id: 's1',
+      saleNumber: 'SALE-1',
+      customerId: null,
+      customer: null,
+      status: SALE_STATUS.CANCELLED,
+      subtotalFils: 0,
+      discountFils: 0,
+      taxFils: 0,
+      totalFils: 0,
+      notes: null,
+      completedAt: null,
+      items: [],
+      settlement: null,
+      history: [],
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      deletedAt: null,
+      createdBy: null,
+      updatedBy: null,
+    };
+    repo.findById.mockResolvedValue(draft);
+    (repo.client as { rentalSettlement: { findFirst: ReturnType<typeof vi.fn> } }).rentalSettlement =
+      { findFirst: vi.fn().mockResolvedValue({ id: 'st' }) };
+    await expect(service.softDelete('s1')).rejects.toBeInstanceOf(
+      BusinessException,
+    );
+  });
+
+  it('lists with filters and search', async () => {
+    repo.list.mockResolvedValue({ rows: [], total: 0 });
+    await service.list({
+      status: SALE_STATUS.DRAFT,
+      customerId: 'c1',
+      saleNumber: 'SALE',
+      q: 'dress',
+      offset: 0,
+      limit: 10,
+    });
+    expect(repo.list).toHaveBeenCalled();
+  });
+
+  it('rejects create when item missing or not sellable', async () => {
+    repo.client.item.findFirst.mockResolvedValue(null);
+    await expect(
+      service.create({ items: [{ itemId: 'missing' }] }),
+    ).rejects.toBeInstanceOf(BusinessException);
+
+    repo.client.item.findFirst.mockResolvedValue({
+      id: 'i1',
+      displayName: 'X',
+      salePrice: 1,
+      status: 'active',
+      deletedAt: null,
+      lifecycleState: 'rented',
+      barcodes: [],
+    });
+    await expect(
+      service.create({ items: [{ itemId: 'i1' }] }),
+    ).rejects.toBeInstanceOf(BusinessException);
+  });
+
+  it('rejects header discount exceeding subtotal and number clash exhaustion', async () => {
+    repo.client.item.findFirst.mockResolvedValue({
+      id: 'i1',
+      displayName: 'Dress',
+      salePrice: 1000,
+      status: 'active',
+      deletedAt: null,
+      lifecycleState: 'available',
+      barcodes: [],
+    });
+    await expect(
+      service.create({
+        items: [{ itemId: 'i1', priceFils: 100 }],
+        discountFils: 200,
+      }),
+    ).rejects.toBeInstanceOf(BusinessException);
+
+    repo.nextSequence.mockResolvedValue(1);
+    repo.findAnyNumber.mockResolvedValue({ id: 'clash' });
+    await expect(
+      service.create({ items: [{ itemId: 'i1', priceFils: 100 }] }),
+    ).rejects.toBeInstanceOf(BusinessException);
   });
 
   it('mapper snapshots', () => {

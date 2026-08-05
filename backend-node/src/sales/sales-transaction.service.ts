@@ -2,6 +2,11 @@ import { Injectable } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
 import { AvailabilityService } from '../availability/availability.service';
+import {
+  WALK_IN_CUSTOMER_NAME,
+  WALK_IN_CUSTOMER_NUMBER,
+  WALK_IN_CUSTOMER_PHONE,
+} from '../customers/customers.constants';
 import { CustomersService } from '../customers/customers.service';
 import {
   FINANCIAL_TX_TYPE,
@@ -15,11 +20,13 @@ import {
   hashIdempotencyPayload,
   IDEMPOTENCY_SCOPE,
 } from '../finance/idempotency/idempotency';
+import { SETTLEMENT_STATUS } from '../finance/settlement/settlement.constants';
 import { SettlementService } from '../finance/settlement/settlement.service';
 import { ITEM_LIFECYCLE } from '../inventory/inventory.constants';
 import { LifecycleService } from '../inventory/lifecycle/lifecycle.service';
 import { isSellable } from '../inventory/lifecycle/lifecycle.rules';
 import { BusinessException } from '../shared/errors/business.exception';
+import { normalizePhone } from '../shared/phone/phone';
 import type { AuthPrincipal } from '../shared/types';
 import type { SaleActionDto, SaleCompleteDto, SalePaymentDto } from './dto/sale.dto';
 import {
@@ -38,6 +45,7 @@ import {
   canConfirm,
   canPay,
   canTransitionSaleStatus,
+  isLiveSaleSettlementStatus,
 } from './sales.rules';
 
 /**
@@ -113,7 +121,7 @@ export class SalesTransactionService {
 
       if (body?.customerId) {
         const cust = await tx.customer.findFirst({
-          where: { id: body.customerId, deletedAt: null },
+          where: { id: body.customerId, deletedAt: null, status: 'active' },
         });
         if (!cust) throw BusinessException.notFound('Customer not found');
         await this.repo.updateCustomerInTx(
@@ -126,41 +134,7 @@ export class SalesTransactionService {
       }
 
       for (const line of live.items) {
-        const item = await tx.item.findFirst({
-          where: { id: line.itemId, deletedAt: null },
-        });
-        if (!item) {
-          throw BusinessException.notFound(`Item ${line.itemId} not found`);
-        }
-        if (
-          !isSellable({
-            deletedAt: item.deletedAt,
-            status: item.status,
-            lifecycleState: item.lifecycleState,
-          })
-        ) {
-          throw BusinessException.conflict(
-            `Item ${item.displayName} is not sellable (lifecycle: ${item.lifecycleState})`,
-          );
-        }
-        if (item.lifecycleState === ITEM_LIFECYCLE.AVAILABLE) {
-          await this.lifecycle.transition(
-            item.id,
-            {
-              newState: ITEM_LIFECYCLE.FOR_SALE,
-              expectedState: ITEM_LIFECYCLE.AVAILABLE,
-              reason: 'sale_confirm_hold',
-              referenceType: SALE_REFERENCE_TYPE,
-              referenceId: saleId,
-            },
-            actor,
-            { tx, skipAudit: true },
-          );
-        } else if (item.lifecycleState !== ITEM_LIFECYCLE.FOR_SALE) {
-          throw BusinessException.conflict(
-            `Item ${item.displayName} cannot be held for sale`,
-          );
-        }
+        await this.assertAndHoldItemForSale(tx, line.itemId, saleId, actor);
       }
 
       const financeCustomerId = await this.resolveFinanceCustomerIdInTx(
@@ -285,6 +259,11 @@ export class SalesTransactionService {
       if (!settlement) {
         throw BusinessException.conflict('Sale has no settlement — confirm first');
       }
+      if (!isLiveSaleSettlementStatus(settlement.status)) {
+        throw BusinessException.conflict(
+          `Cannot complete sale: settlement status «${settlement.status}» is not live`,
+        );
+      }
 
       for (const line of live.items) {
         const item = await tx.item.findFirst({
@@ -293,6 +272,7 @@ export class SalesTransactionService {
         if (!item) {
           throw BusinessException.notFound(`Item ${line.itemId} not found`);
         }
+        await this.assertHoldOwnedBySale(tx, item.id, saleId);
         if (item.lifecycleState !== ITEM_LIFECYCLE.FOR_SALE) {
           throw BusinessException.conflict(
             `Item ${item.displayName} must be for_sale before complete (got ${item.lifecycleState})`,
@@ -313,7 +293,8 @@ export class SalesTransactionService {
       }
 
       if (body?.paymentAmountFils && body.paymentAmountFils > 0) {
-        await this.applyPaymentInTx(
+        const paymentNumber = await this.finance.allocatePaymentNumberInTx(tx);
+        await this.settlements.applyPaymentInTx(
           tx,
           settlement.id,
           {
@@ -321,6 +302,7 @@ export class SalesTransactionService {
             method: body.paymentMethod,
             notes: body.reason,
           },
+          paymentNumber,
           actor,
         );
       }
@@ -367,15 +349,37 @@ export class SalesTransactionService {
     saleId: string,
     reason?: string,
     actor?: AuthPrincipal,
+    idempotencyKey?: string,
   ): Promise<SalePublic> {
     const sale = await this.requireLive(saleId);
+    if (sale.status === SALE_STATUS.CANCELLED) {
+      const replay = await this.finance.peekIdempotencyReplay<SalePublic>(
+        IDEMPOTENCY_SCOPE.SALE_CANCEL,
+        idempotencyKey?.trim() || `sale:${saleId}:cancel`,
+      );
+      if (replay) return replay;
+      return toSalePublic(sale);
+    }
     if (!canCancel(sale.status)) {
       throw BusinessException.conflict(
         `Cannot cancel sale in status ${sale.status}`,
       );
     }
 
+    const requestHash = hashIdempotencyPayload({
+      saleId,
+      reason: reason ?? null,
+    });
+    const idemKey = idempotencyKey?.trim() || `sale:${saleId}:cancel`;
+
     const result = await this.availability.runExclusive(async (tx) => {
+      const began = await beginIdempotency<SalePublic>(tx, {
+        scope: IDEMPOTENCY_SCOPE.SALE_CANCEL,
+        key: idemKey,
+        requestHash,
+      });
+      if (began.kind === 'replay') return began.response;
+
       const live = await this.repo.findByIdInTx(tx, saleId);
       if (!live) throw BusinessException.notFound('Sale not found');
       if (!canCancel(live.status)) {
@@ -398,6 +402,8 @@ export class SalesTransactionService {
           });
           if (!item) continue;
           if (item.lifecycleState === ITEM_LIFECYCLE.FOR_SALE) {
+            const owned = await this.isHoldOwnedBySale(tx, item.id, saleId);
+            if (!owned) continue;
             await this.lifecycle.transition(
               item.id,
               {
@@ -426,7 +432,16 @@ export class SalesTransactionService {
       if (!updated) {
         throw BusinessException.conflict('Concurrent sale cancel rejected');
       }
-      return toSalePublic(updated);
+
+      const pub = toSalePublic(updated);
+      await completeIdempotency(tx, {
+        scope: IDEMPOTENCY_SCOPE.SALE_CANCEL,
+        key: idemKey,
+        resourceType: SALE_ENTITY,
+        resourceId: saleId,
+        response: pub,
+      });
+      return pub;
     });
 
     await this.audit.record({
@@ -453,81 +468,162 @@ export class SalesTransactionService {
         `Cannot pay sale in status ${sale.status}`,
       );
     }
-    const settlement = await this.settlements.findBySaleId(saleId);
-    if (!settlement) {
-      throw BusinessException.conflict('Sale has no settlement — confirm first');
-    }
 
-    await this.settlements.applyPayment(
-      settlement.id,
-      {
-        amountFils: dto.amountFils,
-        method: dto.method,
-        notes: dto.notes,
-        idempotencyKey: dto.idempotencyKey,
-      },
-      actor,
-    );
+    const requestHash = hashIdempotencyPayload({
+      saleId,
+      amountFils: dto.amountFils,
+      method: dto.method ?? 'cash',
+      notes: dto.notes ?? null,
+    });
+    const idemKey =
+      dto.idempotencyKey?.trim() || `sale:${saleId}:payment:${dto.amountFils}`;
+
+    await this.availability.runExclusive(async (tx) => {
+      const began = await beginIdempotency<{ ok: true }>(tx, {
+        scope: IDEMPOTENCY_SCOPE.SALE_PAYMENT,
+        key: idemKey,
+        requestHash,
+      });
+      if (began.kind === 'replay') return began.response;
+
+      const live = await this.repo.findByIdInTx(tx, saleId);
+      if (!live || !canPay(live.status)) {
+        throw BusinessException.conflict(
+          `Cannot pay sale in status ${live?.status ?? 'missing'}`,
+        );
+      }
+      const settlement = await this.settlements.findBySaleId(saleId, tx);
+      if (!settlement) {
+        throw BusinessException.conflict('Sale has no settlement — confirm first');
+      }
+      if (
+        settlement.status === SETTLEMENT_STATUS.CANCELLED ||
+        settlement.status === SETTLEMENT_STATUS.CLOSED
+      ) {
+        throw BusinessException.conflict(
+          `Cannot pay cancelled/closed settlement`,
+        );
+      }
+
+      const paymentNumber = await this.finance.allocatePaymentNumberInTx(tx);
+      await this.settlements.applyPaymentInTx(
+        tx,
+        settlement.id,
+        {
+          amountFils: dto.amountFils,
+          method: dto.method,
+          notes: dto.notes,
+        },
+        paymentNumber,
+        actor,
+      );
+
+      await completeIdempotency(tx, {
+        scope: IDEMPOTENCY_SCOPE.SALE_PAYMENT,
+        key: idemKey,
+        resourceType: SALE_ENTITY,
+        resourceId: saleId,
+        response: { ok: true },
+      });
+      return { ok: true as const };
+    });
 
     const updated = await this.requireLive(saleId);
     return toSalePublic(updated);
   }
 
-  private async applyPaymentInTx(
+  /**
+   * Hold item for this sale only. Rejects foreign for_sale holds and concurrent confirmed sales.
+   */
+  private async assertAndHoldItemForSale(
     tx: Prisma.TransactionClient,
-    settlementId: string,
-    dto: { amountFils: number; method?: string; notes?: string },
+    itemId: string,
+    saleId: string,
     actor?: AuthPrincipal,
-  ) {
-    // SettlementService.applyPayment opens its own TX — for nested complete we
-    // call finance + CAS directly mirroring applyPayment body.
-    const live = await tx.rentalSettlement.findFirst({
-      where: { id: settlementId, deletedAt: null },
+  ): Promise<void> {
+    const item = await tx.item.findFirst({
+      where: { id: itemId, deletedAt: null },
     });
-    if (!live) throw BusinessException.notFound('Settlement not found');
-    if (dto.amountFils > live.remainingFils) {
-      throw BusinessException.validation(
-        'Payment exceeds settlement remaining balance',
+    if (!item) {
+      throw BusinessException.notFound(`Item ${itemId} not found`);
+    }
+    if (
+      !isSellable({
+        deletedAt: item.deletedAt,
+        status: item.status,
+        lifecycleState: item.lifecycleState,
+      })
+    ) {
+      throw BusinessException.conflict(
+        `Item ${item.displayName} is not sellable (lifecycle: ${item.lifecycleState})`,
       );
     }
-    const paymentNumber = await this.finance.allocatePaymentNumberInTx(tx);
-    const payment = await this.finance.registerPaymentInTx(
-      tx,
-      {
-        accountId: live.accountId,
-        settlementId: live.id,
-        amountFils: dto.amountFils,
-        method: dto.method,
-        notes: dto.notes,
+
+    const otherConfirmed = await tx.saleItem.findFirst({
+      where: {
+        itemId,
+        saleId: { not: saleId },
+        sale: {
+          deletedAt: null,
+          status: { in: [SALE_STATUS.CONFIRMED, SALE_STATUS.COMPLETED] },
+        },
       },
-      paymentNumber,
-      actor,
-      {
-        ledgerType:
-          live.entityType === SETTLEMENT_ENTITY_TYPE.SALE
-            ? FINANCIAL_TX_TYPE.SALE_PAYMENT
-            : FINANCIAL_TX_TYPE.PAYMENT,
-      },
-    );
-    const newPaid = live.paidFils + dto.amountFils;
-    const newRemaining = live.remainingFils - dto.amountFils;
-    const newStatus =
-      newRemaining === 0 ? 'paid' : newPaid > 0 ? 'partially_paid' : live.status;
-    const updated = await this.settlements.settlementRepo.applyPaymentCas(tx, {
-      settlementId: live.id,
-      expectedRemaining: live.remainingFils,
-      fromStatus: live.status,
-      amountFils: dto.amountFils,
-      newPaid,
-      newRemaining,
-      newStatus,
-      paymentId: payment.id,
-      userId: actor?.userId ?? null,
-      username: actor?.username ?? null,
     });
-    if (!updated) {
-      throw BusinessException.conflict('Concurrent settlement payment rejected');
+    if (otherConfirmed) {
+      throw BusinessException.conflict(
+        `Item ${item.displayName} is already committed to another sale`,
+      );
     }
+
+    if (item.lifecycleState === ITEM_LIFECYCLE.AVAILABLE) {
+      await this.lifecycle.transition(
+        item.id,
+        {
+          newState: ITEM_LIFECYCLE.FOR_SALE,
+          expectedState: ITEM_LIFECYCLE.AVAILABLE,
+          reason: 'sale_confirm_hold',
+          referenceType: SALE_REFERENCE_TYPE,
+          referenceId: saleId,
+        },
+        actor,
+        { tx, skipAudit: true },
+      );
+      return;
+    }
+
+    // Only for_sale remains after isSellable; ownership checked here.
+    await this.assertHoldOwnedBySale(tx, item.id, saleId);
+  }
+
+  private async assertHoldOwnedBySale(
+    tx: Prisma.TransactionClient,
+    itemId: string,
+    saleId: string,
+  ): Promise<void> {
+    const owned = await this.isHoldOwnedBySale(tx, itemId, saleId);
+    if (!owned) {
+      throw BusinessException.conflict(
+        'Item for_sale hold is owned by another sale',
+      );
+    }
+  }
+
+  private async isHoldOwnedBySale(
+    tx: Prisma.TransactionClient,
+    itemId: string,
+    saleId: string,
+  ): Promise<boolean> {
+    const latest = await tx.itemStateHistory.findFirst({
+      where: {
+        itemId,
+        newState: ITEM_LIFECYCLE.FOR_SALE,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    return (
+      latest?.referenceType === SALE_REFERENCE_TYPE &&
+      latest?.referenceId === saleId
+    );
   }
 
   private async reassignCustomerInTx(
@@ -537,7 +633,7 @@ export class SalesTransactionService {
     actor?: AuthPrincipal,
   ) {
     const cust = await tx.customer.findFirst({
-      where: { id: customerId, deletedAt: null },
+      where: { id: customerId, deletedAt: null, status: 'active' },
     });
     if (!cust) throw BusinessException.notFound('Customer not found');
     await this.repo.updateCustomerInTx(tx, sale.id, customerId, actor?.userId);
@@ -552,18 +648,43 @@ export class SalesTransactionService {
     }
   }
 
+  /** Resolve Walk-in inside the exclusive TX (no nested connection). */
   private async resolveFinanceCustomerIdInTx(
     tx: Prisma.TransactionClient,
     saleCustomerId: string | null,
   ): Promise<string> {
     if (saleCustomerId) return saleCustomerId;
-    // ensureWalkIn outside may race; upsert by number inside TX
     const existing = await tx.customer.findUnique({
-      where: { customerNumber: 'WALK-IN' },
+      where: { customerNumber: WALK_IN_CUSTOMER_NUMBER },
     });
     if (existing && !existing.deletedAt) return existing.id;
-    const walkIn = await this.customers.ensureWalkInCustomer();
-    return walkIn.id;
+    if (existing?.deletedAt) {
+      await tx.customer.update({
+        where: { id: existing.id },
+        data: { deletedAt: null, deletedBy: null, status: 'active' },
+      });
+      return existing.id;
+    }
+    const phone = normalizePhone(WALK_IN_CUSTOMER_PHONE);
+    try {
+      const created = await tx.customer.create({
+        data: {
+          customerNumber: WALK_IN_CUSTOMER_NUMBER,
+          fullName: WALK_IN_CUSTOMER_NAME,
+          phone: phone.display,
+          phoneNormalized: phone.normalized,
+          status: 'active',
+          notes: 'System Walk-in customer for anonymous sales — do not delete',
+        },
+      });
+      return created.id;
+    } catch {
+      const raced = await tx.customer.findUnique({
+        where: { customerNumber: WALK_IN_CUSTOMER_NUMBER },
+      });
+      if (raced && !raced.deletedAt) return raced.id;
+      throw BusinessException.conflict('Could not resolve Walk-in customer');
+    }
   }
 
   private async requireLive(id: string): Promise<SaleWithRelations> {

@@ -320,16 +320,11 @@ describe('Sales domain integration (Phase 6.7)', () => {
       data: { lifecycleState: 'rented' },
     });
 
-    const draft = await request(app.getHttpServer())
+    // Phase 6.7.1: sellability enforced at create (not only confirm)
+    await request(app.getHttpServer())
       .post('/sales')
       .set('Authorization', `Bearer ${token}`)
       .send({ items: [{ itemId: item.body.id }] })
-      .expect(201);
-
-    await request(app.getHttpServer())
-      .post(`/sales/${draft.body.id}/confirm`)
-      .set('Authorization', `Bearer ${token}`)
-      .send({})
       .expect(409);
 
     // Fresh sellable item for idempotency

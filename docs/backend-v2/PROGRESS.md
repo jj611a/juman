@@ -1,7 +1,7 @@
 # Backend V2 Progress Canvas
 
-**Live canvas:** Cursor canvases `phase-81-e2e-certification.canvas.tsx` (cert summary)  
-**Branch:** `backend-v2` — **Updated:** 2026-08-04 — **Overall ~95%**
+**Live canvas:** Cursor canvas `phase-671-sales-certification.canvas.tsx` (Sales 6.7.1 cert)  
+**Branch:** `backend-v2` — **Updated:** 2026-08-05 — **Overall ~95%**
 
 ```
 Phase 0  Architecture                    DONE
@@ -12,7 +12,8 @@ Phase 4  Inventory Engine                DONE (4.1–4.4)
 Phase 5  Rental Engine                   DONE (5.1–5.4)
 Phase 6  Financial
          6.1–6.6 Settlement complete     DONE
-         6.7 Sales domain                DONE (CONDITIONAL GO; readiness 90)
+         6.7 Sales domain                DONE
+         6.7.1 Sales integrity cert      DONE (PASS; overall 93)
 Phase 7  Reports
          7.0 Reporting engine            DONE (read-only)
 Phase 8  Desktop Integration
@@ -21,5 +22,5 @@ Phase 8  Desktop Integration
 Phase 9+ Hardening / Production          WAITING
 ```
 
-**YOU ARE HERE:** Phase 6.7 Sales backend complete — review `PHASE_6_7_SALES_ENGINE_REPORT.md`.  
-**Next:** Review Sales domain; then Phase 8.2 packaging / diagnostics / settings / hardware — only after explicit approval. Do not change Settlement formulas. Do not build POS UI yet.
+**YOU ARE HERE:** Phase 6.7.1 Sales integrity certification **PASS** — review `PHASE_6_7_1_SALES_CERTIFICATION.md` + `cert_sales_671.json`.  
+**Next:** Approval before POS / receipts / returns / sales reports. Do not change Settlement formulas.

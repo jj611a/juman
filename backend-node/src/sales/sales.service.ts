@@ -34,7 +34,8 @@ import {
 } from './sales.constants';
 import { toSalePublic, toSaleSnapshot } from './sales.mapper';
 import { SalesRepository } from './sales.repository';
-import { assertSaleQuantity, isSaleStatus } from './sales.rules';
+import { assertSaleQuantity, canSoftDeleteSale, isSaleStatus } from './sales.rules';
+import { isSellable } from '../inventory/lifecycle/lifecycle.rules';
 
 @Injectable()
 export class SalesService implements OnModuleInit {
@@ -143,6 +144,17 @@ export class SalesService implements OnModuleInit {
       if (!item) {
         throw BusinessException.notFound(`Item ${line.itemId} not found`);
       }
+      if (
+        !isSellable({
+          deletedAt: item.deletedAt,
+          status: item.status,
+          lifecycleState: item.lifecycleState,
+        })
+      ) {
+        throw BusinessException.conflict(
+          `Item ${item.displayName} is not sellable (lifecycle: ${item.lifecycleState})`,
+        );
+      }
       const price = Money.ofNonNegativeFils(
         line.priceFils ?? item.salePrice ?? 0,
       );
@@ -217,8 +229,49 @@ export class SalesService implements OnModuleInit {
     return this.txService.complete(id, body, actor);
   }
 
-  cancel(id: string, reason?: string, actor?: AuthPrincipal) {
-    return this.txService.cancel(id, reason, actor);
+  cancel(id: string, body?: SaleActionDto, actor?: AuthPrincipal) {
+    return this.txService.cancel(id, body?.reason, actor, body?.idempotencyKey);
+  }
+
+  /**
+   * Soft-delete policy (Phase 6.7.1): only draft/cancelled sales without live settlement.
+   */
+  async softDelete(id: string, actor?: AuthPrincipal) {
+    const sale = await this.requireLive(id);
+    if (!canSoftDeleteSale(sale.status)) {
+      throw BusinessException.conflict(
+        `Cannot soft-delete sale in status ${sale.status}`,
+      );
+    }
+    const settlement = await this.repo.client.rentalSettlement.findFirst({
+      where: {
+        saleId: id,
+        deletedAt: null,
+        status: { not: 'cancelled' },
+      },
+    });
+    if (settlement) {
+      throw BusinessException.conflict(
+        'Cannot soft-delete sale with a live settlement',
+      );
+    }
+    await this.repo.client.sale.update({
+      where: { id },
+      data: {
+        deletedAt: new Date(),
+        deletedBy: actor?.userId ?? null,
+        updatedBy: actor?.userId ?? null,
+      },
+    });
+    await this.audit.record({
+      module: SALE_MODULE,
+      entityType: SALE_ENTITY,
+      entityId: id,
+      action: 'soft_delete',
+      oldValues: toSaleSnapshot(sale),
+      actor: { userId: actor?.userId, username: actor?.username },
+    });
+    return { id, deleted: true };
   }
 
   private async requireLive(id: string) {
