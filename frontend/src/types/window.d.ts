@@ -1,8 +1,8 @@
-import type { JumanBridge } from '../../electron/preload/index'
+import type { JumanPreloadApi } from '@shared/preload'
 
 declare global {
   interface Window {
-    juman: JumanBridge
+    juman: JumanPreloadApi
   }
 }
 

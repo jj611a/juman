@@ -1,262 +1,264 @@
-import * as React from 'react'
-import { Navigate, useNavigate, useParams } from 'react-router'
-import { useQuery } from '@tanstack/react-query'
-import {
-  AuditTimeline,
-  Button,
-  ConfirmationDialog,
-  EmptyState,
-  EntityHeader,
-  ErrorState,
-  InlineMessage,
-  MoneyDisplay,
-  Page,
-  PermissionGuard,
-  RecordInfoPanel,
-  StatusChip,
-  BusyIndicator
-} from '@/components/ui'
-import { useAnyPermission, usePermission } from '@/hooks/usePermission'
-import { apiClient } from '@/services/apiClient'
-import { AvailabilityPreview } from '../components/AvailabilityPreview'
-import {
-  useCancelReservation,
-  useConfirmReservation,
-  useExpireReservation,
-  useReservation,
-  useReservationAudit
-} from '../hooks'
-import { RESERVATION_STATUS_MAP } from '../statusMap'
+import { useState } from 'react'
+import { useParams, useNavigate } from 'react-router'
+import { usePermission } from '@/features/permissions/PermissionProvider'
+import { PERMISSION } from '@/shared/constants/permissions'
+import { 
+  useReservationDetail, 
+  useCheckoutReservation, 
+  useCancelReservation, 
+  useExpireReservation 
+} from '../hooks/useReservations'
+import { 
+  ChevronRight, 
+  User, 
+  Phone, 
+  Calendar, 
+  Shirt, 
+  Info,
+  AlertTriangle,
+  Play,
+  XOctagon,
+  Hourglass
+} from 'lucide-react'
 
-export default function ReservationDetailPage(): React.ReactElement {
+// Formatting helper for Fils to AED
+function formatFils(fils: number | null | undefined): string {
+  if (!fils) return '— د.إ'
+  return `${(fils / 1000).toLocaleString('ar-AE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} د.إ`
+}
+
+export function ReservationDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
-  const canView = useAnyPermission(['reservation.view', 'reservations.view'])
-  const canAudit = usePermission('audit.view')
-  const [cancelOpen, setCancelOpen] = React.useState(false)
-  const [allAvailable, setAllAvailable] = React.useState<boolean | null>(null)
+  const { can } = usePermission()
 
-  const detail = useReservation(id)
-  const audit = useReservationAudit(id, canAudit)
-  const confirmMutation = useConfirmReservation()
-  const cancelMutation = useCancelReservation()
-  const expireMutation = useExpireReservation()
+  // Queries
+  const { data: res, isLoading, isError } = useReservationDetail(id ?? '')
 
-  const reservation = detail.data?.data
-  const customer = useQuery({
-    queryKey: ['customers', 'detail', reservation?.customer_id],
-    queryFn: () => apiClient.customers.get(reservation!.customer_id),
-    enabled: Boolean(reservation?.customer_id)
-  })
+  // Mutations
+  const checkoutMut = useCheckoutReservation(id ?? '')
+  const cancelMut = useCancelReservation(id ?? '')
+  const expireMut = useExpireReservation(id ?? '')
 
-  const dresses = useQuery({
-    queryKey: ['inventory', 'list', { limit: 200 }],
-    queryFn: () => apiClient.dresses.list({ page: 1, page_size: 200 }),
-    enabled: Boolean(reservation)
-  })
-  const dressName = React.useMemo(() => {
-    const m = new Map<string, string>()
-    for (const d of dresses.data?.data ?? []) m.set(d.id, d.name_ar)
-    return m
-  }, [dresses.data])
+  // Action fields state
+  const [reason, setReason] = useState('')
+  const [deposit, setDeposit] = useState('0')
 
-  if (!canView) return <Navigate to="/forbidden" replace />
-  if (!id) return <Navigate to="/reservations" replace />
+  if (isLoading) {
+    return (
+      <div className="flex h-64 items-center justify-center" dir="rtl">
+        <span className="loading loading-spinner text-primary loading-lg" />
+      </div>
+    )
+  }
 
-  const isDraft = reservation?.status === 'DRAFT'
-  const isConfirmed = reservation?.status === 'CONFIRMED'
+  if (isError || !res) {
+    return (
+      <div className="alert alert-error text-sm max-w-lg mx-auto mt-8 flex gap-2" dir="rtl">
+        <AlertTriangle size={18} />
+        <span>تعذر تحميل تفاصيل الحجز المطلوبة.</span>
+      </div>
+    )
+  }
+
+  const handleCheckout = async () => {
+    const ok = window.confirm('هل تريد تأكيد تسليم القطع (Checkout) وتفعيل عقد التأجير؟')
+    if (!ok) return
+    try {
+      const depFils = Math.round(Number(deposit) * 1000)
+      await checkoutMut.mutateAsync({ reason: reason || undefined, depositAmountFils: depFils })
+      alert('تم التسليم بنجاح وتفعيل عقد التأجير.')
+      setReason('')
+    } catch (err: any) {
+      alert(err?.message || 'فشل عملية التسليم.')
+    }
+  }
+
+  const handleCancel = async () => {
+    const ok = window.confirm('هل أنت متأكد من إلغاء الحجز؟')
+    if (!ok) return
+    try {
+      await cancelMut.mutateAsync(reason || undefined)
+      alert('تم إلغاء الحجز.')
+      setReason('')
+    } catch (err: any) {
+      alert(err?.message || 'فشل إلغاء الحجز.')
+    }
+  }
+
+  const handleExpire = async () => {
+    const ok = window.confirm('هل تريد إنهاء صلاحية هذا الحجز؟')
+    if (!ok) return
+    try {
+      await expireMut.mutateAsync(reason || undefined)
+      alert('تم إنهاء صلاحية الحجز.')
+      setReason('')
+    } catch (err: any) {
+      alert(err?.message || 'فشل إنهاء الحجز.')
+    }
+  }
 
   return (
-    <Page size="lg" as="main">
-      {detail.isLoading ? (
-        <BusyIndicator label="جاري التحميل…" />
-      ) : detail.isError || !reservation ? (
-        <ErrorState
-          title="تعذر تحميل الحجز"
-          message="السجل غير متاح"
-          onRetry={() => void detail.refetch()}
-        />
-      ) : (
-        <div className="flex flex-col gap-8">
-          <EntityHeader
-            title={reservation.reservation_number}
-            description={customer.data?.data.full_name ?? reservation.customer_id}
-            status={{
-              label: RESERVATION_STATUS_MAP[reservation.status]?.label ?? reservation.status,
-              tone: RESERVATION_STATUS_MAP[reservation.status]?.tone ?? 'neutral'
-            }}
-            actions={
-              <div className="flex flex-wrap gap-2">
-                {isDraft ? (
-                  <PermissionGuard anyOf={['reservation.update', 'reservations.create']}>
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      onClick={() => void navigate(`/reservations/${id}/edit`)}
-                    >
-                      تعديل
-                    </Button>
-                  </PermissionGuard>
-                ) : null}
-                {isDraft ? (
-                  <PermissionGuard anyOf={['reservation.update', 'reservations.create']}>
-                    <Button
-                      type="button"
-                      disabled={allAvailable === false || confirmMutation.isPending}
-                      onClick={() => void confirmMutation.mutateAsync(id)}
-                    >
-                      تأكيد
-                    </Button>
-                  </PermissionGuard>
-                ) : null}
-                {isConfirmed ? (
-                  <PermissionGuard
-                    anyOf={['rental.create', 'rentals.create', 'reservations.checkout']}
-                  >
-                    <Button
-                      type="button"
-                      onClick={() => void navigate(`/rentals/new?reservationId=${id}`)}
-                    >
-                      تحويل لتأجير
-                    </Button>
-                  </PermissionGuard>
-                ) : null}
-                {isConfirmed ? (
-                  <PermissionGuard anyOf={['reservation.update', 'reservations.expire']}>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      disabled={expireMutation.isPending}
-                      onClick={() => void expireMutation.mutateAsync(id)}
-                    >
-                      إنهاء
-                    </Button>
-                  </PermissionGuard>
-                ) : null}
-                {isDraft || isConfirmed ? (
-                  <PermissionGuard anyOf={['reservation.cancel', 'reservations.cancel']}>
-                    <Button type="button" variant="danger" onClick={() => setCancelOpen(true)}>
-                      إلغاء
-                    </Button>
-                  </PermissionGuard>
-                ) : null}
-              </div>
-            }
-          />
+    <div className="space-y-6 select-none text-sm" dir="rtl">
+      {/* Breadcrumb Navigation */}
+      <div className="flex items-center gap-2 text-xs text-base-content/50 border-b border-base-content/5 pb-4">
+        <button onClick={() => navigate('/reservations')} className="hover:text-primary transition-colors">
+          سجل الحجوزات
+        </button>
+        <ChevronRight size={14} />
+        <span className="font-bold text-base-content">{res.reservationNumber}</span>
+      </div>
 
-          <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
-            <div className="space-y-8">
-              <section className="space-y-3">
-                <h3 className="text-title text-foreground">الفساتين</h3>
-                {(reservation.items?.length ?? 0) === 0 ? (
-                  <EmptyState title="لا بنود" />
-                ) : (
-                  <ul className="divide-y divide-border rounded-md border border-border">
-                    {reservation.items.map((item) => (
-                      <li
-                        key={item.id}
-                        className="flex flex-wrap items-center justify-between gap-2 px-4 py-3"
-                      >
-                        <div>
-                          <p>{dressName.get(item.dress_id) ?? item.dress_id.slice(0, 8)}</p>
-                          <PermissionGuard permission="calendar.view">
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => void navigate(`/calendar/${item.dress_id}`)}
-                            >
-                              التقويم
-                            </Button>
-                          </PermissionGuard>
-                        </div>
-                        <MoneyDisplay value={item.reserved_daily_rental_price} />
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </section>
-
-              {isDraft ? (
-                <AvailabilityPreview
-                  dressIds={reservation.items.map((i) => i.dress_id)}
-                  startAt={reservation.rental_start_at}
-                  endAt={reservation.expected_return_at}
-                  onAllAvailableChange={setAllAvailable}
-                />
-              ) : null}
-              {isDraft && allAvailable === false ? (
-                <InlineMessage variant="warning">
-                  التأكيد معطّل حتى تصبح الفترة متاحة حسب التقويم.
-                </InlineMessage>
-              ) : null}
-
-              <section className="space-y-3">
-                <h3 className="text-title text-foreground">سجل التدقيق</h3>
-                {!canAudit ? (
-                  <InlineMessage variant="info">لا تملك صلاحية عرض سجل التدقيق</InlineMessage>
-                ) : audit.isError ? (
-                  <InlineMessage variant="warning">تعذر تحميل سجل التدقيق</InlineMessage>
-                ) : audit.isLoading ? (
-                  <BusyIndicator label="جاري التحميل…" />
-                ) : (audit.data?.data.length ?? 0) === 0 ? (
-                  <EmptyState title="لا أحداث" />
-                ) : (
-                  <AuditTimeline
-                    items={(audit.data?.data ?? []).map((row) => ({
-                      id: row.id,
-                      at: row.created_at,
-                      actor: row.username ?? undefined,
-                      action: row.action,
-                      detail: row.message ?? undefined
-                    }))}
-                  />
-                )}
-              </section>
-            </div>
-
-            <RecordInfoPanel
-              title="معلومات الحجز"
-              metaItems={[
-                { id: 'status', label: 'الحالة', value: <StatusChip status={reservation.status} map={RESERVATION_STATUS_MAP} /> },
-                {
-                  id: 'reservation_at',
-                  label: 'وقت الحجز',
-                  value: new Date(reservation.reservation_at).toLocaleString('ar-IQ')
-                },
-                {
-                  id: 'start',
-                  label: 'بداية الإيجار',
-                  value: new Date(reservation.rental_start_at).toLocaleString('ar-IQ')
-                },
-                {
-                  id: 'end',
-                  label: 'الإعادة المتوقعة',
-                  value: new Date(reservation.expected_return_at).toLocaleString('ar-IQ')
-                },
-                { id: 'notes', label: 'ملاحظات', value: reservation.notes ?? '—' }
-              ]}
-              createdUpdated={{
-                createdAt: reservation.created_at,
-                updatedAt: reservation.updated_at
-              }}
-            />
+      {/* Reservation Header */}
+      <div className="flex flex-col md:flex-row items-center md:items-start gap-6 bg-base-300/40 p-6 rounded-2xl border border-base-content/5">
+        <div className="avatar placeholder">
+          <div className="bg-primary/20 text-primary w-24 h-24 rounded-xl border border-primary/30 flex items-center justify-center">
+            <Calendar size={48} className="text-primary/70" />
           </div>
         </div>
-      )}
+        <div className="flex-1 text-center md:text-right space-y-2">
+          <div className="flex flex-col md:flex-row md:items-center gap-2 justify-center md:justify-start">
+            <h1 className="text-2xl font-black text-base-content">طلب حجز {res.reservationNumber}</h1>
+            <span className="badge badge-neutral badge-xs font-mono py-2">{res.status}</span>
+          </div>
+          <p className="text-xs text-base-content/40 font-mono">ID: {res.id}</p>
+          <p className="text-xs text-base-content/50">تم الإنشاء في: {new Date(res.createdAt).toLocaleString('ar-AE')}</p>
+        </div>
+      </div>
 
-      <ConfirmationDialog
-        open={cancelOpen}
-        onOpenChange={setCancelOpen}
-        title="إلغاء الحجز؟"
-        description="سيتم إلغاء الحجز وإطلاق أي حجز تقويمي إن وُجد."
-        confirmLabel="إلغاء الحجز"
-        tone="danger"
-        onConfirm={async () => {
-          await cancelMutation.mutateAsync(id)
-          setCancelOpen(false)
-        }}
-      />
-    </Page>
+      {/* Content Grid */}
+      <div className="grid gap-6 grid-cols-1 lg:grid-cols-3">
+        {/* Customer & Date Specification Summary */}
+        <div className="space-y-6">
+          <div className="card border border-base-content/10 bg-base-300/80 shadow-md p-6 space-y-4">
+            <h3 className="text-sm font-bold text-base-content/60 flex items-center gap-2 border-b border-base-content/5 pb-2.5">
+              <User size={16} className="text-primary" />
+              العميل المحجوز له
+            </h3>
+            {res.customer ? (
+              <div className="text-xs space-y-2">
+                <p className="font-bold text-sm">{res.customer.fullName}</p>
+                <p className="font-mono text-base-content/50 flex items-center gap-1.5"><Phone size={12} /> {res.customer.phone}</p>
+              </div>
+            ) : (
+              <p className="text-xs text-base-content/40 italic">لا توجد بيانات عميل ملحقة</p>
+            )}
+          </div>
+
+          <div className="card border border-base-content/10 bg-base-300/80 shadow-md p-6 space-y-4">
+            <h3 className="text-sm font-bold text-base-content/60 flex items-center gap-2 border-b border-base-content/5 pb-2.5">
+              <Calendar size={16} className="text-primary" />
+              التواريخ والجدولة الزمنية
+            </h3>
+            <div className="text-xs space-y-3">
+              <div className="flex justify-between">
+                <span className="text-base-content/50">تاريخ الحجز</span>
+                <span className="font-semibold">{new Date(res.startDate).toLocaleDateString('ar-AE')}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-base-content/50">الاستلام المتوقع</span>
+                <span className="font-semibold">{new Date(res.expectedCheckoutDate).toLocaleDateString('ar-AE')}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-base-content/50">الإرجاع المتوقع</span>
+                <span className="font-semibold">{new Date(res.expectedReturnDate).toLocaleDateString('ar-AE')}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Items list & transition actions */}
+        <div className="lg:col-span-2 space-y-6">
+          {/* Reserved Items List */}
+          <div className="card border border-base-content/10 bg-base-300/80 shadow-md p-6">
+            <h3 className="text-sm font-bold text-base-content/60 mb-4 flex items-center gap-2 border-b border-base-content/5 pb-2">
+              <Shirt size={16} className="text-primary" />
+              القطع الفنية المحجوزة
+            </h3>
+            {(!res.items || res.items.length === 0) ? (
+              <p className="text-xs text-base-content/40 italic">لا توجد قطع مضافة لهذا الحجز</p>
+            ) : (
+              <div className="space-y-3">
+                {res.items.map((it) => (
+                  <div key={it.itemId} className="flex justify-between items-center bg-base-200/50 p-3 rounded-lg border border-base-content/5">
+                    <div>
+                      <p className="font-bold text-xs">{it.item?.displayName || 'قطعة مخزون'}</p>
+                      <p className="font-mono text-[10px] text-base-content/40 mt-0.5">{it.item?.internalCode || 'Code'}</p>
+                    </div>
+                    <span className="font-bold text-primary">{formatFils(it.agreedRentalPrice)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Action state transitions (Checkout, Cancel, Expire) */}
+          {(res.status === 'confirmed' || res.status === 'draft') && (
+            <div className="card border border-base-content/10 bg-base-300/80 shadow-md p-6 space-y-4">
+              <h3 className="text-sm font-bold text-base-content/60 flex items-center gap-2 border-b border-base-content/5 pb-2">
+                <Info size={16} className="text-primary" />
+                خيارات وإجراءات تعديل حالة الحجز
+              </h3>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="form-control w-full">
+                  <span className="label-text mb-1 text-xs text-base-content/50">السبب (للالغاء أو التسليم)</span>
+                  <input
+                    type="text"
+                    className="input input-bordered w-full bg-base-200 text-xs h-9 min-h-0"
+                    placeholder="اكتب ملاحظة أو سبب التعديل..."
+                    value={reason}
+                    onChange={(e) => setReason(e.target.value)}
+                  />
+                </div>
+
+                {res.status === 'confirmed' && (
+                  <div className="form-control w-full">
+                    <span className="label-text mb-1 text-xs text-base-content/50">مبلغ التأمين المستلم (AED)</span>
+                    <input
+                      type="number"
+                      step="0.01"
+                      className="input input-bordered w-full bg-base-200 text-xs h-9 min-h-0"
+                      value={deposit}
+                      onChange={(e) => setDeposit(e.target.value)}
+                    />
+                  </div>
+                )}
+              </div>
+
+              <div className="flex gap-2 flex-wrap">
+                {res.status === 'confirmed' && can(PERMISSION.RESERVATION_CHECKOUT) && (
+                  <button
+                    onClick={() => void handleCheckout()}
+                    className="btn btn-primary btn-sm gap-2 font-bold"
+                  >
+                    <Play size={12} />
+                    تسليم للعميل (Checkout)
+                  </button>
+                )}
+                {can(PERMISSION.RESERVATION_CANCEL) && (
+                  <button
+                    onClick={() => void handleCancel()}
+                    className="btn btn-error btn-sm btn-outline gap-2"
+                  >
+                    <XOctagon size={12} />
+                    إلغاء الطلب
+                  </button>
+                )}
+                {can(PERMISSION.RESERVATION_EXPIRE) && (
+                  <button
+                    onClick={() => void handleExpire()}
+                    className="btn btn-ghost btn-sm btn-outline gap-2"
+                  >
+                    <Hourglass size={12} />
+                    إنهاء الصلاحية
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
   )
 }

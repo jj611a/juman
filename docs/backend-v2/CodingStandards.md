@@ -31,6 +31,6 @@
 
 ## Forbidden on `backend-v2`
 
-- Editing `backend-python/**` application code
+- Editing deleted `backend-python/**` (tree removed 2026-08-04)
 - Adding domain modules outside the approved phase
 - Introducing PostgreSQL, Alembic, or Python runtimes into `backend-node`

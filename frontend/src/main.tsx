@@ -1,16 +1,19 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
-import { App } from '@/app/App'
-import '@/styles/globals.css'
-import '@/i18n'
+import { AppProviders } from '@/app/providers/AppProviders'
+import { ErrorBoundary } from '@/app/ErrorBoundary'
+import { AppRouter } from '@/router/AppRouter'
+import '@/theme/globals.css'
 
-const root = document.getElementById('root')
-if (!root) {
-  throw new Error('Root element not found')
-}
+const el = document.getElementById('root')
+if (!el) throw new Error('Root element #root missing')
 
-createRoot(root).render(
+createRoot(el).render(
   <StrictMode>
-    <App />
-  </StrictMode>
+    <ErrorBoundary>
+      <AppProviders>
+        <AppRouter />
+      </AppProviders>
+    </ErrorBoundary>
+  </StrictMode>,
 )

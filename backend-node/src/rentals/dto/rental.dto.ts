@@ -9,6 +9,7 @@ import {
   IsUUID,
   MaxLength,
   Min,
+  ValidateIf,
   ValidateNested,
 } from 'class-validator';
 
@@ -115,4 +116,13 @@ export class RentalActionDto {
   @IsString()
   @MaxLength(128)
   idempotencyKey?: string;
+}
+
+export class UpdateRentalDto {
+  /** Pass null or empty string to clear notes. */
+  @IsOptional()
+  @ValidateIf((_, v) => v !== null && v !== undefined)
+  @IsString()
+  @MaxLength(2000)
+  notes?: string | null;
 }

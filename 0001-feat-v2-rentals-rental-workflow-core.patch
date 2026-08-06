@@ -1,0 +1,2892 @@
+From 0fa512a78ecdca0119cb448ffd183959c97f8718 Mon Sep 17 00:00:00 2001
+From: jj611a <jj611a@gmail.com>
+Date: Sun, 2 Aug 2026 11:55:40 +0300
+Subject: [PATCH] feat(v2-rentals): rental workflow core
+
+Introduce rental draft/checkout/return/cancel workflow with inventory transitions owned exclusively by LifecycleService inside shared transactions.
+
+Co-authored-by: Cursor <cursoragent@cursor.com>
+---
+ backend-node/package.json                     |   3 +-
+ .../migration.sql                             |  64 ++
+ backend-node/prisma/schema.prisma             |  71 +++
+ backend-node/src/app.module.ts                |   2 +
+ .../lifecycle/lifecycle.repository.ts         |  55 +-
+ .../inventory/lifecycle/lifecycle.service.ts  | 118 ++--
+ .../src/permissions/permission.seeds.ts       |  10 +
+ backend-node/src/rentals/dto/rental.dto.ts    | 105 ++++
+ backend-node/src/rentals/rentals.constants.ts |  83 +++
+ .../src/rentals/rentals.controller.ts         |  76 +++
+ backend-node/src/rentals/rentals.mapper.ts    |  53 ++
+ backend-node/src/rentals/rentals.module.ts    |  14 +
+ .../src/rentals/rentals.repository.ts         | 202 +++++++
+ backend-node/src/rentals/rentals.rules.ts     |  49 ++
+ backend-node/src/rentals/rentals.service.ts   | 564 ++++++++++++++++++
+ backend-node/src/settings/settings.seeds.ts   |  24 +
+ backend-node/test/rentals-integration.spec.ts | 294 +++++++++
+ backend-node/test/rentals-repository.spec.ts  |  97 +++
+ backend-node/test/rentals-rules.spec.ts       |  96 +++
+ backend-node/test/rentals-service.spec.ts     | 351 +++++++++++
+ backend-node/vitest.rentals.config.ts         |  33 +
+ docs/backend-v2/Architecture.md               |  13 +-
+ docs/backend-v2/DecisionLog.md                |   8 +
+ docs/backend-v2/DevelopmentRoadmap.md         |  10 +-
+ docs/backend-v2/PROGRESS.md                   |  14 +-
+ docs/backend-v2/RentalDesign.md               |  95 +++
+ 26 files changed, 2421 insertions(+), 83 deletions(-)
+ create mode 100644 backend-node/prisma/migrations/20260802200000_rental_workflow_core/migration.sql
+ create mode 100644 backend-node/src/rentals/dto/rental.dto.ts
+ create mode 100644 backend-node/src/rentals/rentals.constants.ts
+ create mode 100644 backend-node/src/rentals/rentals.controller.ts
+ create mode 100644 backend-node/src/rentals/rentals.mapper.ts
+ create mode 100644 backend-node/src/rentals/rentals.module.ts
+ create mode 100644 backend-node/src/rentals/rentals.repository.ts
+ create mode 100644 backend-node/src/rentals/rentals.rules.ts
+ create mode 100644 backend-node/src/rentals/rentals.service.ts
+ create mode 100644 backend-node/test/rentals-integration.spec.ts
+ create mode 100644 backend-node/test/rentals-repository.spec.ts
+ create mode 100644 backend-node/test/rentals-rules.spec.ts
+ create mode 100644 backend-node/test/rentals-service.spec.ts
+ create mode 100644 backend-node/vitest.rentals.config.ts
+ create mode 100644 docs/backend-v2/RentalDesign.md
+
+diff --git a/backend-node/package.json b/backend-node/package.json
+index 5f69093..00b4633 100644
+--- a/backend-node/package.json
++++ b/backend-node/package.json
+@@ -17,7 +17,8 @@
+     "test:cov:customers": "vitest run --coverage --config vitest.customers.config.ts",
+     "test:cov:media": "vitest run --coverage --config vitest.media.config.ts",
+     "test:cov:barcode": "vitest run --coverage --config vitest.barcode.config.ts",
+-    "test:cov:inventory": "vitest run --coverage --config vitest.inventory.config.ts"
++    "test:cov:inventory": "vitest run --coverage --config vitest.inventory.config.ts",
++    "test:cov:rentals": "vitest run --coverage --config vitest.rentals.config.ts"
+   },
+   "dependencies": {
+     "@nestjs/common": "11.1.28",
+diff --git a/backend-node/prisma/migrations/20260802200000_rental_workflow_core/migration.sql b/backend-node/prisma/migrations/20260802200000_rental_workflow_core/migration.sql
+new file mode 100644
+index 0000000..76b2c65
+--- /dev/null
++++ b/backend-node/prisma/migrations/20260802200000_rental_workflow_core/migration.sql
+@@ -0,0 +1,64 @@
++-- Phase 5.1: rental workflow core
++
++CREATE TABLE "Rental" (
++    "id" TEXT NOT NULL PRIMARY KEY,
++    "rentalNumber" TEXT NOT NULL,
++    "customerId" TEXT NOT NULL,
++    "rentalDate" DATETIME NOT NULL,
++    "expectedReturnDate" DATETIME NOT NULL,
++    "actualReturnDate" DATETIME,
++    "status" TEXT NOT NULL DEFAULT 'draft',
++    "notes" TEXT,
++    "deletedAt" DATETIME,
++    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
++    "updatedAt" DATETIME NOT NULL,
++    "createdBy" TEXT,
++    "updatedBy" TEXT,
++    "deletedBy" TEXT,
++    CONSTRAINT "Rental_customerId_fkey" FOREIGN KEY ("customerId") REFERENCES "Customer" ("id") ON DELETE RESTRICT ON UPDATE CASCADE
++);
++
++CREATE UNIQUE INDEX "Rental_rentalNumber_key" ON "Rental"("rentalNumber");
++CREATE INDEX "Rental_customerId_idx" ON "Rental"("customerId");
++CREATE INDEX "Rental_rentalNumber_idx" ON "Rental"("rentalNumber");
++CREATE INDEX "Rental_status_idx" ON "Rental"("status");
++CREATE INDEX "Rental_rentalDate_idx" ON "Rental"("rentalDate");
++CREATE INDEX "Rental_expectedReturnDate_idx" ON "Rental"("expectedReturnDate");
++CREATE INDEX "Rental_deletedAt_idx" ON "Rental"("deletedAt");
++CREATE INDEX "Rental_createdAt_idx" ON "Rental"("createdAt");
++CREATE INDEX "Rental_status_deletedAt_idx" ON "Rental"("status", "deletedAt");
++
++CREATE TABLE "RentalItem" (
++    "id" TEXT NOT NULL PRIMARY KEY,
++    "rentalId" TEXT NOT NULL,
++    "itemId" TEXT NOT NULL,
++    "barcodeValue" TEXT,
++    "agreedRentalPrice" INTEGER NOT NULL DEFAULT 0,
++    "notes" TEXT,
++    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
++    "updatedAt" DATETIME NOT NULL,
++    "createdBy" TEXT,
++    CONSTRAINT "RentalItem_rentalId_fkey" FOREIGN KEY ("rentalId") REFERENCES "Rental" ("id") ON DELETE RESTRICT ON UPDATE CASCADE,
++    CONSTRAINT "RentalItem_itemId_fkey" FOREIGN KEY ("itemId") REFERENCES "Item" ("id") ON DELETE RESTRICT ON UPDATE CASCADE
++);
++
++CREATE UNIQUE INDEX "RentalItem_rentalId_itemId_key" ON "RentalItem"("rentalId", "itemId");
++CREATE INDEX "RentalItem_rentalId_idx" ON "RentalItem"("rentalId");
++CREATE INDEX "RentalItem_itemId_idx" ON "RentalItem"("itemId");
++CREATE INDEX "RentalItem_barcodeValue_idx" ON "RentalItem"("barcodeValue");
++
++CREATE TABLE "RentalStatusHistory" (
++    "id" TEXT NOT NULL PRIMARY KEY,
++    "rentalId" TEXT NOT NULL,
++    "oldStatus" TEXT NOT NULL,
++    "newStatus" TEXT NOT NULL,
++    "reason" TEXT,
++    "userId" TEXT,
++    "username" TEXT,
++    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
++    CONSTRAINT "RentalStatusHistory_rentalId_fkey" FOREIGN KEY ("rentalId") REFERENCES "Rental" ("id") ON DELETE RESTRICT ON UPDATE CASCADE
++);
++
++CREATE INDEX "RentalStatusHistory_rentalId_idx" ON "RentalStatusHistory"("rentalId");
++CREATE INDEX "RentalStatusHistory_newStatus_idx" ON "RentalStatusHistory"("newStatus");
++CREATE INDEX "RentalStatusHistory_createdAt_idx" ON "RentalStatusHistory"("createdAt");
+diff --git a/backend-node/prisma/schema.prisma b/backend-node/prisma/schema.prisma
+index ddd7d83..0d75dd6 100644
+--- a/backend-node/prisma/schema.prisma
++++ b/backend-node/prisma/schema.prisma
+@@ -308,6 +308,8 @@ model Customer {
+   updatedBy       String?
+   deletedBy       String?
+ 
++  rentals Rental[]
++
+   @@index([fullName])
+   @@index([phoneNormalized])
+   @@index([secondaryPhoneNormalized])
+@@ -437,6 +439,7 @@ model Item {
+   size     Size?     @relation(fields: [sizeId], references: [id])
+   barcodes ItemBarcode[]
+   stateHistory ItemStateHistory[]
++  rentalItems RentalItem[]
+ 
+   @@index([displayName])
+   @@index([internalCode])
+@@ -493,3 +496,71 @@ model ItemBarcode {
+   @@index([barcodeId])
+   @@index([deletedAt])
+ }
++
++/// Rental workflow document (Phase 5.1) — inventory lifecycle owned by LifecycleService.
++model Rental {
++  id                  String    @id @default(uuid())
++  rentalNumber        String    @unique
++  customerId          String
++  rentalDate          DateTime
++  expectedReturnDate  DateTime
++  actualReturnDate    DateTime?
++  status              String    @default("draft")
++  notes               String?
++  deletedAt           DateTime?
++  createdAt           DateTime  @default(now())
++  updatedAt           DateTime  @updatedAt
++  createdBy           String?
++  updatedBy           String?
++  deletedBy           String?
++
++  customer      Customer               @relation(fields: [customerId], references: [id])
++  items         RentalItem[]
++  statusHistory RentalStatusHistory[]
++
++  @@index([customerId])
++  @@index([rentalNumber])
++  @@index([status])
++  @@index([rentalDate])
++  @@index([expectedReturnDate])
++  @@index([deletedAt])
++  @@index([createdAt])
++  @@index([status, deletedAt])
++}
++
++model RentalItem {
++  id                 String   @id @default(uuid())
++  rentalId           String
++  itemId             String
++  barcodeValue       String?
++  agreedRentalPrice  Int      @default(0)
++  notes              String?
++  createdAt          DateTime @default(now())
++  updatedAt          DateTime @updatedAt
++  createdBy          String?
++
++  rental Rental @relation(fields: [rentalId], references: [id])
++  item   Item   @relation(fields: [itemId], references: [id])
++
++  @@unique([rentalId, itemId])
++  @@index([rentalId])
++  @@index([itemId])
++  @@index([barcodeValue])
++}
++
++model RentalStatusHistory {
++  id        String   @id @default(uuid())
++  rentalId  String
++  oldStatus String
++  newStatus String
++  reason    String?
++  userId    String?
++  username  String?
++  createdAt DateTime @default(now())
++
++  rental Rental @relation(fields: [rentalId], references: [id])
++
++  @@index([rentalId])
++  @@index([newStatus])
++  @@index([createdAt])
++}
+diff --git a/backend-node/src/app.module.ts b/backend-node/src/app.module.ts
+index 75c21b2..0db1b10 100644
+--- a/backend-node/src/app.module.ts
++++ b/backend-node/src/app.module.ts
+@@ -16,6 +16,7 @@ import { InventoryModule } from './inventory/inventory.module';
+ import { LoggerModule } from './logging/logger.module';
+ import { MediaModule } from './media/media.module';
+ import { PermissionsModule } from './permissions/permissions.module';
++import { RentalsModule } from './rentals/rentals.module';
+ import { RolesModule } from './roles/roles.module';
+ import { SettingsModule } from './settings/settings.module';
+ import { UsersModule } from './users/users.module';
+@@ -40,6 +41,7 @@ import { UsersModule } from './users/users.module';
+     AuthModule,
+     CustomersModule,
+     InventoryModule,
++    RentalsModule,
+     HealthModule,
+   ],
+   providers: [
+diff --git a/backend-node/src/inventory/lifecycle/lifecycle.repository.ts b/backend-node/src/inventory/lifecycle/lifecycle.repository.ts
+index 58a43c7..d3ee8e7 100644
+--- a/backend-node/src/inventory/lifecycle/lifecycle.repository.ts
++++ b/backend-node/src/inventory/lifecycle/lifecycle.repository.ts
+@@ -3,12 +3,17 @@ import type { Item, ItemStateHistory, Prisma } from '@prisma/client';
+ import { PrismaService } from '../../database/prisma.service';
+ import { liveWhere } from '../../shared/soft-delete/soft-delete';
+ 
++type DbClient = Prisma.TransactionClient | PrismaService;
++
+ @Injectable()
+ export class LifecycleRepository {
+   constructor(private readonly prisma: PrismaService) {}
+ 
+-  findLiveItem(id: string): Promise<Item | null> {
+-    return this.prisma.item.findFirst({ where: liveWhere({ id }) });
++  findLiveItem(
++    id: string,
++    client: DbClient = this.prisma,
++  ): Promise<Item | null> {
++    return client.item.findFirst({ where: liveWhere({ id }) });
+   }
+ 
+   history(itemId: string, offset: number, limit: number): Promise<{
+@@ -29,21 +34,24 @@ export class LifecycleRepository {
+ 
+   /**
+    * CAS transition: updates only if current lifecycleState still matches `from`.
+-   * Prevents concurrent conflicting transitions.
++   * Pass `tx` to join an outer rental/business transaction.
+    */
+-  async transitionAtomic(input: {
+-    itemId: string;
+-    from: string;
+-    to: string;
+-    reason: string | null;
+-    userId: string | null;
+-    username: string | null;
+-    referenceType: string | null;
+-    referenceId: string | null;
+-    updatedBy: string | null;
+-  }): Promise<{ item: Item; history: ItemStateHistory } | null> {
+-    return this.prisma.$transaction(async (tx) => {
+-      const result = await tx.item.updateMany({
++  async transitionAtomic(
++    input: {
++      itemId: string;
++      from: string;
++      to: string;
++      reason: string | null;
++      userId: string | null;
++      username: string | null;
++      referenceType: string | null;
++      referenceId: string | null;
++      updatedBy: string | null;
++    },
++    tx?: Prisma.TransactionClient,
++  ): Promise<{ item: Item; history: ItemStateHistory } | null> {
++    const run = async (client: Prisma.TransactionClient) => {
++      const result = await client.item.updateMany({
+         where: {
+           id: input.itemId,
+           deletedAt: null,
+@@ -56,7 +64,7 @@ export class LifecycleRepository {
+       });
+       if (result.count !== 1) return null;
+ 
+-      const history = await tx.itemStateHistory.create({
++      const history = await client.itemStateHistory.create({
+         data: {
+           itemId: input.itemId,
+           oldState: input.from,
+@@ -68,12 +76,19 @@ export class LifecycleRepository {
+           referenceId: input.referenceId,
+         },
+       });
+-      const item = await tx.item.findUniqueOrThrow({ where: { id: input.itemId } });
++      const item = await client.item.findUniqueOrThrow({
++        where: { id: input.itemId },
++      });
+       return { item, history };
+-    });
++    };
++
++    if (tx) return run(tx);
++    return this.prisma.$transaction(run);
+   }
+ 
+-  createHistory(data: Prisma.ItemStateHistoryUncheckedCreateInput): Promise<ItemStateHistory> {
++  createHistory(
++    data: Prisma.ItemStateHistoryUncheckedCreateInput,
++  ): Promise<ItemStateHistory> {
+     return this.prisma.itemStateHistory.create({ data });
+   }
+ }
+diff --git a/backend-node/src/inventory/lifecycle/lifecycle.service.ts b/backend-node/src/inventory/lifecycle/lifecycle.service.ts
+index 9be9f13..2a08b7d 100644
+--- a/backend-node/src/inventory/lifecycle/lifecycle.service.ts
++++ b/backend-node/src/inventory/lifecycle/lifecycle.service.ts
+@@ -1,4 +1,5 @@
+ import { Injectable } from '@nestjs/common';
++import type { Prisma } from '@prisma/client';
+ import { AuditService } from '../../audit/audit.service';
+ import { AUDIT_ACTION } from '../../shared/constants/business.constants';
+ import { BusinessException } from '../../shared/errors/business.exception';
+@@ -36,6 +37,13 @@ export interface TransitionInput {
+   readonly expectedState?: string | null;
+ }
+ 
++export interface TransitionOptions {
++  /** Join an outer business transaction (e.g. rental checkout). */
++  readonly tx?: Prisma.TransactionClient;
++  /** Skip audit write (caller records a higher-level audit). Default false. */
++  readonly skipAudit?: boolean;
++}
++
+ @Injectable()
+ export class LifecycleService {
+   constructor(
+@@ -51,17 +59,19 @@ export class LifecycleService {
+   async history(
+     itemId: string,
+     query: PaginationInput = {},
+-  ): Promise<Paginated<{
+-    id: string;
+-    oldState: string;
+-    newState: string;
+-    reason: string | null;
+-    userId: string | null;
+-    username: string | null;
+-    referenceType: string | null;
+-    referenceId: string | null;
+-    createdAt: Date;
+-  }>> {
++  ): Promise<
++    Paginated<{
++      id: string;
++      oldState: string;
++      newState: string;
++      reason: string | null;
++      userId: string | null;
++      username: string | null;
++      referenceType: string | null;
++      referenceId: string | null;
++      createdAt: Date;
++    }>
++  > {
+     await this.requireLive(itemId);
+     const page = normalizePagination(query);
+     const { rows, total } = await this.repo.history(
+@@ -91,12 +101,17 @@ export class LifecycleService {
+     return canTransitionStates(fromRaw, toRaw);
+   }
+ 
++  /**
++   * Authoritative inventory lifecycle mutation.
++   * Domains (rentals) MUST use this — never write Item.lifecycleState directly.
++   */
+   async transition(
+     itemId: string,
+     input: TransitionInput,
+     actor?: AuthPrincipal,
++    options?: TransitionOptions,
+   ) {
+-    const item = await this.requireLive(itemId);
++    const item = await this.requireLive(itemId, options?.tx);
+     if (item.status !== ITEM_STATUS.ACTIVE) {
+       throw BusinessException.conflict(
+         'Only active catalog items can enter operational lifecycle transitions',
+@@ -131,23 +146,29 @@ export class LifecycleService {
+         ? null
+         : String(input.reason).trim().slice(0, 500);
+ 
+-    const result = await this.repo.transitionAtomic({
+-      itemId,
+-      from,
+-      to,
+-      reason,
+-      userId: actor?.userId ?? null,
+-      username: actor?.username ?? null,
+-      referenceType:
+-        input.referenceType == null || String(input.referenceType).trim() === ''
+-          ? null
+-          : String(input.referenceType).trim().toLowerCase().slice(0, 64),
+-      referenceId:
+-        input.referenceId == null || String(input.referenceId).trim() === ''
+-          ? null
+-          : String(input.referenceId).trim().slice(0, 64),
+-      updatedBy: actor?.userId ?? null,
+-    });
++    const referenceType =
++      input.referenceType == null || String(input.referenceType).trim() === ''
++        ? null
++        : String(input.referenceType).trim().toLowerCase().slice(0, 64);
++    const referenceId =
++      input.referenceId == null || String(input.referenceId).trim() === ''
++        ? null
++        : String(input.referenceId).trim().slice(0, 64);
++
++    const result = await this.repo.transitionAtomic(
++      {
++        itemId,
++        from,
++        to,
++        reason,
++        userId: actor?.userId ?? null,
++        username: actor?.username ?? null,
++        referenceType,
++        referenceId,
++        updatedBy: actor?.userId ?? null,
++      },
++      options?.tx,
++    );
+ 
+     if (!result) {
+       throw BusinessException.conflict(
+@@ -155,20 +176,22 @@ export class LifecycleService {
+       );
+     }
+ 
+-    await this.audit.record({
+-      module: INVENTORY_MODULE,
+-      entityType: ITEM_ENTITY,
+-      entityId: itemId,
+-      action: AUDIT_ACTION.TRANSITION,
+-      oldValues: { lifecycleState: from },
+-      newValues: {
+-        lifecycleState: to,
+-        reason,
+-        referenceType: result.history.referenceType,
+-        referenceId: result.history.referenceId,
+-      },
+-      actor: { userId: actor?.userId, username: actor?.username },
+-    });
++    if (!options?.skipAudit) {
++      await this.audit.record({
++        module: INVENTORY_MODULE,
++        entityType: ITEM_ENTITY,
++        entityId: itemId,
++        action: AUDIT_ACTION.TRANSITION,
++        oldValues: { lifecycleState: from },
++        newValues: {
++          lifecycleState: to,
++          reason,
++          referenceType: result.history.referenceType,
++          referenceId: result.history.referenceId,
++        },
++        actor: { userId: actor?.userId, username: actor?.username },
++      });
++    }
+ 
+     return this.toStateView(result.item);
+   }
+@@ -195,9 +218,14 @@ export class LifecycleService {
+     return value;
+   }
+ 
+-  private async requireLive(itemId: string) {
++  private async requireLive(
++    itemId: string,
++    tx?: Prisma.TransactionClient,
++  ) {
+     const id = assertNonEmptyString(itemId, 'itemId');
+-    const item = await this.repo.findLiveItem(id);
++    const item = tx
++      ? await this.repo.findLiveItem(id, tx)
++      : await this.repo.findLiveItem(id);
+     if (!item) throw BusinessException.notFound('Item not found');
+     return item;
+   }
+diff --git a/backend-node/src/permissions/permission.seeds.ts b/backend-node/src/permissions/permission.seeds.ts
+index e0b0b1c..e4e91fe 100644
+--- a/backend-node/src/permissions/permission.seeds.ts
++++ b/backend-node/src/permissions/permission.seeds.ts
+@@ -72,6 +72,11 @@ export const DEFAULT_PERMISSIONS: readonly PermissionSeed[] = [
+   perm('rental.update', 'تعديل إيجار', 'تعديل عقد إيجار'),
+   perm('rental.cancel', 'إلغاء إيجار', 'إلغاء عقد إيجار'),
+   perm('rental.return', 'إرجاع إيجار', 'تسجيل إرجاع الفستان المستأجر'),
++  perm('rentals.view', 'View rentals', 'View rental workflow documents'),
++  perm('rentals.create', 'Create rentals', 'Create draft rentals'),
++  perm('rentals.checkout', 'Checkout rentals', 'Checkout draft rentals and bind inventory'),
++  perm('rentals.return', 'Return rentals', 'Mark rental return pending'),
++  perm('rentals.cancel', 'Cancel rentals', 'Cancel draft or outbound rentals'),
+   perm('rental.settlement.view', 'عرض تسوية الإيجار', 'عرض تسويات الإيجار المالية'),
+   perm('rental.settlement.create', 'إنشاء تسوية إيجار', 'إنشاء تسوية مالية لإيجار مُرجع'),
+   perm('rental.settlement.collect', 'تحصيل تسوية إيجار', 'تسجيل دفعات على تسوية الإيجار'),
+@@ -122,6 +127,11 @@ export const CASHIER_PERMISSIONS: readonly string[] = [
+   'rental.update',
+   'rental.cancel',
+   'rental.return',
++  'rentals.view',
++  'rentals.create',
++  'rentals.checkout',
++  'rentals.return',
++  'rentals.cancel',
+   'rental.settlement.view',
+   'rental.settlement.create',
+   'rental.settlement.collect',
+diff --git a/backend-node/src/rentals/dto/rental.dto.ts b/backend-node/src/rentals/dto/rental.dto.ts
+new file mode 100644
+index 0000000..eb3c3c9
+--- /dev/null
++++ b/backend-node/src/rentals/dto/rental.dto.ts
+@@ -0,0 +1,105 @@
++import { Type } from 'class-transformer';
++import {
++  ArrayMinSize,
++  IsArray,
++  IsDateString,
++  IsInt,
++  IsOptional,
++  IsString,
++  IsUUID,
++  MaxLength,
++  Min,
++  ValidateNested,
++} from 'class-validator';
++
++export class CreateRentalItemDto {
++  @IsUUID()
++  itemId!: string;
++
++  @IsOptional()
++  @IsString()
++  @MaxLength(64)
++  barcode?: string;
++
++  @IsOptional()
++  @Type(() => Number)
++  @IsInt()
++  @Min(0)
++  agreedRentalPrice?: number;
++
++  @IsOptional()
++  @IsString()
++  @MaxLength(500)
++  notes?: string;
++}
++
++export class CreateRentalDto {
++  @IsUUID()
++  customerId!: string;
++
++  @IsDateString()
++  rentalDate!: string;
++
++  @IsDateString()
++  expectedReturnDate!: string;
++
++  @IsOptional()
++  @IsString()
++  @MaxLength(2000)
++  notes?: string;
++
++  @IsArray()
++  @ArrayMinSize(1)
++  @ValidateNested({ each: true })
++  @Type(() => CreateRentalItemDto)
++  items!: CreateRentalItemDto[];
++}
++
++export class ListRentalsDto {
++  @IsOptional()
++  @IsString()
++  q?: string;
++
++  @IsOptional()
++  @IsString()
++  status?: string;
++
++  @IsOptional()
++  @IsUUID()
++  customerId?: string;
++
++  @IsOptional()
++  @IsString()
++  rentalNumber?: string;
++
++  @IsOptional()
++  @IsString()
++  deleted?: string;
++
++  @IsOptional()
++  @IsString()
++  sortBy?: string;
++
++  @IsOptional()
++  @IsString()
++  sortDir?: string;
++
++  @IsOptional()
++  @Type(() => Number)
++  @IsInt()
++  @Min(0)
++  offset?: number;
++
++  @IsOptional()
++  @Type(() => Number)
++  @IsInt()
++  @Min(1)
++  limit?: number;
++}
++
++export class RentalActionDto {
++  @IsOptional()
++  @IsString()
++  @MaxLength(500)
++  reason?: string;
++}
+diff --git a/backend-node/src/rentals/rentals.constants.ts b/backend-node/src/rentals/rentals.constants.ts
+new file mode 100644
+index 0000000..1423c7b
+--- /dev/null
++++ b/backend-node/src/rentals/rentals.constants.ts
+@@ -0,0 +1,83 @@
++import { ITEM_LIFECYCLE } from '../inventory/inventory.constants';
++
++export const RENTAL_MODULE = 'rentals';
++export const RENTAL_ENTITY = 'rental';
++
++export const RENTAL_PERMISSION = {
++  VIEW: 'rentals.view',
++  CREATE: 'rentals.create',
++  CHECKOUT: 'rentals.checkout',
++  RETURN: 'rentals.return',
++  CANCEL: 'rentals.cancel',
++} as const;
++
++export const RENTAL_STATUS = {
++  DRAFT: 'draft',
++  CHECKED_OUT: 'checked_out',
++  ACTIVE: 'active',
++  RETURN_PENDING: 'return_pending',
++  COMPLETED: 'completed',
++  CANCELLED: 'cancelled',
++  OVERDUE: 'overdue',
++} as const;
++
++export type RentalStatus = (typeof RENTAL_STATUS)[keyof typeof RENTAL_STATUS];
++
++export const RENTAL_STATUS_VALUES = Object.values(RENTAL_STATUS);
++
++export const RENTAL_STATUS_TRANSITIONS: Readonly<
++  Record<RentalStatus, readonly RentalStatus[]>
++> = {
++  [RENTAL_STATUS.DRAFT]: [RENTAL_STATUS.CHECKED_OUT, RENTAL_STATUS.CANCELLED],
++  [RENTAL_STATUS.CHECKED_OUT]: [
++    RENTAL_STATUS.ACTIVE,
++    RENTAL_STATUS.RETURN_PENDING,
++    RENTAL_STATUS.CANCELLED,
++  ],
++  [RENTAL_STATUS.ACTIVE]: [
++    RENTAL_STATUS.RETURN_PENDING,
++    RENTAL_STATUS.OVERDUE,
++    RENTAL_STATUS.CANCELLED,
++  ],
++  [RENTAL_STATUS.OVERDUE]: [
++    RENTAL_STATUS.RETURN_PENDING,
++    RENTAL_STATUS.CANCELLED,
++  ],
++  [RENTAL_STATUS.RETURN_PENDING]: [RENTAL_STATUS.COMPLETED],
++  [RENTAL_STATUS.COMPLETED]: [],
++  [RENTAL_STATUS.CANCELLED]: [],
++};
++
++/** Inventory path used on checkout (LifecycleService owns mutations). */
++export const RENTAL_CHECKOUT_ITEM_PATH = [
++  ITEM_LIFECYCLE.RESERVED,
++  ITEM_LIFECYCLE.RENTED,
++] as const;
++
++/** Inventory path used when cancelling an out-bound rental. */
++export const RENTAL_CANCEL_ITEM_PATH = [
++  ITEM_LIFECYCLE.RETURN_PENDING,
++  ITEM_LIFECYCLE.INSPECTION,
++  ITEM_LIFECYCLE.AVAILABLE,
++] as const;
++
++export const RENTAL_SORT_FIELDS = [
++  'createdAt',
++  'updatedAt',
++  'rentalDate',
++  'expectedReturnDate',
++  'rentalNumber',
++  'status',
++] as const;
++
++export const RENTAL_NUMBER_SETTING = {
++  PREFIX: 'rentals.number.prefix',
++  SEPARATOR: 'rentals.number.separator',
++  PADDING: 'rentals.number.padding',
++} as const;
++
++export const RENTAL_DEFAULT_PREFIX = 'RENT';
++export const RENTAL_DEFAULT_SEPARATOR = '-';
++export const RENTAL_DEFAULT_PADDING = 8;
++
++export const RENTAL_REFERENCE_TYPE = 'rental';
+diff --git a/backend-node/src/rentals/rentals.controller.ts b/backend-node/src/rentals/rentals.controller.ts
+new file mode 100644
+index 0000000..2f5c625
+--- /dev/null
++++ b/backend-node/src/rentals/rentals.controller.ts
+@@ -0,0 +1,76 @@
++import {
++  Body,
++  Controller,
++  Get,
++  HttpCode,
++  Param,
++  ParseUUIDPipe,
++  Post,
++  Query,
++} from '@nestjs/common';
++import { CurrentUser } from '../auth/decorators/current-user.decorator';
++import { RequirePermissions } from '../auth/decorators/require-permissions.decorator';
++import type { AuthPrincipal } from '../shared/types';
++import {
++  CreateRentalDto,
++  ListRentalsDto,
++  RentalActionDto,
++} from './dto/rental.dto';
++import { RENTAL_PERMISSION } from './rentals.constants';
++import { RentalsService } from './rentals.service';
++
++@Controller('rentals')
++export class RentalsController {
++  constructor(private readonly rentals: RentalsService) {}
++
++  @Get()
++  @RequirePermissions(RENTAL_PERMISSION.VIEW)
++  list(@Query() query: ListRentalsDto) {
++    return this.rentals.list(query);
++  }
++
++  @Get(':id')
++  @RequirePermissions(RENTAL_PERMISSION.VIEW)
++  get(@Param('id', ParseUUIDPipe) id: string) {
++    return this.rentals.getById(id);
++  }
++
++  @Post()
++  @RequirePermissions(RENTAL_PERMISSION.CREATE)
++  create(@Body() body: CreateRentalDto, @CurrentUser() user: AuthPrincipal) {
++    return this.rentals.create(body, user);
++  }
++
++  @Post(':id/checkout')
++  @HttpCode(200)
++  @RequirePermissions(RENTAL_PERMISSION.CHECKOUT)
++  checkout(
++    @Param('id', ParseUUIDPipe) id: string,
++    @Body() body: RentalActionDto,
++    @CurrentUser() user: AuthPrincipal,
++  ) {
++    return this.rentals.checkout(id, body.reason, user);
++  }
++
++  @Post(':id/return')
++  @HttpCode(200)
++  @RequirePermissions(RENTAL_PERMISSION.RETURN)
++  initiateReturn(
++    @Param('id', ParseUUIDPipe) id: string,
++    @Body() body: RentalActionDto,
++    @CurrentUser() user: AuthPrincipal,
++  ) {
++    return this.rentals.initiateReturn(id, body.reason, user);
++  }
++
++  @Post(':id/cancel')
++  @HttpCode(200)
++  @RequirePermissions(RENTAL_PERMISSION.CANCEL)
++  cancel(
++    @Param('id', ParseUUIDPipe) id: string,
++    @Body() body: RentalActionDto,
++    @CurrentUser() user: AuthPrincipal,
++  ) {
++    return this.rentals.cancel(id, body.reason, user);
++  }
++}
+diff --git a/backend-node/src/rentals/rentals.mapper.ts b/backend-node/src/rentals/rentals.mapper.ts
+new file mode 100644
+index 0000000..a8edbb8
+--- /dev/null
++++ b/backend-node/src/rentals/rentals.mapper.ts
+@@ -0,0 +1,53 @@
++import type { RentalWithRelations } from './rentals.repository';
++
++export function toRentalPublic(row: RentalWithRelations) {
++  return {
++    id: row.id,
++    rentalNumber: row.rentalNumber,
++    customerId: row.customerId,
++    customer: row.customer
++      ? {
++          id: row.customer.id,
++          customerNumber: row.customer.customerNumber,
++          fullName: row.customer.fullName,
++          status: row.customer.status,
++        }
++      : null,
++    rentalDate: row.rentalDate,
++    expectedReturnDate: row.expectedReturnDate,
++    actualReturnDate: row.actualReturnDate,
++    status: row.status,
++    notes: row.notes,
++    items: row.items.map((i) => ({
++      id: i.id,
++      itemId: i.itemId,
++      barcodeValue: i.barcodeValue,
++      agreedRentalPrice: i.agreedRentalPrice,
++      notes: i.notes,
++      item: i.item
++        ? {
++            id: i.item.id,
++            internalCode: i.item.internalCode,
++            displayName: i.item.displayName,
++            status: i.item.status,
++            lifecycleState: i.item.lifecycleState,
++            rentalPrice: i.item.rentalPrice,
++          }
++        : null,
++    })),
++    statusHistory: row.statusHistory.map((h) => ({
++      id: h.id,
++      oldStatus: h.oldStatus,
++      newStatus: h.newStatus,
++      reason: h.reason,
++      userId: h.userId,
++      username: h.username,
++      createdAt: h.createdAt,
++    })),
++    createdAt: row.createdAt,
++    updatedAt: row.updatedAt,
++    deletedAt: row.deletedAt,
++    createdBy: row.createdBy,
++    updatedBy: row.updatedBy,
++  };
++}
+diff --git a/backend-node/src/rentals/rentals.module.ts b/backend-node/src/rentals/rentals.module.ts
+new file mode 100644
+index 0000000..b7ec91e
+--- /dev/null
++++ b/backend-node/src/rentals/rentals.module.ts
+@@ -0,0 +1,14 @@
++import { Module } from '@nestjs/common';
++import { CustomersModule } from '../customers/customers.module';
++import { InventoryModule } from '../inventory/inventory.module';
++import { RentalsController } from './rentals.controller';
++import { RentalsRepository } from './rentals.repository';
++import { RentalsService } from './rentals.service';
++
++@Module({
++  imports: [CustomersModule, InventoryModule],
++  controllers: [RentalsController],
++  providers: [RentalsRepository, RentalsService],
++  exports: [RentalsService],
++})
++export class RentalsModule {}
+diff --git a/backend-node/src/rentals/rentals.repository.ts b/backend-node/src/rentals/rentals.repository.ts
+new file mode 100644
+index 0000000..3cac77d
+--- /dev/null
++++ b/backend-node/src/rentals/rentals.repository.ts
+@@ -0,0 +1,202 @@
++import { Injectable } from '@nestjs/common';
++import type { Prisma, Rental } from '@prisma/client';
++import { PrismaService } from '../database/prisma.service';
++import {
++  restoreSoftDeleteData,
++  softDeleteData,
++} from '../shared/soft-delete/soft-delete';
++import { RENTAL_STATUS } from './rentals.constants';
++
++export const rentalInclude = {
++  customer: true,
++  items: {
++    include: {
++      item: {
++        select: {
++          id: true,
++          internalCode: true,
++          displayName: true,
++          status: true,
++          lifecycleState: true,
++          rentalPrice: true,
++        },
++      },
++    },
++  },
++  statusHistory: { orderBy: { createdAt: 'desc' as const }, take: 50 },
++} satisfies Prisma.RentalInclude;
++
++export type RentalWithRelations = Prisma.RentalGetPayload<{
++  include: typeof rentalInclude;
++}>;
++
++@Injectable()
++export class RentalsRepository {
++  constructor(private readonly prisma: PrismaService) {}
++
++  get client() {
++    return this.prisma;
++  }
++
++  create(
++    data: Prisma.RentalUncheckedCreateInput,
++    items: Array<{
++      itemId: string;
++      barcodeValue?: string | null;
++      agreedRentalPrice: number;
++      notes?: string | null;
++      createdBy?: string | null;
++    }>,
++    actor?: { userId?: string | null; username?: string | null },
++  ): Promise<RentalWithRelations> {
++    return this.prisma.$transaction(async (tx) => {
++      const rental = await tx.rental.create({
++        data: {
++          ...data,
++          items: {
++            create: items.map((i) => ({
++              itemId: i.itemId,
++              barcodeValue: i.barcodeValue ?? null,
++              agreedRentalPrice: i.agreedRentalPrice,
++              notes: i.notes ?? null,
++              createdBy: i.createdBy ?? null,
++            })),
++          },
++          statusHistory: {
++            create: {
++              oldStatus: RENTAL_STATUS.DRAFT,
++              newStatus: data.status ?? RENTAL_STATUS.DRAFT,
++              reason: 'created',
++              userId: actor?.userId ?? null,
++              username: actor?.username ?? null,
++            },
++          },
++        },
++      });
++      return tx.rental.findUniqueOrThrow({
++        where: { id: rental.id },
++        include: rentalInclude,
++      });
++    });
++  }
++
++  findById(id: string, deleted = false): Promise<RentalWithRelations | null> {
++    return this.prisma.rental.findFirst({
++      where: { id, deletedAt: deleted ? { not: null } : null },
++      include: rentalInclude,
++    });
++  }
++
++  findByNumber(rentalNumber: string): Promise<RentalWithRelations | null> {
++    return this.prisma.rental.findFirst({
++      where: { rentalNumber, deletedAt: null },
++      include: rentalInclude,
++    });
++  }
++
++  findAnyNumber(rentalNumber: string): Promise<Rental | null> {
++    return this.prisma.rental.findUnique({ where: { rentalNumber } });
++  }
++
++  async list(input: {
++    where: Prisma.RentalWhereInput;
++    orderBy: Prisma.RentalOrderByWithRelationInput;
++    offset: number;
++    limit: number;
++  }) {
++    const [rows, total] = await Promise.all([
++      this.prisma.rental.findMany({
++        where: input.where,
++        orderBy: input.orderBy,
++        skip: input.offset,
++        take: input.limit,
++        include: rentalInclude,
++      }),
++      this.prisma.rental.count({ where: input.where }),
++    ]);
++    return { rows, total };
++  }
++
++  async nextSequence(prefix: string): Promise<number> {
++    return this.prisma.$transaction(async (tx) => {
++      const e = await tx.sequenceCounter.findUnique({ where: { prefix } });
++      if (!e) {
++        await tx.sequenceCounter.create({ data: { prefix, lastValue: 1 } });
++        return 1;
++      }
++      return (
++        await tx.sequenceCounter.update({
++          where: { prefix },
++          data: { lastValue: e.lastValue + 1 },
++        })
++      ).lastValue;
++    });
++  }
++
++  async transitionStatus(input: {
++    rentalId: string;
++    from: string;
++    to: string;
++    reason?: string | null;
++    userId?: string | null;
++    username?: string | null;
++    extra?: Prisma.RentalUncheckedUpdateInput;
++    tx?: Prisma.TransactionClient;
++  }): Promise<RentalWithRelations | null> {
++    const run = async (client: Prisma.TransactionClient) => {
++      const result = await client.rental.updateMany({
++        where: {
++          id: input.rentalId,
++          deletedAt: null,
++          status: input.from,
++        },
++        data: {
++          status: input.to,
++          updatedBy: input.userId ?? null,
++          ...(input.extra ?? {}),
++        },
++      });
++      if (result.count !== 1) return null;
++      await client.rentalStatusHistory.create({
++        data: {
++          rentalId: input.rentalId,
++          oldStatus: input.from,
++          newStatus: input.to,
++          reason: input.reason ?? null,
++          userId: input.userId ?? null,
++          username: input.username ?? null,
++        },
++      });
++      return client.rental.findUniqueOrThrow({
++        where: { id: input.rentalId },
++        include: rentalInclude,
++      });
++    };
++    if (input.tx) return run(input.tx);
++    return this.prisma.$transaction(run);
++  }
++
++  softDelete(id: string, userId?: string) {
++    return this.prisma.rental.update({
++      where: { id },
++      data: {
++        ...softDeleteData(),
++        deletedBy: userId ?? null,
++        status: RENTAL_STATUS.CANCELLED,
++      },
++      include: rentalInclude,
++    });
++  }
++
++  restore(id: string, userId?: string) {
++    return this.prisma.rental.update({
++      where: { id },
++      data: {
++        ...restoreSoftDeleteData(),
++        deletedBy: null,
++        updatedBy: userId ?? null,
++      },
++      include: rentalInclude,
++    });
++  }
++}
+diff --git a/backend-node/src/rentals/rentals.rules.ts b/backend-node/src/rentals/rentals.rules.ts
+new file mode 100644
+index 0000000..f278b7f
+--- /dev/null
++++ b/backend-node/src/rentals/rentals.rules.ts
+@@ -0,0 +1,49 @@
++import {
++  RENTAL_STATUS,
++  RENTAL_STATUS_TRANSITIONS,
++  RENTAL_STATUS_VALUES,
++  type RentalStatus,
++} from './rentals.constants';
++
++export function isRentalStatus(value: string): value is RentalStatus {
++  return (RENTAL_STATUS_VALUES as string[]).includes(value);
++}
++
++export function canTransitionRentalStatus(
++  from: RentalStatus,
++  to: RentalStatus,
++): boolean {
++  return RENTAL_STATUS_TRANSITIONS[from].includes(to);
++}
++
++export function assertRentalTransition(from: RentalStatus, to: RentalStatus): void {
++  if (!canTransitionRentalStatus(from, to)) {
++    throw new Error(`Invalid rental transition: ${from} → ${to}`);
++  }
++}
++
++/** Statuses where items are physically out (inventory should be rented). */
++export function isOutboundRentalStatus(status: string): boolean {
++  return (
++    status === RENTAL_STATUS.CHECKED_OUT ||
++    status === RENTAL_STATUS.ACTIVE ||
++    status === RENTAL_STATUS.OVERDUE
++  );
++}
++
++export function canInitiateReturn(status: string): boolean {
++  return isOutboundRentalStatus(status);
++}
++
++export function canCancel(status: string): boolean {
++  return (
++    status === RENTAL_STATUS.DRAFT ||
++    status === RENTAL_STATUS.CHECKED_OUT ||
++    status === RENTAL_STATUS.ACTIVE ||
++    status === RENTAL_STATUS.OVERDUE
++  );
++}
++
++export function canCheckout(status: string): boolean {
++  return status === RENTAL_STATUS.DRAFT;
++}
+diff --git a/backend-node/src/rentals/rentals.service.ts b/backend-node/src/rentals/rentals.service.ts
+new file mode 100644
+index 0000000..154fef1
+--- /dev/null
++++ b/backend-node/src/rentals/rentals.service.ts
+@@ -0,0 +1,564 @@
++import { Injectable } from '@nestjs/common';
++import type { Prisma } from '@prisma/client';
++import { AuditService } from '../audit/audit.service';
++import { BarcodeService } from '../barcode/barcode.service';
++import { CustomersService } from '../customers/customers.service';
++import { CUSTOMER_STATUS } from '../customers/customers.constants';
++import { ItemsService } from '../inventory/items/items.service';
++import { ITEM_LIFECYCLE, ITEM_STATUS } from '../inventory/inventory.constants';
++import { LifecycleService } from '../inventory/lifecycle/lifecycle.service';
++import { isRentable } from '../inventory/lifecycle/lifecycle.rules';
++import { SettingsService } from '../settings/settings.service';
++import { AUDIT_ACTION, BARCODE_STATUS } from '../shared/constants/business.constants';
++import { BusinessException } from '../shared/errors/business.exception';
++import {
++  normalizePagination,
++  paginated,
++} from '../shared/pagination/pagination';
++import { normalizeSearchQuery } from '../shared/search/search';
++import { normalizeSort } from '../shared/sorting/sorting';
++import { parseOptionalBoolean } from '../shared/validation/parse-boolean';
++import type { AuthPrincipal } from '../shared/types';
++import type {
++  CreateRentalDto,
++  CreateRentalItemDto,
++  ListRentalsDto,
++} from './dto/rental.dto';
++import { toRentalPublic } from './rentals.mapper';
++import {
++  RENTAL_CANCEL_ITEM_PATH,
++  RENTAL_DEFAULT_PADDING,
++  RENTAL_DEFAULT_PREFIX,
++  RENTAL_DEFAULT_SEPARATOR,
++  RENTAL_ENTITY,
++  RENTAL_MODULE,
++  RENTAL_NUMBER_SETTING,
++  RENTAL_REFERENCE_TYPE,
++  RENTAL_SORT_FIELDS,
++  RENTAL_STATUS,
++  type RentalStatus,
++} from './rentals.constants';
++import {
++  canCancel,
++  canCheckout,
++  canInitiateReturn,
++  canTransitionRentalStatus,
++  isRentalStatus,
++} from './rentals.rules';
++import {
++  RentalsRepository,
++  type RentalWithRelations,
++} from './rentals.repository';
++
++@Injectable()
++export class RentalsService {
++  constructor(
++    private readonly repo: RentalsRepository,
++    private readonly customers: CustomersService,
++    private readonly items: ItemsService,
++    private readonly lifecycle: LifecycleService,
++    private readonly barcodes: BarcodeService,
++    private readonly settings: SettingsService,
++    private readonly audit: AuditService,
++  ) {}
++
++  async create(dto: CreateRentalDto, actor?: AuthPrincipal) {
++    await this.requireActiveCustomer(dto.customerId);
++    const rentalDate = this.parseDate(dto.rentalDate, 'rentalDate');
++    const expectedReturnDate = this.parseDate(
++      dto.expectedReturnDate,
++      'expectedReturnDate',
++    );
++    if (expectedReturnDate.getTime() < rentalDate.getTime()) {
++      throw BusinessException.validation(
++        'expectedReturnDate must be on or after rentalDate',
++      );
++    }
++
++    const prepared = await this.prepareItems(dto.items);
++    const rentalNumber = await this.allocateNumber();
++
++    const row = await this.repo.create(
++      {
++        rentalNumber,
++        customerId: dto.customerId,
++        rentalDate,
++        expectedReturnDate,
++        status: RENTAL_STATUS.DRAFT,
++        notes: dto.notes?.trim() || null,
++        createdBy: actor?.userId ?? null,
++        updatedBy: actor?.userId ?? null,
++      },
++      prepared.map((p) => ({
++        itemId: p.itemId,
++        barcodeValue: p.barcodeValue,
++        agreedRentalPrice: p.agreedRentalPrice,
++        notes: p.notes,
++        createdBy: actor?.userId ?? null,
++      })),
++      { userId: actor?.userId, username: actor?.username },
++    );
++
++    await this.audit.recordCreate(
++      RENTAL_MODULE,
++      RENTAL_ENTITY,
++      row.id,
++      this.snapshot(row),
++      { userId: actor?.userId, username: actor?.username },
++    );
++
++    return toRentalPublic(row);
++  }
++
++  async list(query: ListRentalsDto) {
++    const page = normalizePagination(query);
++    const sort = normalizeSort(
++      query.sortBy,
++      query.sortDir,
++      new Set(RENTAL_SORT_FIELDS),
++      { field: 'createdAt', direction: 'desc' },
++    );
++    const { rows, total } = await this.repo.list({
++      where: this.where(query),
++      orderBy: { [sort.field]: sort.direction },
++      offset: page.offset,
++      limit: page.limit,
++    });
++    return paginated(rows.map(toRentalPublic), total, page);
++  }
++
++  async getById(id: string) {
++    return toRentalPublic(await this.requireLive(id));
++  }
++
++  /**
++   * Checkout: draft → checked_out → active, inventory available → reserved → rented.
++   * Entire mutation runs in one Prisma transaction; failure rolls back completely.
++   */
++  async checkout(id: string, reason?: string, actor?: AuthPrincipal) {
++    const rental = await this.requireLive(id);
++    if (!canCheckout(rental.status)) {
++      throw BusinessException.conflict(
++        `Cannot checkout rental in status ${rental.status}`,
++      );
++    }
++    await this.requireActiveCustomer(rental.customerId);
++
++    // Re-validate items are still rentable before opening the TX.
++    for (const line of rental.items) {
++      await this.assertItemRentable(line.itemId, line.barcodeValue);
++    }
++
++    const ref = {
++      referenceType: RENTAL_REFERENCE_TYPE,
++      referenceId: rental.id,
++    };
++
++    try {
++      await this.repo.client.$transaction(async (tx) => {
++        for (const line of rental.items) {
++          await this.lifecycle.transition(
++            line.itemId,
++            {
++              newState: ITEM_LIFECYCLE.RESERVED,
++              expectedState: ITEM_LIFECYCLE.AVAILABLE,
++              reason: reason?.trim() || 'rental_checkout',
++              ...ref,
++            },
++            actor,
++            { tx, skipAudit: true },
++          );
++          await this.lifecycle.transition(
++            line.itemId,
++            {
++              newState: ITEM_LIFECYCLE.RENTED,
++              expectedState: ITEM_LIFECYCLE.RESERVED,
++              reason: reason?.trim() || 'rental_checkout',
++              ...ref,
++            },
++            actor,
++            { tx, skipAudit: true },
++          );
++        }
++
++        const afterCheckout = await this.repo.transitionStatus({
++          rentalId: rental.id,
++          from: RENTAL_STATUS.DRAFT,
++          to: RENTAL_STATUS.CHECKED_OUT,
++          reason: reason?.trim() || 'checkout',
++          userId: actor?.userId ?? null,
++          username: actor?.username ?? null,
++          tx,
++        });
++        if (!afterCheckout) {
++          throw BusinessException.conflict(
++            'Concurrent rental checkout rejected',
++          );
++        }
++
++        const afterActive = await this.repo.transitionStatus({
++          rentalId: rental.id,
++          from: RENTAL_STATUS.CHECKED_OUT,
++          to: RENTAL_STATUS.ACTIVE,
++          reason: 'handover_complete',
++          userId: actor?.userId ?? null,
++          username: actor?.username ?? null,
++          tx,
++        });
++        if (!afterActive) {
++          throw BusinessException.conflict(
++            'Concurrent rental activation rejected',
++          );
++        }
++      });
++    } catch (e) {
++      throw e;
++    }
++
++    // Audit inventory transitions after successful TX (no partial rental left).
++    for (const line of rental.items) {
++      await this.audit.record({
++        module: RENTAL_MODULE,
++        entityType: RENTAL_ENTITY,
++        entityId: rental.id,
++        action: AUDIT_ACTION.TRANSITION,
++        newValues: {
++          itemId: line.itemId,
++          inventoryPath: 'available→reserved→rented',
++        },
++        message: 'checkout_inventory',
++        actor: { userId: actor?.userId, username: actor?.username },
++      });
++    }
++
++    const updated = await this.requireLive(id);
++    await this.audit.record({
++      module: RENTAL_MODULE,
++      entityType: RENTAL_ENTITY,
++      entityId: id,
++      action: 'checkout',
++      oldValues: this.snapshot(rental),
++      newValues: this.snapshot(updated),
++      actor: { userId: actor?.userId, username: actor?.username },
++    });
++    return toRentalPublic(updated);
++  }
++
++  /** Foundation return: outbound → return_pending; inventory rented → return_pending. */
++  async initiateReturn(id: string, reason?: string, actor?: AuthPrincipal) {
++    const rental = await this.requireLive(id);
++    if (!canInitiateReturn(rental.status)) {
++      throw BusinessException.conflict(
++        `Cannot initiate return from status ${rental.status}`,
++      );
++    }
++    const from = rental.status as RentalStatus;
++    if (!canTransitionRentalStatus(from, RENTAL_STATUS.RETURN_PENDING)) {
++      throw BusinessException.conflict(
++        `Invalid rental transition: ${from} → ${RENTAL_STATUS.RETURN_PENDING}`,
++      );
++    }
++
++    await this.repo.client.$transaction(async (tx) => {
++      for (const line of rental.items) {
++        await this.lifecycle.transition(
++          line.itemId,
++          {
++            newState: ITEM_LIFECYCLE.RETURN_PENDING,
++            expectedState: ITEM_LIFECYCLE.RENTED,
++            reason: reason?.trim() || 'rental_return',
++            referenceType: RENTAL_REFERENCE_TYPE,
++            referenceId: rental.id,
++          },
++          actor,
++          { tx, skipAudit: true },
++        );
++      }
++
++      const updated = await this.repo.transitionStatus({
++        rentalId: rental.id,
++        from,
++        to: RENTAL_STATUS.RETURN_PENDING,
++        reason: reason?.trim() || 'return',
++        userId: actor?.userId ?? null,
++        username: actor?.username ?? null,
++        extra: { actualReturnDate: new Date() },
++        tx,
++      });
++      if (!updated) {
++        throw BusinessException.conflict('Concurrent rental return rejected');
++      }
++    });
++
++    const updated = await this.requireLive(id);
++    await this.audit.record({
++      module: RENTAL_MODULE,
++      entityType: RENTAL_ENTITY,
++      entityId: id,
++      action: 'return_pending',
++      oldValues: this.snapshot(rental),
++      newValues: this.snapshot(updated),
++      actor: { userId: actor?.userId, username: actor?.username },
++    });
++    return toRentalPublic(updated);
++  }
++
++  async cancel(id: string, reason?: string, actor?: AuthPrincipal) {
++    const rental = await this.requireLive(id);
++    if (!canCancel(rental.status)) {
++      throw BusinessException.conflict(
++        `Cannot cancel rental in status ${rental.status}`,
++      );
++    }
++    const from = rental.status as RentalStatus;
++    if (!canTransitionRentalStatus(from, RENTAL_STATUS.CANCELLED)) {
++      throw BusinessException.conflict(
++        `Invalid rental transition: ${from} → ${RENTAL_STATUS.CANCELLED}`,
++      );
++    }
++
++    const outbound = from !== RENTAL_STATUS.DRAFT;
++
++    await this.repo.client.$transaction(async (tx) => {
++      if (outbound) {
++        for (const line of rental.items) {
++          // rented → return_pending → inspection → available
++          let expected: string = ITEM_LIFECYCLE.RENTED;
++          for (const next of RENTAL_CANCEL_ITEM_PATH) {
++            await this.lifecycle.transition(
++              line.itemId,
++              {
++                newState: next,
++                expectedState: expected,
++                reason: reason?.trim() || 'rental_cancelled',
++                referenceType: RENTAL_REFERENCE_TYPE,
++                referenceId: rental.id,
++              },
++              actor,
++              { tx, skipAudit: true },
++            );
++            expected = next;
++          }
++        }
++      }
++
++      const updated = await this.repo.transitionStatus({
++        rentalId: rental.id,
++        from,
++        to: RENTAL_STATUS.CANCELLED,
++        reason: reason?.trim() || 'cancel',
++        userId: actor?.userId ?? null,
++        username: actor?.username ?? null,
++        tx,
++      });
++      if (!updated) {
++        throw BusinessException.conflict('Concurrent rental cancel rejected');
++      }
++    });
++
++    const updated = await this.requireLive(id);
++    await this.audit.record({
++      module: RENTAL_MODULE,
++      entityType: RENTAL_ENTITY,
++      entityId: id,
++      action: 'cancel',
++      oldValues: this.snapshot(rental),
++      newValues: this.snapshot(updated),
++      actor: { userId: actor?.userId, username: actor?.username },
++    });
++    return toRentalPublic(updated);
++  }
++
++  private where(q: ListRentalsDto): Prisma.RentalWhereInput {
++    const w: Prisma.RentalWhereInput = {
++      deletedAt:
++        parseOptionalBoolean(q.deleted) === true ? { not: null } : null,
++    };
++    if (q.status) {
++      const s = q.status.trim().toLowerCase();
++      if (!isRentalStatus(s)) {
++        throw BusinessException.validation('Invalid rental status filter');
++      }
++      w.status = s;
++    }
++    if (q.customerId) w.customerId = q.customerId;
++    if (q.rentalNumber) {
++      w.rentalNumber = { contains: q.rentalNumber.trim().toUpperCase() };
++    }
++    const text = normalizeSearchQuery(q.q);
++    if (text) {
++      w.OR = [
++        { rentalNumber: { contains: text.toUpperCase() } },
++        { notes: { contains: text } },
++        { customer: { fullName: { contains: text } } },
++      ];
++    }
++    return w;
++  }
++
++  private async prepareItems(items: CreateRentalItemDto[]) {
++    const seen = new Set<string>();
++    const prepared: Array<{
++      itemId: string;
++      barcodeValue: string | null;
++      agreedRentalPrice: number;
++      notes: string | null;
++    }> = [];
++
++    for (const line of items) {
++      if (seen.has(line.itemId)) {
++        throw BusinessException.validation(
++          'Duplicate itemId in rental items',
++        );
++      }
++      seen.add(line.itemId);
++      const checked = await this.assertItemRentable(
++        line.itemId,
++        line.barcode ?? null,
++      );
++      prepared.push({
++        itemId: line.itemId,
++        barcodeValue: checked.barcodeValue,
++        agreedRentalPrice:
++          line.agreedRentalPrice ?? checked.rentalPrice ?? 0,
++        notes: line.notes?.trim() || null,
++      });
++    }
++    return prepared;
++  }
++
++  private async assertItemRentable(
++    itemId: string,
++    barcodeRaw: string | null,
++  ): Promise<{ barcodeValue: string | null; rentalPrice: number }> {
++    const item = await this.items.getById(itemId);
++    if (item.status !== ITEM_STATUS.ACTIVE) {
++      throw BusinessException.conflict(
++        `Item ${item.internalCode} catalog status must be active`,
++      );
++    }
++    if (
++      !isRentable({
++        deletedAt: item.deletedAt,
++        status: item.status,
++        lifecycleState: item.lifecycleState,
++      })
++    ) {
++      throw BusinessException.conflict(
++        `Item ${item.internalCode} is not rentable (lifecycle ${item.lifecycleState})`,
++      );
++    }
++
++    const liveBarcodes = (item.barcodes ?? []).map((b) => ({
++      id: b.id,
++      value: 'barcode' in b && b.barcode ? b.barcode.code : (b as { value?: string }).value,
++    }));
++    if (liveBarcodes.length === 0 || liveBarcodes.some((b) => !b.value)) {
++      throw BusinessException.conflict(
++        `Item ${item.internalCode} has no active barcode`,
++      );
++    }
++
++    let barcodeValue: string | null = null;
++    if (barcodeRaw?.trim()) {
++      const code = barcodeRaw.trim();
++      const match = liveBarcodes.find((b) => b.value === code);
++      if (!match) {
++        throw BusinessException.validation(
++          `Barcode ${code} is not bound to item ${item.internalCode}`,
++        );
++      }
++      const platform = await this.barcodes.findByValue(code);
++      if (!platform || platform.status !== BARCODE_STATUS.ACTIVATED) {
++        throw BusinessException.conflict(`Barcode ${code} is not activated`);
++      }
++      if (platform.entityId && platform.entityId !== itemId) {
++        throw BusinessException.conflict(
++          `Barcode ${code} is bound to another entity`,
++        );
++      }
++      barcodeValue = code;
++    } else {
++      barcodeValue = liveBarcodes[0]?.value ?? null;
++      if (barcodeValue) {
++        const platform = await this.barcodes.findByValue(barcodeValue);
++        if (!platform || platform.status !== BARCODE_STATUS.ACTIVATED) {
++          throw BusinessException.conflict(
++            `Primary barcode for ${item.internalCode} is not activated`,
++          );
++        }
++      }
++    }
++
++    return { barcodeValue, rentalPrice: item.rentalPrice };
++  }
++
++  private async requireActiveCustomer(customerId: string) {
++    const customer = await this.customers.getById(customerId);
++    if (customer.status !== CUSTOMER_STATUS.ACTIVE) {
++      throw BusinessException.conflict('Customer is not active');
++    }
++    return customer;
++  }
++
++  private async requireLive(id: string): Promise<RentalWithRelations> {
++    const row = await this.repo.findById(id);
++    if (!row) throw BusinessException.notFound('Rental not found');
++    return row;
++  }
++
++  private parseDate(raw: string, field: string): Date {
++    const d = new Date(raw);
++    if (Number.isNaN(d.getTime())) {
++      throw BusinessException.validation(`Invalid ${field}`);
++    }
++    return d;
++  }
++
++  private async allocateNumber(): Promise<string> {
++    const prefix = (
++      await this.settings.getString(
++        RENTAL_NUMBER_SETTING.PREFIX,
++        RENTAL_DEFAULT_PREFIX,
++      )
++    )
++      .trim()
++      .toUpperCase();
++    const separator = await this.settings.getString(
++      RENTAL_NUMBER_SETTING.SEPARATOR,
++      RENTAL_DEFAULT_SEPARATOR,
++    );
++    const padding = await this.settings.getInt(
++      RENTAL_NUMBER_SETTING.PADDING,
++      RENTAL_DEFAULT_PADDING,
++    );
++    if (
++      !/^[A-Z0-9]+$/.test(prefix) ||
++      !Number.isInteger(padding) ||
++      padding < 1 ||
++      padding > 16
++    ) {
++      throw BusinessException.validation('Invalid rental number settings');
++    }
++    for (let i = 0; i < 25; i += 1) {
++      const seq = await this.repo.nextSequence(`rental:${prefix}`);
++      const number = `${prefix}${separator}${String(seq).padStart(padding, '0')}`;
++      if (!(await this.repo.findAnyNumber(number))) return number;
++    }
++    throw BusinessException.invariant('Unable to allocate rental number');
++  }
++
++  private snapshot(row: RentalWithRelations) {
++    return {
++      id: row.id,
++      rentalNumber: row.rentalNumber,
++      customerId: row.customerId,
++      status: row.status,
++      rentalDate: row.rentalDate,
++      expectedReturnDate: row.expectedReturnDate,
++      actualReturnDate: row.actualReturnDate,
++      itemIds: row.items.map((i) => i.itemId),
++      deletedAt: row.deletedAt,
++    };
++  }
++}
+diff --git a/backend-node/src/settings/settings.seeds.ts b/backend-node/src/settings/settings.seeds.ts
+index 87f881c..b4a54bc 100644
+--- a/backend-node/src/settings/settings.seeds.ts
++++ b/backend-node/src/settings/settings.seeds.ts
+@@ -148,4 +148,28 @@ export const DEFAULT_APP_SETTINGS: readonly SettingSeed[] = [
+     description: 'Customer number zero-pad width',
+     isEditable: true,
+   },
++  {
++    key: 'rentals.number.prefix',
++    value: 'RENT',
++    valueType: SETTING_VALUE_TYPE.STRING,
++    category: 'rentals',
++    description: 'Rental number prefix',
++    isEditable: true,
++  },
++  {
++    key: 'rentals.number.separator',
++    value: '-',
++    valueType: SETTING_VALUE_TYPE.STRING,
++    category: 'rentals',
++    description: 'Rental number separator',
++    isEditable: true,
++  },
++  {
++    key: 'rentals.number.padding',
++    value: '8',
++    valueType: SETTING_VALUE_TYPE.INTEGER,
++    category: 'rentals',
++    description: 'Rental number zero-pad width',
++    isEditable: true,
++  },
+ ];
+\ No newline at end of file
+diff --git a/backend-node/test/rentals-integration.spec.ts b/backend-node/test/rentals-integration.spec.ts
+new file mode 100644
+index 0000000..3236e90
+--- /dev/null
++++ b/backend-node/test/rentals-integration.spec.ts
+@@ -0,0 +1,294 @@
++import 'reflect-metadata';
++import { rmSync } from 'node:fs';
++import { afterAll, beforeAll, describe, expect, it } from 'vitest';
++import { INestApplication } from '@nestjs/common';
++import { Test } from '@nestjs/testing';
++import request from 'supertest';
++import { AppModule } from '../src/app.module';
++import { createGlobalValidationPipe } from '../src/validation/create-validation-pipe';
++import { prepareTestDatabase } from './helpers/test-db';
++import { PrismaService } from '../src/database/prisma.service';
++import { LifecycleService } from '../src/inventory/lifecycle/lifecycle.service';
++import { RentalsService } from '../src/rentals/rentals.service';
++
++describe('Rentals workflow integration (Phase 5.1)', () => {
++  let app: INestApplication;
++  let prisma: PrismaService;
++  let dir = '';
++  let token = '';
++  let customerId = '';
++  let itemId = '';
++  let barcodeValue = '';
++
++  beforeAll(async () => {
++    const p = prepareTestDatabase('juman-rentals-');
++    dir = p.dataDir;
++    process.env.IDENTITY_BOOTSTRAP_USERNAME = 'admin';
++    process.env.IDENTITY_BOOTSTRAP_PASSWORD = 'Juman!Bootstrap1';
++    const m = await Test.createTestingModule({ imports: [AppModule] }).compile();
++    app = m.createNestApplication();
++    app.useGlobalPipes(createGlobalValidationPipe());
++    await app.init();
++    prisma = app.get(PrismaService);
++
++    let r = await request(app.getHttpServer())
++      .post('/auth/login')
++      .send({ username: 'admin', password: 'Juman!Bootstrap1' });
++    token = r.body.accessToken;
++    await request(app.getHttpServer())
++      .post('/auth/change-password')
++      .set('Authorization', `Bearer ${token}`)
++      .send({
++        currentPassword: 'Juman!Bootstrap1',
++        newPassword: 'NewStrong!Pass1',
++      });
++    r = await request(app.getHttpServer())
++      .post('/auth/login')
++      .send({ username: 'admin', password: 'NewStrong!Pass1' });
++    token = r.body.accessToken;
++
++    const customer = await request(app.getHttpServer())
++      .post('/customers')
++      .set('Authorization', `Bearer ${token}`)
++      .send({ fullName: 'Rental Customer', phone: '07901234567' })
++      .expect(201);
++    customerId = customer.body.id;
++
++    const item = await request(app.getHttpServer())
++      .post('/items')
++      .set('Authorization', `Bearer ${token}`)
++      .send({
++        displayName: 'Rental dress',
++        status: 'active',
++        rentalPrice: 5000,
++        generateBarcode: true,
++      })
++      .expect(201);
++    itemId = item.body.id;
++    barcodeValue = item.body.barcodes[0].value;
++  }, 180_000);
++
++  afterAll(async () => {
++    if (app) await app.close();
++    try {
++      rmSync(dir, { recursive: true, force: true });
++    } catch {
++      /* ignore */
++    }
++  });
++
++  it('requires auth', async () => {
++    await request(app.getHttpServer()).get('/rentals').expect(401);
++  });
++
++  it('creates draft, checkouts, returns, and syncs inventory lifecycle', async () => {
++    const draft = await request(app.getHttpServer())
++      .post('/rentals')
++      .set('Authorization', `Bearer ${token}`)
++      .send({
++        customerId,
++        rentalDate: new Date().toISOString(),
++        expectedReturnDate: new Date(Date.now() + 86400000 * 2).toISOString(),
++        items: [{ itemId, barcode: barcodeValue }],
++      })
++      .expect(201);
++
++    expect(draft.body.rentalNumber).toMatch(/^RENT-\d{8}$/);
++    expect(draft.body.status).toBe('draft');
++
++    const itemBefore = await prisma.item.findUniqueOrThrow({ where: { id: itemId } });
++    expect(itemBefore.lifecycleState).toBe('available');
++
++    const checked = await request(app.getHttpServer())
++      .post(`/rentals/${draft.body.id}/checkout`)
++      .set('Authorization', `Bearer ${token}`)
++      .send({ reason: 'walk-in' })
++      .expect(200);
++    expect(checked.body.status).toBe('active');
++    expect(checked.body.statusHistory.some((h: { newStatus: string }) => h.newStatus === 'checked_out')).toBe(
++      true,
++    );
++
++    const itemOut = await prisma.item.findUniqueOrThrow({ where: { id: itemId } });
++    expect(itemOut.lifecycleState).toBe('rented');
++
++    const returned = await request(app.getHttpServer())
++      .post(`/rentals/${draft.body.id}/return`)
++      .set('Authorization', `Bearer ${token}`)
++      .send({ reason: 'customer returned' })
++      .expect(200);
++    expect(returned.body.status).toBe('return_pending');
++    expect(returned.body.actualReturnDate).toBeTruthy();
++
++    const itemReturn = await prisma.item.findUniqueOrThrow({ where: { id: itemId } });
++    expect(itemReturn.lifecycleState).toBe('return_pending');
++
++    await request(app.getHttpServer())
++      .get(`/rentals/${draft.body.id}`)
++      .set('Authorization', `Bearer ${token}`)
++      .expect(200);
++    await request(app.getHttpServer())
++      .get('/rentals')
++      .query({ status: 'return_pending', customerId })
++      .set('Authorization', `Bearer ${token}`)
++      .expect(200);
++  });
++
++  it('cancels draft without touching inventory; cancels active with inventory release path', async () => {
++    // restore item to available for next scenarios
++    await prisma.item.update({
++      where: { id: itemId },
++      data: { lifecycleState: 'available' },
++    });
++
++    const item2 = await request(app.getHttpServer())
++      .post('/items')
++      .set('Authorization', `Bearer ${token}`)
++      .send({
++        displayName: 'Cancel dress',
++        status: 'active',
++        generateBarcode: true,
++      })
++      .expect(201);
++
++    const draft = await request(app.getHttpServer())
++      .post('/rentals')
++      .set('Authorization', `Bearer ${token}`)
++      .send({
++        customerId,
++        rentalDate: new Date().toISOString(),
++        expectedReturnDate: new Date(Date.now() + 86400000).toISOString(),
++        items: [{ itemId: item2.body.id }],
++      })
++      .expect(201);
++
++    await request(app.getHttpServer())
++      .post(`/rentals/${draft.body.id}/cancel`)
++      .set('Authorization', `Bearer ${token}`)
++      .send({ reason: 'customer changed mind' })
++      .expect(200);
++
++    const stillAvailable = await prisma.item.findUniqueOrThrow({
++      where: { id: item2.body.id },
++    });
++    expect(stillAvailable.lifecycleState).toBe('available');
++
++    const item3 = await request(app.getHttpServer())
++      .post('/items')
++      .set('Authorization', `Bearer ${token}`)
++      .send({
++        displayName: 'Active cancel dress',
++        status: 'active',
++        generateBarcode: true,
++      })
++      .expect(201);
++
++    const draft2 = await request(app.getHttpServer())
++      .post('/rentals')
++      .set('Authorization', `Bearer ${token}`)
++      .send({
++        customerId,
++        rentalDate: new Date().toISOString(),
++        expectedReturnDate: new Date(Date.now() + 86400000).toISOString(),
++        items: [{ itemId: item3.body.id }],
++      })
++      .expect(201);
++    await request(app.getHttpServer())
++      .post(`/rentals/${draft2.body.id}/checkout`)
++      .set('Authorization', `Bearer ${token}`)
++      .send({})
++      .expect(200);
++    await request(app.getHttpServer())
++      .post(`/rentals/${draft2.body.id}/cancel`)
++      .set('Authorization', `Bearer ${token}`)
++      .send({ reason: 'abort outbound' })
++      .expect(200);
++
++    const released = await prisma.item.findUniqueOrThrow({
++      where: { id: item3.body.id },
++    });
++    expect(released.lifecycleState).toBe('available');
++  });
++
++  it('rejects checkout when item not rentable and validates concurrency', async () => {
++    const item = await request(app.getHttpServer())
++      .post('/items')
++      .set('Authorization', `Bearer ${token}`)
++      .send({
++        displayName: 'Busy dress',
++        status: 'active',
++        generateBarcode: true,
++      })
++      .expect(201);
++
++    const draftA = await request(app.getHttpServer())
++      .post('/rentals')
++      .set('Authorization', `Bearer ${token}`)
++      .send({
++        customerId,
++        rentalDate: new Date().toISOString(),
++        expectedReturnDate: new Date(Date.now() + 86400000).toISOString(),
++        items: [{ itemId: item.body.id }],
++      })
++      .expect(201);
++    const draftB = await request(app.getHttpServer())
++      .post('/rentals')
++      .set('Authorization', `Bearer ${token}`)
++      .send({
++        customerId,
++        rentalDate: new Date().toISOString(),
++        expectedReturnDate: new Date(Date.now() + 86400000).toISOString(),
++        items: [{ itemId: item.body.id }],
++      })
++      .expect(201);
++
++    await request(app.getHttpServer())
++      .post(`/rentals/${draftA.body.id}/checkout`)
++      .set('Authorization', `Bearer ${token}`)
++      .send({})
++      .expect(200);
++
++    await request(app.getHttpServer())
++      .post(`/rentals/${draftB.body.id}/checkout`)
++      .set('Authorization', `Bearer ${token}`)
++      .send({})
++      .expect(409);
++
++    const rentals = app.get(RentalsService);
++    const lifecycle = app.get(LifecycleService);
++    expect(lifecycle.canTransition('available', 'reserved')).toBe(true);
++    await expect(
++      rentals.checkout(draftB.body.id),
++    ).rejects.toBeTruthy();
++  });
++
++  it('rejects draft lifecycle misuse and bad create payloads', async () => {
++    await request(app.getHttpServer())
++      .post('/rentals')
++      .set('Authorization', `Bearer ${token}`)
++      .send({
++        customerId,
++        rentalDate: new Date().toISOString(),
++        expectedReturnDate: new Date(Date.now() - 86400000).toISOString(),
++        items: [{ itemId }],
++      })
++      .expect(400);
++
++    const draftItem = await request(app.getHttpServer())
++      .post('/items')
++      .set('Authorization', `Bearer ${token}`)
++      .send({ displayName: 'Draft only', status: 'draft', generateBarcode: true })
++      .expect(201);
++
++    await request(app.getHttpServer())
++      .post('/rentals')
++      .set('Authorization', `Bearer ${token}`)
++      .send({
++        customerId,
++        rentalDate: new Date().toISOString(),
++        expectedReturnDate: new Date(Date.now() + 86400000).toISOString(),
++        items: [{ itemId: draftItem.body.id }],
++      })
++      .expect(409);
++  });
++});
+diff --git a/backend-node/test/rentals-repository.spec.ts b/backend-node/test/rentals-repository.spec.ts
+new file mode 100644
+index 0000000..63c29e0
+--- /dev/null
++++ b/backend-node/test/rentals-repository.spec.ts
+@@ -0,0 +1,97 @@
++import 'reflect-metadata';
++import { describe, expect, it, vi } from 'vitest';
++import { RentalsController } from '../src/rentals/rentals.controller';
++import { RentalsRepository } from '../src/rentals/rentals.repository';
++
++describe('RentalsController + Repository', () => {
++  it('delegates HTTP actions', async () => {
++    const rentals = {
++      list: vi.fn(),
++      getById: vi.fn(),
++      create: vi.fn(),
++      checkout: vi.fn(),
++      initiateReturn: vi.fn(),
++      cancel: vi.fn(),
++    };
++    const c = new RentalsController(rentals as never);
++    const user = { userId: 'u' } as never;
++    await c.list({});
++    await c.get('id');
++    await c.create({} as never, user);
++    await c.checkout('id', { reason: 'x' }, user);
++    await c.initiateReturn('id', {}, user);
++    await c.cancel('id', {}, user);
++    expect(rentals.checkout).toHaveBeenCalled();
++    expect(rentals.cancel).toHaveBeenCalled();
++  });
++
++  it('covers repository helpers', async () => {
++    const prisma = {
++      rental: {
++        create: vi.fn().mockResolvedValue({ id: 'r1' }),
++        findFirst: vi.fn().mockResolvedValue({ id: 'r1' }),
++        findUnique: vi.fn().mockResolvedValue(null),
++        findUniqueOrThrow: vi.fn().mockResolvedValue({
++          id: 'r1',
++          items: [],
++          customer: null,
++          statusHistory: [],
++        }),
++        findMany: vi.fn().mockResolvedValue([]),
++        count: vi.fn().mockResolvedValue(0),
++        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
++        update: vi.fn().mockResolvedValue({ id: 'r1' }),
++      },
++      rentalStatusHistory: { create: vi.fn() },
++      sequenceCounter: {
++        findUnique: vi.fn().mockResolvedValue(null),
++        create: vi.fn(),
++        update: vi.fn().mockResolvedValue({ lastValue: 2 }),
++      },
++      $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn(prisma)),
++    };
++    const repo = new RentalsRepository(prisma as never);
++    await repo.create(
++      {
++        rentalNumber: 'RENT-1',
++        customerId: 'c1',
++        rentalDate: new Date(),
++        expectedReturnDate: new Date(),
++        status: 'draft',
++      },
++      [{ itemId: 'i1', agreedRentalPrice: 0 }],
++      { userId: 'u' },
++    );
++    await repo.findById('r1');
++    await repo.findByNumber('RENT-1');
++    await repo.findAnyNumber('RENT-1');
++    await repo.list({
++      where: { deletedAt: null },
++      orderBy: { createdAt: 'desc' },
++      offset: 0,
++      limit: 10,
++    });
++    expect(await repo.nextSequence('rental:RENT')).toBe(1);
++    prisma.sequenceCounter.findUnique.mockResolvedValue({ lastValue: 3 });
++    prisma.$transaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) =>
++      fn(prisma),
++    );
++    expect(await repo.nextSequence('rental:RENT')).toBe(2);
++    await repo.transitionStatus({
++      rentalId: 'r1',
++      from: 'draft',
++      to: 'cancelled',
++      userId: 'u',
++    });
++    await repo.softDelete('r1', 'u');
++    await repo.restore('r1', 'u');
++    prisma.rental.updateMany.mockResolvedValueOnce({ count: 0 });
++    expect(
++      await repo.transitionStatus({
++        rentalId: 'r1',
++        from: 'draft',
++        to: 'cancelled',
++      }),
++    ).toBeNull();
++  });
++});
+diff --git a/backend-node/test/rentals-rules.spec.ts b/backend-node/test/rentals-rules.spec.ts
+new file mode 100644
+index 0000000..5586e1d
+--- /dev/null
++++ b/backend-node/test/rentals-rules.spec.ts
+@@ -0,0 +1,96 @@
++import { describe, expect, it } from 'vitest';
++import {
++  RENTAL_STATUS,
++  RENTAL_STATUS_TRANSITIONS,
++} from '../src/rentals/rentals.constants';
++import {
++  canCancel,
++  canCheckout,
++  canInitiateReturn,
++  canTransitionRentalStatus,
++  assertRentalTransition,
++  isOutboundRentalStatus,
++  isRentalStatus,
++} from '../src/rentals/rentals.rules';
++import { toRentalPublic } from '../src/rentals/rentals.mapper';
++
++describe('rentals.rules', () => {
++  it('validates rental status graph', () => {
++    expect(canTransitionRentalStatus(RENTAL_STATUS.DRAFT, RENTAL_STATUS.CHECKED_OUT)).toBe(
++      true,
++    );
++    expect(canTransitionRentalStatus(RENTAL_STATUS.CHECKED_OUT, RENTAL_STATUS.ACTIVE)).toBe(
++      true,
++    );
++    expect(canTransitionRentalStatus(RENTAL_STATUS.ACTIVE, RENTAL_STATUS.RETURN_PENDING)).toBe(
++      true,
++    );
++    expect(canTransitionRentalStatus(RENTAL_STATUS.ACTIVE, RENTAL_STATUS.OVERDUE)).toBe(true);
++    expect(canTransitionRentalStatus(RENTAL_STATUS.DRAFT, RENTAL_STATUS.ACTIVE)).toBe(false);
++    expect(canTransitionRentalStatus(RENTAL_STATUS.COMPLETED, RENTAL_STATUS.ACTIVE)).toBe(
++      false,
++    );
++    expect(isRentalStatus('active')).toBe(true);
++    expect(isRentalStatus('nope')).toBe(false);
++    expect(canCheckout(RENTAL_STATUS.DRAFT)).toBe(true);
++    expect(canCheckout(RENTAL_STATUS.ACTIVE)).toBe(false);
++    expect(canInitiateReturn(RENTAL_STATUS.ACTIVE)).toBe(true);
++    expect(canInitiateReturn(RENTAL_STATUS.DRAFT)).toBe(false);
++    expect(canCancel(RENTAL_STATUS.DRAFT)).toBe(true);
++    expect(canCancel(RENTAL_STATUS.COMPLETED)).toBe(false);
++    expect(isOutboundRentalStatus(RENTAL_STATUS.OVERDUE)).toBe(true);
++    expect(Object.keys(RENTAL_STATUS_TRANSITIONS).length).toBe(7);
++    expect(() =>
++      assertRentalTransition(RENTAL_STATUS.DRAFT, RENTAL_STATUS.ACTIVE),
++    ).toThrow(/Invalid rental transition/);
++    assertRentalTransition(RENTAL_STATUS.DRAFT, RENTAL_STATUS.CHECKED_OUT);
++  });
++
++  it('maps public rental shape including nulls', () => {
++    const pub = toRentalPublic({
++      id: 'r1',
++      rentalNumber: 'RENT-00000001',
++      customerId: 'c1',
++      rentalDate: new Date('2026-01-01'),
++      expectedReturnDate: new Date('2026-01-03'),
++      actualReturnDate: null,
++      status: 'draft',
++      notes: null,
++      deletedAt: null,
++      createdAt: new Date(),
++      updatedAt: new Date(),
++      createdBy: null,
++      updatedBy: null,
++      deletedBy: null,
++      customer: null as never,
++      items: [
++        {
++          id: 'ri1',
++          rentalId: 'r1',
++          itemId: 'i1',
++          barcodeValue: 'DR-1',
++          agreedRentalPrice: 1000,
++          notes: null,
++          createdAt: new Date(),
++          updatedAt: new Date(),
++          createdBy: null,
++          item: null as never,
++        },
++      ],
++      statusHistory: [
++        {
++          id: 'h1',
++          rentalId: 'r1',
++          oldStatus: 'draft',
++          newStatus: 'draft',
++          reason: 'created',
++          userId: null,
++          username: null,
++          createdAt: new Date(),
++        },
++      ],
++    });
++    expect(pub.customer).toBeNull();
++    expect(pub.items[0].item).toBeNull();
++  });
++});
+diff --git a/backend-node/test/rentals-service.spec.ts b/backend-node/test/rentals-service.spec.ts
+new file mode 100644
+index 0000000..b847e2c
+--- /dev/null
++++ b/backend-node/test/rentals-service.spec.ts
+@@ -0,0 +1,351 @@
++import 'reflect-metadata';
++import { beforeEach, describe, expect, it, vi } from 'vitest';
++import { RentalsService } from '../src/rentals/rentals.service';
++import { BusinessException } from '../src/shared/errors/business.exception';
++import { ITEM_LIFECYCLE } from '../src/inventory/inventory.constants';
++import { RENTAL_STATUS } from '../src/rentals/rentals.constants';
++
++const itemRow = {
++  id: 'i1',
++  internalCode: 'ITM-00000001',
++  displayName: 'Dress',
++  status: 'active',
++  lifecycleState: 'available',
++  rentalPrice: 2000,
++  deletedAt: null,
++  barcodes: [{ id: 'ib1', value: 'DR-00000001', isPrimary: true }],
++};
++
++const draftRental = {
++  id: 'r1',
++  rentalNumber: 'RENT-00000001',
++  customerId: 'c1',
++  rentalDate: new Date('2026-08-01'),
++  expectedReturnDate: new Date('2026-08-03'),
++  actualReturnDate: null,
++  status: RENTAL_STATUS.DRAFT,
++  notes: null,
++  deletedAt: null,
++  createdAt: new Date(),
++  updatedAt: new Date(),
++  createdBy: null,
++  updatedBy: null,
++  deletedBy: null,
++  customer: {
++    id: 'c1',
++    customerNumber: 'CUS-1',
++    fullName: 'Ali',
++    status: 'active',
++  },
++  items: [
++    {
++      id: 'ri1',
++      rentalId: 'r1',
++      itemId: 'i1',
++      barcodeValue: 'DR-00000001',
++      agreedRentalPrice: 2000,
++      notes: null,
++      item: itemRow,
++    },
++  ],
++  statusHistory: [],
++};
++
++describe('RentalsService', () => {
++  const repo = {
++    create: vi.fn(),
++    findById: vi.fn(),
++    findAnyNumber: vi.fn(),
++    nextSequence: vi.fn(),
++    list: vi.fn(),
++    transitionStatus: vi.fn(),
++    client: { $transaction: vi.fn() },
++  };
++  const customers = { getById: vi.fn() };
++  const items = { getById: vi.fn() };
++  const lifecycle = { transition: vi.fn() };
++  const barcodes = { findByValue: vi.fn() };
++  const settings = {
++    getString: vi.fn(async (_: string, f: string) => f),
++    getInt: vi.fn(async (_: string, f: number) => f),
++  };
++  const audit = {
++    recordCreate: vi.fn(),
++    record: vi.fn(),
++  };
++  let service: RentalsService;
++
++  beforeEach(() => {
++    vi.clearAllMocks();
++    service = new RentalsService(
++      repo as never,
++      customers as never,
++      items as never,
++      lifecycle as never,
++      barcodes as never,
++      settings as never,
++      audit as never,
++    );
++    customers.getById.mockResolvedValue({ id: 'c1', status: 'active' });
++    items.getById.mockResolvedValue(itemRow);
++    barcodes.findByValue.mockResolvedValue({
++      id: 'b1',
++      status: 'activated',
++      entityId: 'i1',
++    });
++    repo.nextSequence.mockResolvedValue(1);
++    repo.findAnyNumber.mockResolvedValue(null);
++    repo.create.mockResolvedValue(draftRental);
++    repo.findById.mockResolvedValue(draftRental);
++    repo.list.mockResolvedValue({ rows: [draftRental], total: 1 });
++    repo.client.$transaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) =>
++      fn({}),
++    );
++    repo.transitionStatus.mockImplementation(async (input: { to: string; from: string }) => ({
++      ...draftRental,
++      status: input.to,
++    }));
++    lifecycle.transition.mockResolvedValue({ lifecycleState: ITEM_LIFECYCLE.RENTED });
++  });
++
++  it('creates draft rental with validation', async () => {
++    const created = await service.create(
++      {
++        customerId: 'c1',
++        rentalDate: '2026-08-01T00:00:00.000Z',
++        expectedReturnDate: '2026-08-03T00:00:00.000Z',
++        items: [{ itemId: 'i1', barcode: 'DR-00000001' }],
++      },
++      { userId: 'u1', username: 'admin' } as never,
++    );
++    expect(created.status).toBe('draft');
++    expect(repo.create).toHaveBeenCalled();
++    expect(audit.recordCreate).toHaveBeenCalled();
++  });
++
++  it('rejects inactive customer and non-rentable item', async () => {
++    customers.getById.mockResolvedValue({ id: 'c1', status: 'inactive' });
++    await expect(
++      service.create({
++        customerId: 'c1',
++        rentalDate: '2026-08-01T00:00:00.000Z',
++        expectedReturnDate: '2026-08-03T00:00:00.000Z',
++        items: [{ itemId: 'i1' }],
++      }),
++    ).rejects.toBeInstanceOf(BusinessException);
++
++    customers.getById.mockResolvedValue({ id: 'c1', status: 'active' });
++    items.getById.mockResolvedValue({
++      ...itemRow,
++      lifecycleState: 'rented',
++    });
++    await expect(
++      service.create({
++        customerId: 'c1',
++        rentalDate: '2026-08-01T00:00:00.000Z',
++        expectedReturnDate: '2026-08-03T00:00:00.000Z',
++        items: [{ itemId: 'i1' }],
++      }),
++    ).rejects.toBeInstanceOf(BusinessException);
++  });
++
++  it('checkouts through LifecycleService and activates rental', async () => {
++    repo.findById.mockImplementation(async () => ({
++      ...draftRental,
++      status: RENTAL_STATUS.ACTIVE,
++    }));
++    repo.findById.mockResolvedValueOnce(draftRental);
++
++    const result = await service.checkout('r1', 'walk-in', {
++      userId: 'u1',
++      username: 'admin',
++    } as never);
++    expect(lifecycle.transition).toHaveBeenCalled();
++    expect(result.status).toBe(RENTAL_STATUS.ACTIVE);
++    expect(audit.record).toHaveBeenCalledWith(
++      expect.objectContaining({ action: 'checkout' }),
++    );
++  });
++
++  it('rolls back checkout when lifecycle transition fails', async () => {
++    lifecycle.transition.mockRejectedValueOnce(
++      BusinessException.conflict('Concurrent lifecycle transition rejected'),
++    );
++    await expect(service.checkout('r1')).rejects.toBeInstanceOf(BusinessException);
++    lifecycle.transition.mockResolvedValue({
++      lifecycleState: ITEM_LIFECYCLE.RENTED,
++    });
++  });
++
++  it('initiates return and cancels draft', async () => {
++    const active = { ...draftRental, status: RENTAL_STATUS.ACTIVE };
++    const pending = { ...active, status: RENTAL_STATUS.RETURN_PENDING };
++    repo.findById
++      .mockResolvedValueOnce(active)
++      .mockResolvedValueOnce(pending);
++    await service.initiateReturn('r1', 'back', { userId: 'u' } as never);
++    expect(lifecycle.transition).toHaveBeenCalledWith(
++      'i1',
++      expect.objectContaining({ newState: ITEM_LIFECYCLE.RETURN_PENDING }),
++      expect.anything(),
++      expect.objectContaining({ skipAudit: true }),
++    );
++
++    repo.findById
++      .mockResolvedValueOnce(draftRental)
++      .mockResolvedValueOnce({ ...draftRental, status: RENTAL_STATUS.CANCELLED });
++    await service.cancel('r1');
++    expect(audit.record).toHaveBeenCalledWith(
++      expect.objectContaining({ action: 'cancel' }),
++    );
++  });
++
++  it('lists and gets by id', async () => {
++    await service.list({ status: 'draft' });
++    expect(repo.list).toHaveBeenCalled();
++    expect((await service.getById('r1')).id).toBe('r1');
++    repo.findById.mockResolvedValue(null);
++    await expect(service.getById('missing')).rejects.toBeInstanceOf(BusinessException);
++  });
++
++  it('covers validation edges checkout return cancel and allocate', async () => {
++    await expect(
++      service.create({
++        customerId: 'c1',
++        rentalDate: 'not-a-date',
++        expectedReturnDate: '2026-08-03T00:00:00.000Z',
++        items: [{ itemId: 'i1' }],
++      }),
++    ).rejects.toBeInstanceOf(BusinessException);
++
++    await expect(
++      service.create({
++        customerId: 'c1',
++        rentalDate: '2026-08-03T00:00:00.000Z',
++        expectedReturnDate: '2026-08-01T00:00:00.000Z',
++        items: [{ itemId: 'i1' }],
++      }),
++    ).rejects.toBeInstanceOf(BusinessException);
++
++    await expect(
++      service.create({
++        customerId: 'c1',
++        rentalDate: '2026-08-01T00:00:00.000Z',
++        expectedReturnDate: '2026-08-03T00:00:00.000Z',
++        items: [{ itemId: 'i1' }, { itemId: 'i1' }],
++      }),
++    ).rejects.toBeInstanceOf(BusinessException);
++
++    items.getById.mockResolvedValueOnce({ ...itemRow, barcodes: [] });
++    await expect(
++      service.create({
++        customerId: 'c1',
++        rentalDate: '2026-08-01T00:00:00.000Z',
++        expectedReturnDate: '2026-08-03T00:00:00.000Z',
++        items: [{ itemId: 'i1' }],
++      }),
++    ).rejects.toBeInstanceOf(BusinessException);
++
++    items.getById.mockResolvedValue(itemRow);
++    barcodes.findByValue.mockResolvedValueOnce({
++      id: 'b1',
++      status: 'reserved',
++      entityId: null,
++    });
++    await expect(
++      service.create({
++        customerId: 'c1',
++        rentalDate: '2026-08-01T00:00:00.000Z',
++        expectedReturnDate: '2026-08-03T00:00:00.000Z',
++        items: [{ itemId: 'i1', barcode: 'DR-00000001' }],
++      }),
++    ).rejects.toBeInstanceOf(BusinessException);
++
++    barcodes.findByValue.mockResolvedValue({
++      id: 'b1',
++      status: 'activated',
++      entityId: 'other',
++    });
++    await expect(
++      service.create({
++        customerId: 'c1',
++        rentalDate: '2026-08-01T00:00:00.000Z',
++        expectedReturnDate: '2026-08-03T00:00:00.000Z',
++        items: [{ itemId: 'i1', barcode: 'DR-00000001' }],
++      }),
++    ).rejects.toBeInstanceOf(BusinessException);
++
++    barcodes.findByValue.mockResolvedValue({
++      id: 'b1',
++      status: 'activated',
++      entityId: 'i1',
++    });
++    await expect(
++      service.create({
++        customerId: 'c1',
++        rentalDate: '2026-08-01T00:00:00.000Z',
++        expectedReturnDate: '2026-08-03T00:00:00.000Z',
++        items: [{ itemId: 'i1', barcode: 'WRONG' }],
++      }),
++    ).rejects.toBeInstanceOf(BusinessException);
++
++    repo.findById.mockResolvedValue({ ...draftRental, status: RENTAL_STATUS.ACTIVE });
++    await expect(service.checkout('r1')).rejects.toBeInstanceOf(BusinessException);
++
++    repo.findById.mockResolvedValue(draftRental);
++    await expect(service.initiateReturn('r1')).rejects.toBeInstanceOf(BusinessException);
++
++    repo.findById.mockResolvedValue({
++      ...draftRental,
++      status: RENTAL_STATUS.COMPLETED,
++    });
++    await expect(service.cancel('r1')).rejects.toBeInstanceOf(BusinessException);
++
++    const active = { ...draftRental, status: RENTAL_STATUS.ACTIVE };
++    repo.findById.mockImplementation(async () => ({
++      ...active,
++      status: RENTAL_STATUS.CANCELLED,
++    }));
++    repo.findById.mockResolvedValueOnce(active);
++    await service.cancel('r1', 'abort');
++    expect(lifecycle.transition).toHaveBeenCalled();
++
++    repo.findById.mockResolvedValue(draftRental);
++    repo.transitionStatus.mockResolvedValueOnce(null);
++    await expect(service.checkout('r1')).rejects.toBeInstanceOf(BusinessException);
++
++    repo.transitionStatus.mockImplementation(async (input: { to: string }) => ({
++      ...draftRental,
++      status: input.to,
++    }));
++
++    settings.getString.mockImplementation(async (key: string, f: string) => {
++      if (key === 'rentals.number.prefix') return 'bad prefix';
++      return f;
++    });
++    await expect(
++      service.create({
++        customerId: 'c1',
++        rentalDate: '2026-08-01T00:00:00.000Z',
++        expectedReturnDate: '2026-08-03T00:00:00.000Z',
++        items: [{ itemId: 'i1' }],
++      }),
++    ).rejects.toBeInstanceOf(BusinessException);
++
++    settings.getString.mockImplementation(async (_k: string, f: string) => f);
++    repo.findAnyNumber.mockResolvedValue({ id: 'taken' });
++    await expect(
++      service.create({
++        customerId: 'c1',
++        rentalDate: '2026-08-01T00:00:00.000Z',
++        expectedReturnDate: '2026-08-03T00:00:00.000Z',
++        items: [{ itemId: 'i1' }],
++      }),
++    ).rejects.toBeInstanceOf(BusinessException);
++
++    await expect(service.list({ status: 'nope' })).rejects.toBeInstanceOf(
++      BusinessException,
++    );
++    await service.list({ q: 'Ali', rentalNumber: 'RENT', customerId: 'c1' });
++  });
++});
+diff --git a/backend-node/vitest.rentals.config.ts b/backend-node/vitest.rentals.config.ts
+new file mode 100644
+index 0000000..0831b6c
+--- /dev/null
++++ b/backend-node/vitest.rentals.config.ts
+@@ -0,0 +1,33 @@
++import swc from 'unplugin-swc';
++import { defineConfig } from 'vitest/config';
++
++export default defineConfig({
++  plugins: [
++    swc.vite({
++      jsc: {
++        target: 'es2022',
++        parser: { syntax: 'typescript', decorators: true },
++        transform: { legacyDecorator: true, decoratorMetadata: true },
++      },
++      module: { type: 'es6' },
++    }),
++  ],
++  test: {
++    include: ['test/rentals-*.spec.ts'],
++    environment: 'node',
++    setupFiles: ['test/setup.ts'],
++    coverage: {
++      provider: 'v8',
++      reportsDirectory: './coverage-rentals',
++      reporter: ['text', 'text-summary', 'json-summary'],
++      include: ['src/rentals/**/*.ts'],
++      exclude: ['**/*.module.ts', '**/dto/**'],
++      thresholds: {
++        lines: 95,
++        functions: 95,
++        branches: 80,
++        statements: 95,
++      },
++    },
++  },
++});
+diff --git a/docs/backend-v2/Architecture.md b/docs/backend-v2/Architecture.md
+index 239982c..2468dda 100644
+--- a/docs/backend-v2/Architecture.md
++++ b/docs/backend-v2/Architecture.md
+@@ -70,7 +70,8 @@ src/
+   media/          MediaFile + HTTP /media
+   barcode/        reusable platform + HTTP /barcodes
+   customers/      Customer domain
+-  inventory/      Catalog engine (Item + taxonomy)
++  inventory/      Catalog engine (Item + taxonomy + lifecycle)
++  rentals/        Rental workflow core (Phase 5.1)
+ ```
+ 
+ ## Auth / RBAC
+@@ -85,7 +86,7 @@ src/
+ ## What is not in V2 (yet)
+ 
+ - Users/roles admin HTTP CRUD (beyond unlock)
+-- Reservations / rentals / availability calendar / penalties
++- Reservations / availability calendar / late fees / penalties / settlements
+ - Laundry / inspection / sales workflows
+ - Barcode hardware adapters / label printing
+ - Electron process management / installer Nest packaging
+@@ -124,6 +125,10 @@ Generic Item Catalog in `src/inventory` — not a dress-specific engine. Taxonom
+ 
+ Authoritative operational `lifecycleState` on `Item` with `ItemStateHistory` and `LifecycleService.transition` (CAS + audit). Availability predicates (`isRentable` / `isSellable` / …) only — no reservations or calendar. Docs: `InventoryDesign.md`.
+ 
+-## Inventory certification (Phase 4.3)
++## Inventory certification (Phase 4.3–4.4)
+ 
+-Non-feature gate: `PHASE_4_ENGINEERING_CERTIFICATION.md` — overall **78 PASS WITH WARNINGS**. **Rental Engine blocked** until Must-Fix soft-delete/barcode/media integrity items are remediated.
++Non-feature gate then remediation: `PHASE_4_ENGINEERING_CERTIFICATION.md` → `PHASE_4_REMEDIATION_REPORT.md` (integrity **88**). Must-Fix blockers cleared.
++
++## Rental workflow core (Phase 5.1)
++
++`RentalsModule` owns rental documents (`Rental` / `RentalItem` / `RentalStatusHistory`). Inventory lifecycle mutations go **only** through `LifecycleService` inside shared transactions. No reservations, payments, or settlements. Docs: `RentalDesign.md`.
+diff --git a/docs/backend-v2/DecisionLog.md b/docs/backend-v2/DecisionLog.md
+index 3972aca..7c40eb2 100644
+--- a/docs/backend-v2/DecisionLog.md
++++ b/docs/backend-v2/DecisionLog.md
+@@ -148,3 +148,11 @@
+ - **Context:** Phase 4.3 certification blocked rentals on six Must-Fix integrity defects.
+ - **Decision:** (1) Reject soft-delete in mid-ops lifecycle states; (2) release barcodes + soft-delete `ItemBarcode`/`MediaReference` on delete and reverse on restore; (3) atomic create (`createAtomic`) for item+barcode+media+history; (4) restore prior catalog status via `statusBeforeDelete`; (5) LifecycleService transitions require catalog `active` only; (6) **MediaReference-only** attachments — drop `ItemMedia`.
+ - **Consequences:** Integrity score raised to **88**. Rental Engine still requires explicit approval before implementation. Report: `PHASE_4_REMEDIATION_REPORT.md`.
++
++## ADR-V2-020 - Rental workflow core (Phase 5.1)
++
++- **Date:** 2026-08-02
++- **Status:** Accepted
++- **Context:** Inventory integrity gate cleared; need a rental workflow foundation without payments/settlements.
++- **Decision:** Introduce `Rental` / `RentalItem` / `RentalStatusHistory` with closed status graph. Checkout/return/cancel mutate inventory **only** through `LifecycleService.transition` inside shared Prisma transactions. No reservations, fees, or settlements in this phase.
++- **Consequences:** Walk-in path uses inventory `available→reserved→rented`. Return stops at `return_pending`. Coverage gate `pnpm test:cov:rentals` ≥95%. Docs: `RentalDesign.md`.
+diff --git a/docs/backend-v2/DevelopmentRoadmap.md b/docs/backend-v2/DevelopmentRoadmap.md
+index 6f08dd3..a1fb901 100644
+--- a/docs/backend-v2/DevelopmentRoadmap.md
++++ b/docs/backend-v2/DevelopmentRoadmap.md
+@@ -6,8 +6,8 @@
+ | 1 | Foundation | Nest + Prisma + SQLite + `/health` |
+ | 2 | Identity & Security | Auth + audit remediation |
+ | 3 | Core Business | **3.1–3.5 DONE** |
+-| 4 | Inventory Engine | **4.1–4.4 DONE** (catalog → lifecycle → cert → integrity) |
+-| 5 | Rental Engine | Reservations → returns (**await approval**) |
++| 4 | Inventory Engine | **4.1–4.4 DONE** |
++| 5 | Rental Engine | **5.1 DONE** (workflow core) — reservations/fees later |
+ | 6 | Financial Engine | Sales, settlements, payments |
+ | 7 | Reports & Analytics | Operational + financial |
+ | 8 | Desktop Integration | Electron + Nest sidecar |
+@@ -16,10 +16,10 @@
+ 
+ ## Current milestone
+ 
+-**Phase 4.4 Inventory Integrity Remediation complete (integrity score 88).**  
+-Doc: `PHASE_4_REMEDIATION_REPORT.md`.
++**Phase 5.1 Rental Workflow Core complete.**  
++Doc: `RentalDesign.md`.
+ 
+-**STOP:** Do **not** begin Rental Engine until explicit approval. No reservations/rentals/calendar/payments.
++**STOP:** Do **not** implement reservations, late fees, penalties, financial settlement, or reports until approved.
+ 
+ ## Completion rule
+ 
+diff --git a/docs/backend-v2/PROGRESS.md b/docs/backend-v2/PROGRESS.md
+index 65a2c36..35312bd 100644
+--- a/docs/backend-v2/PROGRESS.md
++++ b/docs/backend-v2/PROGRESS.md
+@@ -1,20 +1,18 @@
+ # Backend V2 Progress Canvas
+ 
+ **Live canvas:** `juman-backend-v2-roadmap.canvas.tsx`  
+-**Branch:** `backend-v2` — **Updated:** 2026-08-02 — **Overall ~62%**
++**Branch:** `backend-v2` — **Updated:** 2026-08-02 — **Overall ~66%**
+ 
+ ```
+ Phase 0  Architecture                    DONE
+ Phase 1  Foundation                      DONE
+ Phase 2  Identity & Security             DONE
+ Phase 3  Core Business                   DONE
+-Phase 4  Inventory Engine
+-         4.1 Catalog engine              DONE
+-         4.2 Lifecycle foundation        DONE
+-         4.3 Engineering certification   DONE (78 PASS WITH WARNINGS)
+-         4.4 Integrity remediation       DONE (integrity 88 — Must-Fix cleared)
+-Phase 5  Rental Engine                   WAITING APPROVAL
++Phase 4  Inventory Engine                DONE (4.1–4.4)
++Phase 5  Rental Engine
++         5.1 Workflow core               DONE
++         5.2+ Reservations / fees        WAITING APPROVAL
+ Phase 6+ Sales / Reports / Desktop       WAITING
+ ```
+ 
+-**YOU ARE HERE:** After Phase 4.4 integrity remediation. Do **not** implement reservations, rentals, calendar, or payments until approved.
++**YOU ARE HERE:** After Phase 5.1 rental workflow core. Do **not** implement reservations, late fees, penalties, settlement, or reports until approved.
+diff --git a/docs/backend-v2/RentalDesign.md b/docs/backend-v2/RentalDesign.md
+new file mode 100644
+index 0000000..166d40e
+--- /dev/null
++++ b/docs/backend-v2/RentalDesign.md
+@@ -0,0 +1,95 @@
++# Backend V2 Rental Design (Phase 5.1)
++
++**Branch:** `backend-v2`  
++**Module:** `backend-node/src/rentals`  
++**Role:** Rental workflow engine foundation (no settlements).
++
++## Scope
++
++**In scope:** Draft → checkout → active → return_pending / cancel; inventory synchronization via `LifecycleService`; customer reuse; RBAC; audit.
++
++**Out of scope:** Reservations, payments, late fees, penalties, financial settlement, inspection/cleaning workflows, reports, overdue automation.
++
++## Architecture rule
++
++Inventory owns `Item.lifecycleState`.
++
++`RentalsService` **must** call `LifecycleService.transition` (optionally inside a shared Prisma transaction).  
++It must **never** write `Item.lifecycleState` directly.
++
++## Models
++
++### Rental
++- `rentalNumber` (RENT-########)
++- `customerId` → Customer
++- `rentalDate`, `expectedReturnDate`, `actualReturnDate?`
++- `status`, `notes`
++- soft delete + audit actors + UUID
++
++### RentalItem
++- `itemId` → Item
++- `barcodeValue` snapshot
++- `agreedRentalPrice` (fils snapshot)
++- unique `(rentalId, itemId)`
++
++### RentalStatusHistory
++- append-only rental status transitions
++
++## Rental statuses
++
++`draft` · `checked_out` · `active` · `return_pending` · `completed` · `cancelled` · `overdue` (foundation only)
++
++### Transitions
++
++```
++draft → checked_out | cancelled
++checked_out → active | return_pending | cancelled
++active → return_pending | overdue | cancelled
++overdue → return_pending | cancelled
++return_pending → completed
++completed → ∅
++cancelled → ∅
++```
++
++## Checkout
++
++Single transaction:
++
++1. Validate draft + rentable items + active customer
++2. Per item: `available → reserved → rented` via LifecycleService
++3. Rental: `draft → checked_out → active`
++4. Audit `checkout`
++
++## Return (foundation)
++
++Outbound (`checked_out` | `active` | `overdue`) → `return_pending`  
++Inventory: `rented → return_pending`  
++Sets `actualReturnDate`. No inspection/cleaning yet.
++
++## Cancel
++
++- Draft: status → cancelled (inventory untouched)
++- Outbound: inventory `rented → return_pending → inspection → available`, then rental cancelled
++
++## Create validation
++
++- Item exists, catalog `active`, `isRentable()`
++- Customer `active`
++- Barcode activated and bound to item (or primary barcode)
++
++## HTTP
++
++| Method | Path | Permission |
++|--------|------|------------|
++| POST | `/rentals` | rentals.create |
++| GET | `/rentals` | rentals.view |
++| GET | `/rentals/:id` | rentals.view |
++| POST | `/rentals/:id/checkout` | rentals.checkout |
++| POST | `/rentals/:id/return` | rentals.return |
++| POST | `/rentals/:id/cancel` | rentals.cancel |
++
++## Coverage
++
++```bash
++pnpm test:cov:rentals
++```
+-- 
+2.55.0.windows.2
+

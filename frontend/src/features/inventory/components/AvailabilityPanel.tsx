@@ -1,81 +1,84 @@
-import * as React from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { Button, DatePicker, EmptyState, InlineMessage, BusyIndicator } from '@/components/ui'
-import { apiClient } from '@/services/apiClient'
-import { usePermission } from '@/hooks/usePermission'
+import { useItemAvailability } from '../hooks/useInventory'
+import { CalendarCheck, CalendarX, Clock, User, AlertTriangle } from 'lucide-react'
 
-export function AvailabilityPanel({ dressId }: { dressId: string }): React.ReactElement {
-  const canView = usePermission('calendar.view')
-  const [start, setStart] = React.useState<Date | null>(null)
-  const [end, setEnd] = React.useState<Date | null>(null)
-  const [submitted, setSubmitted] = React.useState<{ start_at: string; end_at: string } | null>(
-    null
-  )
+interface AvailabilityPanelProps {
+  itemId: string
+}
 
-  const availability = useQuery({
-    queryKey: ['calendar', 'availability', dressId, submitted],
-    queryFn: () => apiClient.calendar.availability(dressId, submitted!),
-    enabled: Boolean(canView && submitted)
-  })
+export function AvailabilityPanel({ itemId }: AvailabilityPanelProps) {
+  const { data, isLoading, isError } = useItemAvailability(itemId)
 
-  const conflicts = useQuery({
-    queryKey: ['calendar', 'conflicts', dressId, submitted],
-    queryFn: () => apiClient.calendar.conflicts(dressId, submitted!),
-    enabled: Boolean(canView && submitted)
-  })
-
-  if (!canView) {
-    return <InlineMessage variant="info">لا تملك صلاحية عرض التوفر</InlineMessage>
+  if (isLoading) {
+    return (
+      <div className="h-24 w-full bg-base-300/40 rounded-xl animate-pulse" />
+    )
   }
 
-  return (
-    <section className="space-y-3">
-      <h3 className="text-title text-foreground">توفر الفترة</h3>
-      <p className="text-caption text-muted-foreground">
-        النتيجة من واجهة التقويم فقط — لا يُحسب التوفر محلياً.
-      </p>
-      <div className="flex flex-wrap items-end gap-3">
-        <div className="space-y-1">
-          <span className="text-caption text-muted-foreground">من</span>
-          <DatePicker value={start} onChange={setStart} />
-        </div>
-        <div className="space-y-1">
-          <span className="text-caption text-muted-foreground">إلى</span>
-          <DatePicker value={end} onChange={setEnd} />
-        </div>
-        <Button
-          type="button"
-          disabled={!start || !end}
-          onClick={() => {
-            if (!start || !end) return
-            const start_at = new Date(start)
-            start_at.setHours(0, 0, 0, 0)
-            const end_at = new Date(end)
-            end_at.setHours(23, 59, 59, 999)
-            setSubmitted({ start_at: start_at.toISOString(), end_at: end_at.toISOString() })
-          }}
-        >
-          استعلام
-        </Button>
+  if (isError || !data) {
+    return (
+      <div className="alert alert-error text-xs p-3 flex gap-2" dir="rtl">
+        <AlertTriangle size={14} />
+        <span>تعذر تحميل حالة توفر القطعة.</span>
       </div>
-      {availability.isFetching ? <BusyIndicator label="جاري الاستعلام…" /> : null}
-      {availability.data ? (
-        <InlineMessage variant={availability.data.data.available ? 'success' : 'warning'}>
-          {availability.data.data.available ? 'متاح في هذه الفترة' : 'غير متاح — توجد تعارضات'}
-        </InlineMessage>
-      ) : null}
-      {conflicts.data && conflicts.data.data.conflicts.length > 0 ? (
-        <ul className="space-y-1 text-caption text-muted-foreground">
-          {conflicts.data.data.conflicts.map((c) => (
-            <li key={c.block_id}>
-              {c.block_type} · {new Date(c.start_at).toLocaleString('ar-IQ')} →{' '}
-              {new Date(c.end_at).toLocaleString('ar-IQ')}
-            </li>
-          ))}
-        </ul>
-      ) : submitted && conflicts.isSuccess && conflicts.data?.data.conflicts.length === 0 ? (
-        <EmptyState title="لا تعارضات" description="الفترة خالية حسب التقويم" />
-      ) : null}
-    </section>
+    )
+  }
+
+  const { isAvailable, lifecycleState, reason, nextAvailableDate, currentHolder } = data
+
+  return (
+    <div className="card border border-base-content/10 bg-base-300/80 shadow-md p-5 text-xs space-y-3" dir="rtl">
+      <div className="flex justify-between items-center">
+        <span className="font-bold text-base-content/70">حالة توفر القطعة</span>
+        {isAvailable ? (
+          <span className="badge badge-success gap-1 font-bold py-2.5 px-3">
+            <CalendarCheck size={12} />
+            متاح ✓
+          </span>
+        ) : (
+          <span className="badge badge-error gap-1 font-bold py-2.5 px-3">
+            <CalendarX size={12} />
+            غير متاح ✗
+          </span>
+        )}
+      </div>
+
+      <div className="space-y-2 pt-2 border-t border-base-content/5">
+        <div className="flex justify-between text-base-content/60">
+          <span>دورة الحياة:</span>
+          <span className="font-bold text-base-content">{lifecycleState}</span>
+        </div>
+
+        {!isAvailable && (
+          <>
+            {reason && (
+              <div className="flex justify-between text-base-content/60">
+                <span>سبب عدم التوفر:</span>
+                <span className="font-bold text-warning">
+                  {reason === 'reserved' ? 'محجوز لعميل آخر' : reason === 'rented' ? 'مستأجر حالياً' : reason}
+                </span>
+              </div>
+            )}
+
+            {currentHolder && (
+              <div className="flex justify-between text-base-content/60">
+                <span>الحائز الحالي:</span>
+                <span className="font-bold text-base-content flex items-center gap-1">
+                  <User size={12} />
+                  {currentHolder.fullName}
+                </span>
+              </div>
+            )}
+
+            <div className="flex justify-between text-base-content/60">
+              <span>تاريخ التوفر التالي المتوقع:</span>
+              <span className="font-mono font-bold text-primary flex items-center gap-1">
+                <Clock size={12} />
+                {new Date(nextAvailableDate).toLocaleDateString('ar-AE')}
+              </span>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
   )
 }

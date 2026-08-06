@@ -2,7 +2,7 @@
 
 **Branch:** `backend-v2`  
 **Module:** `backend-node/src/customers`  
-**Spec reference:** `backend-python/` (behavioral only ? not copied)
+**Backend:** `backend-node/` (Nest). Former Python V1 tree removed 2026-08-04.
 
 ## Scope
 

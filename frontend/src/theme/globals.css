@@ -1,0 +1,82 @@
+@import "tailwindcss";
+@import "@fontsource/ibm-plex-sans-arabic/400.css";
+@import "@fontsource/ibm-plex-sans-arabic/500.css";
+@import "@fontsource/ibm-plex-sans-arabic/600.css";
+@import "@fontsource/ibm-plex-sans-arabic/700.css";
+
+@plugin "daisyui" {
+  themes: false;
+  logs: false;
+}
+
+/* Brand identity preserved: gold #c6a75e on black */
+@plugin "daisyui/theme" {
+  name: "juman";
+  default: true;
+  prefersdark: true;
+  color-scheme: dark;
+
+  --color-base-100: #0a0a0b;
+  --color-base-200: #121214;
+  --color-base-300: #161618;
+  --color-base-content: #f3efe6;
+  --color-primary: #c6a75e;
+  --color-primary-content: #0a0a0b;
+  --color-secondary: #1e1e22;
+  --color-secondary-content: #f3efe6;
+  --color-accent: #b8963e;
+  --color-accent-content: #0a0a0b;
+  --color-neutral: #0e0e10;
+  --color-neutral-content: #f3efe6;
+  --color-info: #3b7ea0;
+  --color-info-content: #f3efe6;
+  --color-success: #2f9b6e;
+  --color-success-content: #f3efe6;
+  --color-warning: #d4a017;
+  --color-warning-content: #0a0a0b;
+  --color-error: #c62828;
+  --color-error-content: #f3efe6;
+
+  --radius-selector: 0.5rem;
+  --radius-field: 0.5rem;
+  --radius-box: 0.75rem;
+  --size-selector: 0.25rem;
+  --size-field: 0.25rem;
+  --border: 1px;
+  --depth: 1;
+  --noise: 0;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  direction: rtl;
+  background:
+    radial-gradient(1100px 520px at 100% 0%, rgba(198, 167, 94, 0.06), transparent 55%),
+    radial-gradient(900px 480px at 0% 100%, rgba(255, 255, 255, 0.03), transparent 50%),
+    var(--color-base-100);
+  color: var(--color-base-content);
+  font-family: "IBM Plex Sans Arabic", system-ui, sans-serif;
+}
+
+@utility juman-focus {
+  outline: none;
+  &:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+  }
+}
+
+/* Glass intensity (ThemeProvider data-glass) */
+html[data-glass='strong'] .glass {
+  backdrop-filter: blur(16px);
+}
+html[data-glass='off'] .glass {
+  backdrop-filter: none;
+  background-color: var(--color-base-200);
+}

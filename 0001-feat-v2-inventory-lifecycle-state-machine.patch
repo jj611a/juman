@@ -1,0 +1,1570 @@
+From 07b2c2274499382b892bec66f92e202f897ea4ab Mon Sep 17 00:00:00 2001
+From: jj611a <jj611a@gmail.com>
+Date: Sun, 2 Aug 2026 11:29:08 +0300
+Subject: [PATCH] feat(v2-inventory): lifecycle state machine
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Authoritative item lifecycle with closed transitions, history, CAS concurrency, and availability predicates — no reservations or rentals.
+
+Co-authored-by: Cursor <cursoragent@cursor.com>
+---
+ .../migration.sql                             |  24 ++
+ backend-node/prisma/schema.prisma             |  25 ++
+ .../src/inventory/inventory.constants.ts      |  88 ++++++
+ .../src/inventory/inventory.module.ts         |   8 +
+ backend-node/src/inventory/inventory.types.ts |   1 +
+ .../src/inventory/items/dto/item.dto.ts       |   4 +
+ .../src/inventory/items/items.mapper.ts       |   1 +
+ .../src/inventory/items/items.service.ts      |  22 ++
+ .../lifecycle/dto/transition-item.dto.ts      |  45 +++
+ .../lifecycle/lifecycle.controller.ts         |  50 +++
+ .../lifecycle/lifecycle.repository.ts         |  79 +++++
+ .../inventory/lifecycle/lifecycle.rules.ts    |  92 ++++++
+ .../inventory/lifecycle/lifecycle.service.ts  | 231 ++++++++++++++
+ .../src/permissions/permission.seeds.ts       |   2 +
+ .../shared/constants/business.constants.ts    |   1 +
+ .../test/inventory-integration.spec.ts        |  59 ++++
+ .../test/inventory-items-service.spec.ts      |   3 +
+ backend-node/test/inventory-lifecycle.spec.ts | 289 ++++++++++++++++++
+ docs/backend-v2/Architecture.md               |   6 +-
+ docs/backend-v2/DecisionLog.md                |   8 +
+ docs/backend-v2/DevelopmentRoadmap.md         |  10 +-
+ docs/backend-v2/InventoryDesign.md            | 100 ++++--
+ docs/backend-v2/PROGRESS.md                   |  13 +-
+ 23 files changed, 1115 insertions(+), 46 deletions(-)
+ create mode 100644 backend-node/prisma/migrations/20260802160000_inventory_lifecycle/migration.sql
+ create mode 100644 backend-node/src/inventory/lifecycle/dto/transition-item.dto.ts
+ create mode 100644 backend-node/src/inventory/lifecycle/lifecycle.controller.ts
+ create mode 100644 backend-node/src/inventory/lifecycle/lifecycle.repository.ts
+ create mode 100644 backend-node/src/inventory/lifecycle/lifecycle.rules.ts
+ create mode 100644 backend-node/src/inventory/lifecycle/lifecycle.service.ts
+ create mode 100644 backend-node/test/inventory-lifecycle.spec.ts
+
+diff --git a/backend-node/prisma/migrations/20260802160000_inventory_lifecycle/migration.sql b/backend-node/prisma/migrations/20260802160000_inventory_lifecycle/migration.sql
+new file mode 100644
+index 0000000..65ca295
+--- /dev/null
++++ b/backend-node/prisma/migrations/20260802160000_inventory_lifecycle/migration.sql
+@@ -0,0 +1,24 @@
++-- Phase 4.2 Inventory Lifecycle Foundation
++ALTER TABLE "Item" ADD COLUMN "lifecycleState" TEXT NOT NULL DEFAULT 'available';
++
++CREATE INDEX "Item_lifecycleState_idx" ON "Item"("lifecycleState");
++CREATE INDEX "Item_lifecycleState_deletedAt_idx" ON "Item"("lifecycleState", "deletedAt");
++
++CREATE TABLE "ItemStateHistory" (
++    "id" TEXT NOT NULL PRIMARY KEY,
++    "itemId" TEXT NOT NULL,
++    "oldState" TEXT NOT NULL,
++    "newState" TEXT NOT NULL,
++    "reason" TEXT,
++    "userId" TEXT,
++    "username" TEXT,
++    "referenceType" TEXT,
++    "referenceId" TEXT,
++    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
++    CONSTRAINT "ItemStateHistory_itemId_fkey" FOREIGN KEY ("itemId") REFERENCES "Item" ("id") ON DELETE CASCADE ON UPDATE CASCADE
++);
++
++CREATE INDEX "ItemStateHistory_itemId_idx" ON "ItemStateHistory"("itemId");
++CREATE INDEX "ItemStateHistory_newState_idx" ON "ItemStateHistory"("newState");
++CREATE INDEX "ItemStateHistory_createdAt_idx" ON "ItemStateHistory"("createdAt");
++CREATE INDEX "ItemStateHistory_referenceType_referenceId_idx" ON "ItemStateHistory"("referenceType", "referenceId");
+diff --git a/backend-node/prisma/schema.prisma b/backend-node/prisma/schema.prisma
+index 1f45acf..4cf38eb 100644
+--- a/backend-node/prisma/schema.prisma
++++ b/backend-node/prisma/schema.prisma
+@@ -421,6 +421,7 @@ model Item {
+   salePrice     Int       @default(0)
+   condition     String?
+   status        String    @default("draft")
++  lifecycleState String   @default("available")
+   description   String?
+   deletedAt     DateTime?
+   createdAt     DateTime  @default(now())
+@@ -435,6 +436,7 @@ model Item {
+   size     Size?     @relation(fields: [sizeId], references: [id])
+   media    ItemMedia[]
+   barcodes ItemBarcode[]
++  stateHistory ItemStateHistory[]
+ 
+   @@index([displayName])
+   @@index([internalCode])
+@@ -443,11 +445,34 @@ model Item {
+   @@index([colorId])
+   @@index([sizeId])
+   @@index([status])
++  @@index([lifecycleState])
+   @@index([condition])
+   @@index([deletedAt])
+   @@index([createdAt])
+   @@index([updatedAt])
+   @@index([status, deletedAt])
++  @@index([lifecycleState, deletedAt])
++}
++
++/// Append-only operational lifecycle transitions (Phase 4.2).
++model ItemStateHistory {
++  id               String   @id @default(uuid())
++  itemId           String
++  oldState         String
++  newState         String
++  reason           String?
++  userId           String?
++  username         String?
++  referenceType    String?
++  referenceId      String?
++  createdAt        DateTime @default(now())
++
++  item Item @relation(fields: [itemId], references: [id])
++
++  @@index([itemId])
++  @@index([newState])
++  @@index([createdAt])
++  @@index([referenceType, referenceId])
+ }
+ 
+ model ItemMedia {
+diff --git a/backend-node/src/inventory/inventory.constants.ts b/backend-node/src/inventory/inventory.constants.ts
+index 78ef102..95ab383 100644
+--- a/backend-node/src/inventory/inventory.constants.ts
++++ b/backend-node/src/inventory/inventory.constants.ts
+@@ -12,6 +12,7 @@ export const INVENTORY_PERMISSION = {
+   UPDATE: 'inventory.update',
+   DELETE: 'inventory.delete',
+   RESTORE: 'inventory.restore',
++  TRANSITION: 'inventory.transition',
+ } as const;
+ export const CATEGORY_PERMISSION = {
+   VIEW: 'categories.view',
+@@ -34,6 +35,93 @@ export const ITEM_CONDITION = {
+   POOR: 'poor',
+   UNKNOWN: 'unknown',
+ } as const;
++
++/** Operational lifecycle (Phase 4.2) — separate from catalog ITEM_STATUS. */
++export const ITEM_LIFECYCLE = {
++  AVAILABLE: 'available',
++  RESERVED: 'reserved',
++  RENTED: 'rented',
++  RETURN_PENDING: 'return_pending',
++  INSPECTION: 'inspection',
++  CLEANING: 'cleaning',
++  MAINTENANCE: 'maintenance',
++  FOR_SALE: 'for_sale',
++  SOLD: 'sold',
++  RETIRED: 'retired',
++  LOST: 'lost',
++  DAMAGED: 'damaged',
++} as const;
++
++export type ItemLifecycleState =
++  (typeof ITEM_LIFECYCLE)[keyof typeof ITEM_LIFECYCLE];
++
++export const ITEM_LIFECYCLE_VALUES = Object.values(ITEM_LIFECYCLE);
++
++export const ITEM_LIFECYCLE_DEFAULT = ITEM_LIFECYCLE.AVAILABLE;
++
++/**
++ * Allowed transitions. Future modules MUST use LifecycleService —
++ * never invent parallel state machines.
++ */
++export const ITEM_LIFECYCLE_TRANSITIONS: Readonly<
++  Record<ItemLifecycleState, readonly ItemLifecycleState[]>
++> = {
++  [ITEM_LIFECYCLE.AVAILABLE]: [
++    ITEM_LIFECYCLE.RESERVED,
++    ITEM_LIFECYCLE.FOR_SALE,
++    ITEM_LIFECYCLE.MAINTENANCE,
++    ITEM_LIFECYCLE.RETIRED,
++    ITEM_LIFECYCLE.LOST,
++    ITEM_LIFECYCLE.DAMAGED,
++  ],
++  [ITEM_LIFECYCLE.RESERVED]: [
++    ITEM_LIFECYCLE.AVAILABLE,
++    ITEM_LIFECYCLE.RENTED,
++    ITEM_LIFECYCLE.LOST,
++    ITEM_LIFECYCLE.DAMAGED,
++  ],
++  [ITEM_LIFECYCLE.RENTED]: [
++    ITEM_LIFECYCLE.RETURN_PENDING,
++    ITEM_LIFECYCLE.LOST,
++    ITEM_LIFECYCLE.DAMAGED,
++  ],
++  [ITEM_LIFECYCLE.RETURN_PENDING]: [
++    ITEM_LIFECYCLE.INSPECTION,
++    ITEM_LIFECYCLE.LOST,
++    ITEM_LIFECYCLE.DAMAGED,
++  ],
++  [ITEM_LIFECYCLE.INSPECTION]: [
++    ITEM_LIFECYCLE.CLEANING,
++    ITEM_LIFECYCLE.MAINTENANCE,
++    ITEM_LIFECYCLE.AVAILABLE,
++    ITEM_LIFECYCLE.DAMAGED,
++    ITEM_LIFECYCLE.RETIRED,
++  ],
++  [ITEM_LIFECYCLE.CLEANING]: [
++    ITEM_LIFECYCLE.AVAILABLE,
++    ITEM_LIFECYCLE.MAINTENANCE,
++  ],
++  [ITEM_LIFECYCLE.MAINTENANCE]: [
++    ITEM_LIFECYCLE.AVAILABLE,
++    ITEM_LIFECYCLE.RETIRED,
++    ITEM_LIFECYCLE.DAMAGED,
++  ],
++  [ITEM_LIFECYCLE.FOR_SALE]: [
++    ITEM_LIFECYCLE.AVAILABLE,
++    ITEM_LIFECYCLE.SOLD,
++    ITEM_LIFECYCLE.RETIRED,
++    ITEM_LIFECYCLE.LOST,
++    ITEM_LIFECYCLE.DAMAGED,
++  ],
++  [ITEM_LIFECYCLE.SOLD]: [ITEM_LIFECYCLE.RETIRED],
++  [ITEM_LIFECYCLE.RETIRED]: [],
++  [ITEM_LIFECYCLE.LOST]: [ITEM_LIFECYCLE.AVAILABLE, ITEM_LIFECYCLE.RETIRED],
++  [ITEM_LIFECYCLE.DAMAGED]: [
++    ITEM_LIFECYCLE.MAINTENANCE,
++    ITEM_LIFECYCLE.RETIRED,
++  ],
++};
++
+ export const ITEM_SORT_FIELDS = [
+   'displayName',
+   'internalCode',
+diff --git a/backend-node/src/inventory/inventory.module.ts b/backend-node/src/inventory/inventory.module.ts
+index 982ae39..4bef006 100644
+--- a/backend-node/src/inventory/inventory.module.ts
++++ b/backend-node/src/inventory/inventory.module.ts
+@@ -14,12 +14,17 @@ import { SizesService } from './sizes/sizes.service';
+ import { ItemsController } from './items/items.controller';
+ import { ItemsRepository } from './items/items.repository';
+ import { ItemsService } from './items/items.service';
++import { LifecycleController } from './lifecycle/lifecycle.controller';
++import { LifecycleRepository } from './lifecycle/lifecycle.repository';
++import { LifecycleService } from './lifecycle/lifecycle.service';
++
+ @Module({
+   controllers: [
+     CategoriesController,
+     BrandsController,
+     ColorsController,
+     SizesController,
++    LifecycleController,
+     ItemsController,
+   ],
+   providers: [
+@@ -33,6 +38,8 @@ import { ItemsService } from './items/items.service';
+     SizesService,
+     ItemsRepository,
+     ItemsService,
++    LifecycleRepository,
++    LifecycleService,
+   ],
+   exports: [
+     CategoriesService,
+@@ -40,6 +47,7 @@ import { ItemsService } from './items/items.service';
+     ColorsService,
+     SizesService,
+     ItemsService,
++    LifecycleService,
+   ],
+ })
+ export class InventoryModule {}
+diff --git a/backend-node/src/inventory/inventory.types.ts b/backend-node/src/inventory/inventory.types.ts
+index 8bd00a5..1ce8960 100644
+--- a/backend-node/src/inventory/inventory.types.ts
++++ b/backend-node/src/inventory/inventory.types.ts
+@@ -49,6 +49,7 @@ export interface ListItemsQuery extends PaginationInput {
+   colorId?: string;
+   sizeId?: string;
+   status?: string;
++  lifecycleState?: string;
+   displayName?: string;
+   internalCode?: string;
+   deleted?: boolean | string;
+diff --git a/backend-node/src/inventory/items/dto/item.dto.ts b/backend-node/src/inventory/items/dto/item.dto.ts
+index 82287a5..5cda827 100644
+--- a/backend-node/src/inventory/items/dto/item.dto.ts
++++ b/backend-node/src/inventory/items/dto/item.dto.ts
+@@ -115,6 +115,10 @@ export class ListItemsDto {
+   @IsString()
+   status?: string;
+ 
++  @IsOptional()
++  @IsString()
++  lifecycleState?: string;
++
+   @IsOptional()
+   @IsString()
+   displayName?: string;
+diff --git a/backend-node/src/inventory/items/items.mapper.ts b/backend-node/src/inventory/items/items.mapper.ts
+index 729efd6..ec6a842 100644
+--- a/backend-node/src/inventory/items/items.mapper.ts
++++ b/backend-node/src/inventory/items/items.mapper.ts
+@@ -10,6 +10,7 @@ export function toItemPublic(row: ItemWithRelations) {
+     salePrice: row.salePrice,
+     condition: row.condition,
+     status: row.status,
++    lifecycleState: row.lifecycleState,
+     description: row.description,
+     category: summary(row.category),
+     brand: summary(row.brand),
+diff --git a/backend-node/src/inventory/items/items.service.ts b/backend-node/src/inventory/items/items.service.ts
+index 7d864e3..33d27fc 100644
+--- a/backend-node/src/inventory/items/items.service.ts
++++ b/backend-node/src/inventory/items/items.service.ts
+@@ -22,6 +22,7 @@ import {
+   ITEM_DEFAULT_PREFIX,
+   ITEM_DEFAULT_SEPARATOR,
+   ITEM_ENTITY,
++  ITEM_LIFECYCLE_DEFAULT,
+   ITEM_SORT_FIELDS,
+   ITEM_STATUS,
+   INVENTORY_MODULE,
+@@ -35,6 +36,8 @@ import type {
+ } from '../inventory.types';
+ import { toItemPublic } from './items.mapper';
+ import { ItemsRepository } from './items.repository';
++import { LifecycleService } from '../lifecycle/lifecycle.service';
++import { isEditable } from '../lifecycle/lifecycle.rules';
+ @Injectable()
+ export class ItemsService {
+   constructor(
+@@ -43,6 +46,7 @@ export class ItemsService {
+     private readonly audit: AuditService,
+     private readonly barcode: BarcodeService,
+     private readonly media: MediaService,
++    private readonly lifecycle: LifecycleService,
+   ) {}
+   async create(dto: ItemPayload, actor?: AuthPrincipal) {
+     const item = await this.repo.create(
+@@ -59,6 +63,7 @@ export class ItemsService {
+         await this.barcode.activate(b.id, ITEM_ENTITY, item.id, actor);
+         await this.repo.createBarcode(item.id, b.id, true, actor?.userId);
+       }
++      await this.lifecycle.recordCreated(item.id, actor);
+       const row = await this.getById(item.id);
+       await this.audit.recordCreate(
+         INVENTORY_MODULE,
+@@ -75,6 +80,17 @@ export class ItemsService {
+   }
+   async update(id: string, dto: ItemPayload, actor?: AuthPrincipal) {
+     const old = await this.live(id);
++    if (
++      !isEditable({
++        deletedAt: old.deletedAt,
++        status: old.status,
++        lifecycleState: old.lifecycleState,
++      })
++    ) {
++      throw BusinessException.conflict(
++        'Item catalog fields are not editable in the current lifecycle state',
++      );
++    }
+     const row = await this.repo.update(
+       id,
+       (await this.data(dto, actor, false)) as Prisma.ItemUncheckedUpdateInput,
+@@ -181,6 +197,10 @@ export class ItemsService {
+     if (q.colorId) w.colorId = q.colorId;
+     if (q.sizeId) w.sizeId = q.sizeId;
+     if (q.status) w.status = this.status(q.status);
++    if (q.lifecycleState) {
++      const ls = q.lifecycleState.trim().toLowerCase();
++      w.lifecycleState = ls;
++    }
+     const text = normalizeSearchQuery(q.q);
+     if (text)
+       w.OR = [
+@@ -219,6 +239,7 @@ export class ItemsService {
+       x.rentalPrice = this.money(d.rentalPrice ?? 0, 'rentalPrice');
+       x.salePrice = this.money(d.salePrice ?? 0, 'salePrice');
+       x.status = this.status(d.status ?? ITEM_STATUS.DRAFT);
++      x.lifecycleState = ITEM_LIFECYCLE_DEFAULT;
+       if (d.condition !== undefined) {
+         x.condition = this.condition(d.condition);
+       }
+@@ -323,6 +344,7 @@ export class ItemsService {
+       internalCode: r.internalCode,
+       displayName: r.displayName,
+       status: r.status,
++      lifecycleState: r.lifecycleState,
+       condition: r.condition,
+       deletedAt: r.deletedAt,
+     };
+diff --git a/backend-node/src/inventory/lifecycle/dto/transition-item.dto.ts b/backend-node/src/inventory/lifecycle/dto/transition-item.dto.ts
+new file mode 100644
+index 0000000..e7d9b6b
+--- /dev/null
++++ b/backend-node/src/inventory/lifecycle/dto/transition-item.dto.ts
+@@ -0,0 +1,45 @@
++import { IsIn, IsInt, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
++import { Type } from 'class-transformer';
++import { ITEM_LIFECYCLE_VALUES } from '../../inventory.constants';
++
++export class TransitionItemDto {
++  @IsString()
++  @IsIn([...ITEM_LIFECYCLE_VALUES])
++  newState!: string;
++
++  @IsOptional()
++  @IsString()
++  @MaxLength(500)
++  reason?: string;
++
++  @IsOptional()
++  @IsString()
++  @MaxLength(64)
++  referenceType?: string;
++
++  @IsOptional()
++  @IsString()
++  @MaxLength(64)
++  referenceId?: string;
++
++  /** Optimistic concurrency token — must match current lifecycle when set. */
++  @IsOptional()
++  @IsString()
++  @IsIn([...ITEM_LIFECYCLE_VALUES])
++  expectedState?: string;
++}
++
++export class ListItemHistoryDto {
++  @IsOptional()
++  @Type(() => Number)
++  @IsInt()
++  @Min(0)
++  offset?: number;
++
++  @IsOptional()
++  @Type(() => Number)
++  @IsInt()
++  @Min(1)
++  @Max(200)
++  limit?: number;
++}
+diff --git a/backend-node/src/inventory/lifecycle/lifecycle.controller.ts b/backend-node/src/inventory/lifecycle/lifecycle.controller.ts
+new file mode 100644
+index 0000000..b47f4a4
+--- /dev/null
++++ b/backend-node/src/inventory/lifecycle/lifecycle.controller.ts
+@@ -0,0 +1,50 @@
++import {
++  Body,
++  Controller,
++  Get,
++  HttpCode,
++  Param,
++  ParseUUIDPipe,
++  Post,
++  Query,
++} from '@nestjs/common';
++import { CurrentUser } from '../../auth/decorators/current-user.decorator';
++import { RequirePermissions } from '../../auth/decorators/require-permissions.decorator';
++import type { AuthPrincipal } from '../../shared/types';
++import { INVENTORY_PERMISSION } from '../inventory.constants';
++import { LifecycleService } from './lifecycle.service';
++import {
++  ListItemHistoryDto,
++  TransitionItemDto,
++} from './dto/transition-item.dto';
++
++@Controller('items')
++export class LifecycleController {
++  constructor(private readonly lifecycle: LifecycleService) {}
++
++  @Get(':id/state')
++  @RequirePermissions(INVENTORY_PERMISSION.VIEW)
++  state(@Param('id', ParseUUIDPipe) id: string) {
++    return this.lifecycle.currentState(id);
++  }
++
++  @Get(':id/history')
++  @RequirePermissions(INVENTORY_PERMISSION.VIEW)
++  history(
++    @Param('id', ParseUUIDPipe) id: string,
++    @Query() query: ListItemHistoryDto,
++  ) {
++    return this.lifecycle.history(id, query);
++  }
++
++  @Post(':id/transition')
++  @HttpCode(200)
++  @RequirePermissions(INVENTORY_PERMISSION.TRANSITION)
++  transition(
++    @Param('id', ParseUUIDPipe) id: string,
++    @Body() body: TransitionItemDto,
++    @CurrentUser() user: AuthPrincipal,
++  ) {
++    return this.lifecycle.transition(id, body, user);
++  }
++}
+diff --git a/backend-node/src/inventory/lifecycle/lifecycle.repository.ts b/backend-node/src/inventory/lifecycle/lifecycle.repository.ts
+new file mode 100644
+index 0000000..58a43c7
+--- /dev/null
++++ b/backend-node/src/inventory/lifecycle/lifecycle.repository.ts
+@@ -0,0 +1,79 @@
++import { Injectable } from '@nestjs/common';
++import type { Item, ItemStateHistory, Prisma } from '@prisma/client';
++import { PrismaService } from '../../database/prisma.service';
++import { liveWhere } from '../../shared/soft-delete/soft-delete';
++
++@Injectable()
++export class LifecycleRepository {
++  constructor(private readonly prisma: PrismaService) {}
++
++  findLiveItem(id: string): Promise<Item | null> {
++    return this.prisma.item.findFirst({ where: liveWhere({ id }) });
++  }
++
++  history(itemId: string, offset: number, limit: number): Promise<{
++    rows: ItemStateHistory[];
++    total: number;
++  }> {
++    const where: Prisma.ItemStateHistoryWhereInput = { itemId };
++    return Promise.all([
++      this.prisma.itemStateHistory.findMany({
++        where,
++        orderBy: { createdAt: 'desc' },
++        skip: offset,
++        take: limit,
++      }),
++      this.prisma.itemStateHistory.count({ where }),
++    ]).then(([rows, total]) => ({ rows, total }));
++  }
++
++  /**
++   * CAS transition: updates only if current lifecycleState still matches `from`.
++   * Prevents concurrent conflicting transitions.
++   */
++  async transitionAtomic(input: {
++    itemId: string;
++    from: string;
++    to: string;
++    reason: string | null;
++    userId: string | null;
++    username: string | null;
++    referenceType: string | null;
++    referenceId: string | null;
++    updatedBy: string | null;
++  }): Promise<{ item: Item; history: ItemStateHistory } | null> {
++    return this.prisma.$transaction(async (tx) => {
++      const result = await tx.item.updateMany({
++        where: {
++          id: input.itemId,
++          deletedAt: null,
++          lifecycleState: input.from,
++        },
++        data: {
++          lifecycleState: input.to,
++          updatedBy: input.updatedBy,
++        },
++      });
++      if (result.count !== 1) return null;
++
++      const history = await tx.itemStateHistory.create({
++        data: {
++          itemId: input.itemId,
++          oldState: input.from,
++          newState: input.to,
++          reason: input.reason,
++          userId: input.userId,
++          username: input.username,
++          referenceType: input.referenceType,
++          referenceId: input.referenceId,
++        },
++      });
++      const item = await tx.item.findUniqueOrThrow({ where: { id: input.itemId } });
++      return { item, history };
++    });
++  }
++
++  createHistory(data: Prisma.ItemStateHistoryUncheckedCreateInput): Promise<ItemStateHistory> {
++    return this.prisma.itemStateHistory.create({ data });
++  }
++}
+diff --git a/backend-node/src/inventory/lifecycle/lifecycle.rules.ts b/backend-node/src/inventory/lifecycle/lifecycle.rules.ts
+new file mode 100644
+index 0000000..ec77292
+--- /dev/null
++++ b/backend-node/src/inventory/lifecycle/lifecycle.rules.ts
+@@ -0,0 +1,92 @@
++import {
++  ITEM_LIFECYCLE,
++  ITEM_LIFECYCLE_TRANSITIONS,
++  ITEM_LIFECYCLE_VALUES,
++  ITEM_STATUS,
++  type ItemLifecycleState,
++} from '../inventory.constants';
++
++export function isLifecycleState(value: string): value is ItemLifecycleState {
++  return (ITEM_LIFECYCLE_VALUES as string[]).includes(value);
++}
++
++export function normalizeLifecycleState(raw: string): ItemLifecycleState {
++  const value = raw.trim().toLowerCase();
++  if (!isLifecycleState(value)) {
++    throw new Error(`Unsupported lifecycle state: ${raw}`);
++  }
++  return value;
++}
++
++export function allowedTargets(from: ItemLifecycleState): readonly ItemLifecycleState[] {
++  return ITEM_LIFECYCLE_TRANSITIONS[from];
++}
++
++export function canTransitionStates(
++  from: ItemLifecycleState,
++  to: ItemLifecycleState,
++): boolean {
++  return allowedTargets(from).includes(to);
++}
++
++/** Soft-deleted or terminal catalog statuses are not operational. */
++export function isOperational(input: {
++  deletedAt: Date | null;
++  status: string;
++  lifecycleState: string;
++}): boolean {
++  if (input.deletedAt) return false;
++  if (input.status !== ITEM_STATUS.ACTIVE && input.status !== ITEM_STATUS.DRAFT) {
++    return false;
++  }
++  return (
++    input.lifecycleState !== ITEM_LIFECYCLE.RETIRED &&
++    input.lifecycleState !== ITEM_LIFECYCLE.SOLD &&
++    input.lifecycleState !== ITEM_LIFECYCLE.LOST
++  );
++}
++
++export function isRentable(input: {
++  deletedAt: Date | null;
++  status: string;
++  lifecycleState: string;
++}): boolean {
++  return (
++    input.deletedAt == null &&
++    input.status === ITEM_STATUS.ACTIVE &&
++    input.lifecycleState === ITEM_LIFECYCLE.AVAILABLE
++  );
++}
++
++export function isSellable(input: {
++  deletedAt: Date | null;
++  status: string;
++  lifecycleState: string;
++}): boolean {
++  if (input.deletedAt != null || input.status !== ITEM_STATUS.ACTIVE) return false;
++  return (
++    input.lifecycleState === ITEM_LIFECYCLE.AVAILABLE ||
++    input.lifecycleState === ITEM_LIFECYCLE.FOR_SALE
++  );
++}
++
++/** Catalog field edits allowed when not mid-rental/sale flow. */
++export function isEditable(input: {
++  deletedAt: Date | null;
++  status: string;
++  lifecycleState: string;
++}): boolean {
++  if (input.deletedAt != null) return false;
++  if (
++    input.status === ITEM_STATUS.ARCHIVED ||
++    input.status === ITEM_STATUS.RETIRED
++  ) {
++    return false;
++  }
++  return (
++    input.lifecycleState === ITEM_LIFECYCLE.AVAILABLE ||
++    input.lifecycleState === ITEM_LIFECYCLE.MAINTENANCE ||
++    input.lifecycleState === ITEM_LIFECYCLE.FOR_SALE ||
++    input.lifecycleState === ITEM_LIFECYCLE.DAMAGED
++  );
++}
+diff --git a/backend-node/src/inventory/lifecycle/lifecycle.service.ts b/backend-node/src/inventory/lifecycle/lifecycle.service.ts
+new file mode 100644
+index 0000000..376b0e9
+--- /dev/null
++++ b/backend-node/src/inventory/lifecycle/lifecycle.service.ts
+@@ -0,0 +1,231 @@
++import { Injectable } from '@nestjs/common';
++import { AuditService } from '../../audit/audit.service';
++import { AUDIT_ACTION } from '../../shared/constants/business.constants';
++import { BusinessException } from '../../shared/errors/business.exception';
++import {
++  normalizePagination,
++  paginated,
++  type Paginated,
++  type PaginationInput,
++} from '../../shared/pagination/pagination';
++import { assertNonEmptyString } from '../../shared/validation/assert';
++import type { AuthPrincipal } from '../../shared/types';
++import {
++  INVENTORY_MODULE,
++  ITEM_ENTITY,
++  ITEM_LIFECYCLE_DEFAULT,
++  ITEM_STATUS,
++  type ItemLifecycleState,
++} from '../inventory.constants';
++import { LifecycleRepository } from './lifecycle.repository';
++import {
++  canTransitionStates,
++  isEditable,
++  isLifecycleState,
++  isOperational,
++  isRentable,
++  isSellable,
++} from './lifecycle.rules';
++
++export interface TransitionInput {
++  readonly newState: string;
++  readonly reason?: string | null;
++  readonly referenceType?: string | null;
++  readonly referenceId?: string | null;
++  /** Optional optimistic concurrency — must match current state when provided. */
++  readonly expectedState?: string | null;
++}
++
++@Injectable()
++export class LifecycleService {
++  constructor(
++    private readonly repo: LifecycleRepository,
++    private readonly audit: AuditService,
++  ) {}
++
++  async currentState(itemId: string) {
++    const item = await this.requireLive(itemId);
++    return this.toStateView(item);
++  }
++
++  async history(
++    itemId: string,
++    query: PaginationInput = {},
++  ): Promise<Paginated<{
++    id: string;
++    oldState: string;
++    newState: string;
++    reason: string | null;
++    userId: string | null;
++    username: string | null;
++    referenceType: string | null;
++    referenceId: string | null;
++    createdAt: Date;
++  }>> {
++    await this.requireLive(itemId);
++    const page = normalizePagination(query);
++    const { rows, total } = await this.repo.history(
++      itemId,
++      page.offset,
++      page.limit,
++    );
++    return paginated(
++      rows.map((r) => ({
++        id: r.id,
++        oldState: r.oldState,
++        newState: r.newState,
++        reason: r.reason,
++        userId: r.userId,
++        username: r.username,
++        referenceType: r.referenceType,
++        referenceId: r.referenceId,
++        createdAt: r.createdAt,
++      })),
++      total,
++      page,
++    );
++  }
++
++  canTransition(fromRaw: string, toRaw: string): boolean {
++    if (!isLifecycleState(fromRaw) || !isLifecycleState(toRaw)) return false;
++    return canTransitionStates(fromRaw, toRaw);
++  }
++
++  async transition(
++    itemId: string,
++    input: TransitionInput,
++    actor?: AuthPrincipal,
++  ) {
++    const item = await this.requireLive(itemId);
++    if (
++      item.status === ITEM_STATUS.ARCHIVED ||
++      item.status === ITEM_STATUS.RETIRED
++    ) {
++      throw BusinessException.conflict(
++        'Cannot transition lifecycle for archived or catalog-retired items',
++      );
++    }
++
++    const from = this.parseState(item.lifecycleState);
++    const to = this.parseState(input.newState);
++
++    if (input.expectedState != null && input.expectedState !== '') {
++      const expected = this.parseState(input.expectedState);
++      if (expected !== from) {
++        throw BusinessException.conflict(
++          `Lifecycle state changed (expected ${expected}, current ${from})`,
++        );
++      }
++    }
++
++    if (from === to) {
++      throw BusinessException.validation(
++        `Item is already in lifecycle state ${to}`,
++      );
++    }
++    if (!canTransitionStates(from, to)) {
++      throw BusinessException.conflict(
++        `Invalid lifecycle transition: ${from} → ${to}`,
++      );
++    }
++
++    const reason =
++      input.reason == null || String(input.reason).trim() === ''
++        ? null
++        : String(input.reason).trim().slice(0, 500);
++
++    const result = await this.repo.transitionAtomic({
++      itemId,
++      from,
++      to,
++      reason,
++      userId: actor?.userId ?? null,
++      username: actor?.username ?? null,
++      referenceType:
++        input.referenceType == null || String(input.referenceType).trim() === ''
++          ? null
++          : String(input.referenceType).trim().toLowerCase().slice(0, 64),
++      referenceId:
++        input.referenceId == null || String(input.referenceId).trim() === ''
++          ? null
++          : String(input.referenceId).trim().slice(0, 64),
++      updatedBy: actor?.userId ?? null,
++    });
++
++    if (!result) {
++      throw BusinessException.conflict(
++        'Concurrent lifecycle transition rejected',
++      );
++    }
++
++    await this.audit.record({
++      module: INVENTORY_MODULE,
++      entityType: ITEM_ENTITY,
++      entityId: itemId,
++      action: AUDIT_ACTION.TRANSITION,
++      oldValues: { lifecycleState: from },
++      newValues: {
++        lifecycleState: to,
++        reason,
++        referenceType: result.history.referenceType,
++        referenceId: result.history.referenceId,
++      },
++      actor: { userId: actor?.userId, username: actor?.username },
++    });
++
++    return this.toStateView(result.item);
++  }
++
++  /** Seed birth history when an item is first created. */
++  async recordCreated(itemId: string, actor?: AuthPrincipal): Promise<void> {
++    await this.repo.createHistory({
++      itemId,
++      oldState: ITEM_LIFECYCLE_DEFAULT,
++      newState: ITEM_LIFECYCLE_DEFAULT,
++      reason: 'created',
++      userId: actor?.userId ?? null,
++      username: actor?.username ?? null,
++      referenceType: null,
++      referenceId: null,
++    });
++  }
++
++  private parseState(raw: string): ItemLifecycleState {
++    const value = assertNonEmptyString(raw, 'lifecycleState').toLowerCase();
++    if (!isLifecycleState(value)) {
++      throw BusinessException.validation(`Unsupported lifecycle state: ${raw}`);
++    }
++    return value;
++  }
++
++  private async requireLive(itemId: string) {
++    const id = assertNonEmptyString(itemId, 'itemId');
++    const item = await this.repo.findLiveItem(id);
++    if (!item) throw BusinessException.notFound('Item not found');
++    return item;
++  }
++
++  private toStateView(item: {
++    id: string;
++    lifecycleState: string;
++    status: string;
++    deletedAt: Date | null;
++    updatedAt: Date;
++  }) {
++    const flags = {
++      deletedAt: item.deletedAt,
++      status: item.status,
++      lifecycleState: item.lifecycleState,
++    };
++    return {
++      itemId: item.id,
++      lifecycleState: item.lifecycleState,
++      catalogStatus: item.status,
++      isOperational: isOperational(flags),
++      isRentable: isRentable(flags),
++      isSellable: isSellable(flags),
++      isEditable: isEditable(flags),
++      updatedAt: item.updatedAt,
++    };
++  }
++}
+diff --git a/backend-node/src/permissions/permission.seeds.ts b/backend-node/src/permissions/permission.seeds.ts
+index 2ebacb9..e0b0b1c 100644
+--- a/backend-node/src/permissions/permission.seeds.ts
++++ b/backend-node/src/permissions/permission.seeds.ts
+@@ -57,6 +57,7 @@ export const DEFAULT_PERMISSIONS: readonly PermissionSeed[] = [
+   perm('inventory.update', 'تعديل المخزون', 'تعديل بيانات المخزون'),
+   perm('inventory.delete', 'حذف المخزون', 'حذف عنصر من المخزون'),
+   perm('inventory.restore', 'Restore inventory', 'Restore deleted inventory items'),
++  perm('inventory.transition', 'Transition inventory', 'Change inventory item lifecycle state'),
+   perm('customer.view', 'عرض العملاء', 'عرض قائمة العملاء'),
+   perm('customer.create', 'إنشاء عميل', 'إنشاء عميل جديد'),
+   perm('customer.update', 'تعديل عميل', 'تعديل بيانات العميل'),
+@@ -150,6 +151,7 @@ export const INVENTORY_PERMISSIONS: readonly string[] = [
+   'inventory.update',
+   'inventory.delete',
+   'inventory.restore',
++  'inventory.transition',
+   'inspection.view',
+   'inspection.create',
+   'inspection.update',
+diff --git a/backend-node/src/shared/constants/business.constants.ts b/backend-node/src/shared/constants/business.constants.ts
+index 8ae8c3c..44689ef 100644
+--- a/backend-node/src/shared/constants/business.constants.ts
++++ b/backend-node/src/shared/constants/business.constants.ts
+@@ -62,6 +62,7 @@ export const AUDIT_ACTION = {
+   ALLOCATE: 'allocate',
+   RESERVE: 'reserve',
+   RELEASE: 'release',
++  TRANSITION: 'transition',
+ } as const;
+ 
+ export type AuditAction = (typeof AUDIT_ACTION)[keyof typeof AUDIT_ACTION];
+\ No newline at end of file
+diff --git a/backend-node/test/inventory-integration.spec.ts b/backend-node/test/inventory-integration.spec.ts
+index cae9229..df181f6 100644
+--- a/backend-node/test/inventory-integration.spec.ts
++++ b/backend-node/test/inventory-integration.spec.ts
+@@ -203,4 +203,63 @@ describe('Inventory integration', () => {
+       .set('Authorization', `Bearer ${token}`)
+       .expect(200);
+   });
++
++  it('transitions lifecycle, rejects invalid edges, records history', async () => {
++    const created = await request(app.getHttpServer())
++      .post('/items')
++      .set('Authorization', `Bearer ${token}`)
++      .send({ displayName: 'Lifecycle item', status: 'active' })
++      .expect(201);
++    const id = created.body.id as string;
++    expect(created.body.lifecycleState).toBe('available');
++
++    const state = await request(app.getHttpServer())
++      .get(`/items/${id}/state`)
++      .set('Authorization', `Bearer ${token}`)
++      .expect(200);
++    expect(state.body.isRentable).toBe(true);
++
++    await request(app.getHttpServer())
++      .post(`/items/${id}/transition`)
++      .set('Authorization', `Bearer ${token}`)
++      .send({ newState: 'rented', reason: 'skip reserved' })
++      .expect(409);
++
++    await request(app.getHttpServer())
++      .post(`/items/${id}/transition`)
++      .set('Authorization', `Bearer ${token}`)
++      .send({ newState: 'reserved', reason: 'hold', expectedState: 'available' })
++      .expect(200);
++
++    const reserved = await request(app.getHttpServer())
++      .get(`/items/${id}/state`)
++      .set('Authorization', `Bearer ${token}`)
++      .expect(200);
++    expect(reserved.body.lifecycleState).toBe('reserved');
++    expect(reserved.body.isRentable).toBe(false);
++
++    await request(app.getHttpServer())
++      .patch(`/items/${id}`)
++      .set('Authorization', `Bearer ${token}`)
++      .send({ displayName: 'should fail' })
++      .expect(409);
++
++    const history = await request(app.getHttpServer())
++      .get(`/items/${id}/history`)
++      .set('Authorization', `Bearer ${token}`)
++      .expect(200);
++    expect(history.body.meta.total).toBeGreaterThanOrEqual(2);
++
++    const LifecycleService = (await import('../src/inventory/lifecycle/lifecycle.service'))
++      .LifecycleService;
++    const lifecycle = app.get(LifecycleService);
++    const results = await Promise.allSettled([
++      lifecycle.transition(id, { newState: 'rented', expectedState: 'reserved' }),
++      lifecycle.transition(id, { newState: 'available', expectedState: 'reserved' }),
++    ]);
++    const fulfilled = results.filter((r) => r.status === 'fulfilled');
++    const rejected = results.filter((r) => r.status === 'rejected');
++    expect(fulfilled.length).toBe(1);
++    expect(rejected.length).toBe(1);
++  });
+ });
+diff --git a/backend-node/test/inventory-items-service.spec.ts b/backend-node/test/inventory-items-service.spec.ts
+index 699d2d6..f7ddc57 100644
+--- a/backend-node/test/inventory-items-service.spec.ts
++++ b/backend-node/test/inventory-items-service.spec.ts
+@@ -13,6 +13,7 @@ const baseRow = {
+   salePrice: 0,
+   condition: null,
+   status: 'draft',
++  lifecycleState: 'available',
+   description: null,
+   deletedAt: null,
+   createdAt: new Date(),
+@@ -76,6 +77,7 @@ describe('ItemsService', () => {
+     activate: vi.fn(),
+   };
+   const media = { find: vi.fn(), attach: vi.fn() };
++  const lifecycle = { recordCreated: vi.fn().mockResolvedValue(undefined) };
+   let service: ItemsService;
+ 
+   beforeEach(() => {
+@@ -86,6 +88,7 @@ describe('ItemsService', () => {
+       audit as never,
+       barcode as never,
+       media as never,
++      lifecycle as never,
+     );
+     repo.nextSequence.mockResolvedValue(1);
+     repo.findAnyCode.mockResolvedValue(null);
+diff --git a/backend-node/test/inventory-lifecycle.spec.ts b/backend-node/test/inventory-lifecycle.spec.ts
+new file mode 100644
+index 0000000..d0255ea
+--- /dev/null
++++ b/backend-node/test/inventory-lifecycle.spec.ts
+@@ -0,0 +1,289 @@
++import { describe, expect, it, vi, beforeEach } from 'vitest';
++import { LifecycleService } from '../src/inventory/lifecycle/lifecycle.service';
++import { BusinessException } from '../src/shared/errors/business.exception';
++import {
++  canTransitionStates,
++  isEditable,
++  isOperational,
++  isRentable,
++  isSellable,
++} from '../src/inventory/lifecycle/lifecycle.rules';
++import { ITEM_LIFECYCLE, ITEM_STATUS } from '../src/inventory/inventory.constants';
++import { LifecycleController } from '../src/inventory/lifecycle/lifecycle.controller';
++import { LifecycleRepository } from '../src/inventory/lifecycle/lifecycle.repository';
++
++describe('lifecycle.rules', () => {
++  it('allows happy-path rental cycle and rejects invalid edges', () => {
++    expect(canTransitionStates(ITEM_LIFECYCLE.AVAILABLE, ITEM_LIFECYCLE.RESERVED)).toBe(true);
++    expect(canTransitionStates(ITEM_LIFECYCLE.RESERVED, ITEM_LIFECYCLE.RENTED)).toBe(true);
++    expect(canTransitionStates(ITEM_LIFECYCLE.RENTED, ITEM_LIFECYCLE.RETURN_PENDING)).toBe(true);
++    expect(canTransitionStates(ITEM_LIFECYCLE.RETURN_PENDING, ITEM_LIFECYCLE.INSPECTION)).toBe(true);
++    expect(canTransitionStates(ITEM_LIFECYCLE.INSPECTION, ITEM_LIFECYCLE.CLEANING)).toBe(true);
++    expect(canTransitionStates(ITEM_LIFECYCLE.CLEANING, ITEM_LIFECYCLE.AVAILABLE)).toBe(true);
++    expect(canTransitionStates(ITEM_LIFECYCLE.AVAILABLE, ITEM_LIFECYCLE.RENTED)).toBe(false);
++    expect(canTransitionStates(ITEM_LIFECYCLE.RETIRED, ITEM_LIFECYCLE.AVAILABLE)).toBe(false);
++    expect(canTransitionStates(ITEM_LIFECYCLE.AVAILABLE, ITEM_LIFECYCLE.LOST)).toBe(true);
++    expect(canTransitionStates(ITEM_LIFECYCLE.DAMAGED, ITEM_LIFECYCLE.MAINTENANCE)).toBe(true);
++  });
++
++  it('computes availability flags from lifecycle + catalog status', () => {
++    const available = {
++      deletedAt: null,
++      status: ITEM_STATUS.ACTIVE,
++      lifecycleState: ITEM_LIFECYCLE.AVAILABLE,
++    };
++    expect(isOperational(available)).toBe(true);
++    expect(isRentable(available)).toBe(true);
++    expect(isSellable(available)).toBe(true);
++    expect(isEditable(available)).toBe(true);
++
++    const rented = { ...available, lifecycleState: ITEM_LIFECYCLE.RENTED };
++    expect(isRentable(rented)).toBe(false);
++    expect(isEditable(rented)).toBe(false);
++    expect(isOperational(rented)).toBe(true);
++
++    const sold = { ...available, lifecycleState: ITEM_LIFECYCLE.SOLD };
++    expect(isOperational(sold)).toBe(false);
++    expect(isSellable(sold)).toBe(false);
++
++    expect(
++      isOperational({
++        deletedAt: new Date(),
++        status: ITEM_STATUS.ACTIVE,
++        lifecycleState: ITEM_LIFECYCLE.AVAILABLE,
++      }),
++    ).toBe(false);
++    expect(
++      isOperational({
++        deletedAt: null,
++        status: ITEM_STATUS.DRAFT,
++        lifecycleState: ITEM_LIFECYCLE.AVAILABLE,
++      }),
++    ).toBe(true);
++    expect(
++      isOperational({
++        deletedAt: null,
++        status: ITEM_STATUS.INACTIVE,
++        lifecycleState: ITEM_LIFECYCLE.AVAILABLE,
++      }),
++    ).toBe(false);
++    expect(
++      isSellable({
++        deletedAt: null,
++        status: ITEM_STATUS.ACTIVE,
++        lifecycleState: ITEM_LIFECYCLE.FOR_SALE,
++      }),
++    ).toBe(true);
++    expect(
++      isEditable({
++        deletedAt: null,
++        status: ITEM_STATUS.ARCHIVED,
++        lifecycleState: ITEM_LIFECYCLE.AVAILABLE,
++      }),
++    ).toBe(false);
++    expect(
++      isEditable({
++        deletedAt: null,
++        status: ITEM_STATUS.ACTIVE,
++        lifecycleState: ITEM_LIFECYCLE.MAINTENANCE,
++      }),
++    ).toBe(true);
++  });
++
++  it('normalizes lifecycle state strings', async () => {
++    const { normalizeLifecycleState, isLifecycleState } = await import(
++      '../src/inventory/lifecycle/lifecycle.rules'
++    );
++    expect(isLifecycleState('available')).toBe(true);
++    expect(isLifecycleState('nope')).toBe(false);
++    expect(normalizeLifecycleState(' AVAILABLE ')).toBe('available');
++    expect(() => normalizeLifecycleState('nope')).toThrow();
++  });
++});
++
++describe('LifecycleService', () => {
++  const repo = {
++    findLiveItem: vi.fn(),
++    history: vi.fn(),
++    transitionAtomic: vi.fn(),
++    createHistory: vi.fn(),
++  };
++  const audit = { record: vi.fn() };
++  let service: LifecycleService;
++
++  const item = {
++    id: 'i1',
++    lifecycleState: ITEM_LIFECYCLE.AVAILABLE,
++    status: ITEM_STATUS.ACTIVE,
++    deletedAt: null,
++    updatedAt: new Date(),
++  };
++
++  beforeEach(() => {
++    vi.clearAllMocks();
++    service = new LifecycleService(repo as never, audit as never);
++    repo.findLiveItem.mockResolvedValue(item);
++    repo.transitionAtomic.mockResolvedValue({
++      item: { ...item, lifecycleState: ITEM_LIFECYCLE.RESERVED },
++      history: {
++        id: 'h1',
++        oldState: ITEM_LIFECYCLE.AVAILABLE,
++        newState: ITEM_LIFECYCLE.RESERVED,
++        reason: 'hold',
++        referenceType: null,
++        referenceId: null,
++      },
++    });
++    repo.history.mockResolvedValue({
++      rows: [
++        {
++          id: 'h1',
++          oldState: 'available',
++          newState: 'reserved',
++          reason: 'hold',
++          userId: 'u1',
++          username: 'admin',
++          referenceType: null,
++          referenceId: null,
++          createdAt: new Date(),
++        },
++      ],
++      total: 1,
++    });
++  });
++
++  it('transitions validates and rejects invalid / concurrent changes', async () => {
++    const view = await service.transition(
++      'i1',
++      { newState: ITEM_LIFECYCLE.RESERVED, reason: 'hold' },
++      { userId: 'u1', username: 'admin' } as never,
++    );
++    expect(view.lifecycleState).toBe(ITEM_LIFECYCLE.RESERVED);
++    expect(view.isRentable).toBe(false);
++    expect(audit.record).toHaveBeenCalled();
++
++    await expect(
++      service.transition('i1', { newState: ITEM_LIFECYCLE.RENTED }),
++    ).rejects.toBeInstanceOf(BusinessException);
++
++    await expect(
++      service.transition('i1', {
++        newState: ITEM_LIFECYCLE.RESERVED,
++        expectedState: ITEM_LIFECYCLE.RENTED,
++      }),
++    ).rejects.toBeInstanceOf(BusinessException);
++
++    await expect(
++      service.transition('i1', { newState: ITEM_LIFECYCLE.AVAILABLE }),
++    ).rejects.toBeInstanceOf(BusinessException);
++
++    repo.transitionAtomic.mockResolvedValueOnce(null);
++    await expect(
++      service.transition('i1', { newState: ITEM_LIFECYCLE.RESERVED }),
++    ).rejects.toBeInstanceOf(BusinessException);
++
++    expect(service.canTransition(ITEM_LIFECYCLE.AVAILABLE, ITEM_LIFECYCLE.RESERVED)).toBe(true);
++    expect(service.canTransition('nope', ITEM_LIFECYCLE.RESERVED)).toBe(false);
++  });
++
++  it('returns current state and history', async () => {
++    const state = await service.currentState('i1');
++    expect(state.isRentable).toBe(true);
++    const hist = await service.history('i1', { offset: 0, limit: 10 });
++    expect(hist.meta.total).toBe(1);
++    await service.recordCreated('i1', { userId: 'u1' } as never);
++    expect(repo.createHistory).toHaveBeenCalled();
++  });
++
++  it('blocks transitions for archived catalog items and bad state tokens', async () => {
++    repo.findLiveItem.mockResolvedValue({
++      ...item,
++      status: ITEM_STATUS.ARCHIVED,
++    });
++    await expect(
++      service.transition('i1', { newState: ITEM_LIFECYCLE.RESERVED }),
++    ).rejects.toBeInstanceOf(BusinessException);
++
++    repo.findLiveItem.mockResolvedValue(item);
++    await expect(
++      service.transition('i1', { newState: 'not-a-state' }),
++    ).rejects.toBeInstanceOf(BusinessException);
++
++    repo.findLiveItem.mockResolvedValue(null);
++    await expect(service.currentState('missing')).rejects.toBeInstanceOf(BusinessException);
++  });
++});
++
++describe('LifecycleController + Repository', () => {
++  it('delegates HTTP and covers repository CAS paths', async () => {
++    const lifecycle = {
++      currentState: vi.fn(),
++      history: vi.fn(),
++      transition: vi.fn(),
++    };
++    const controller = new LifecycleController(lifecycle as never);
++    await controller.state('i1');
++    await controller.history('i1', { offset: 0, limit: 20 });
++    await controller.transition(
++      'i1',
++      { newState: 'reserved' } as never,
++      { userId: 'u' } as never,
++    );
++    expect(lifecycle.transition).toHaveBeenCalled();
++
++    const prisma = {
++      item: {
++        findFirst: vi.fn().mockResolvedValue({ id: 'i1' }),
++        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
++        findUniqueOrThrow: vi.fn().mockResolvedValue({ id: 'i1', lifecycleState: 'reserved' }),
++      },
++      itemStateHistory: {
++        findMany: vi.fn().mockResolvedValue([]),
++        count: vi.fn().mockResolvedValue(0),
++        create: vi.fn().mockResolvedValue({ id: 'h1' }),
++      },
++      $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) =>
++        fn({
++          item: prisma.item,
++          itemStateHistory: prisma.itemStateHistory,
++        }),
++      ),
++    };
++    const repo = new LifecycleRepository(prisma as never);
++    await repo.findLiveItem('i1');
++    await repo.history('i1', 0, 10);
++    expect(
++      await repo.transitionAtomic({
++        itemId: 'i1',
++        from: 'available',
++        to: 'reserved',
++        reason: null,
++        userId: null,
++        username: null,
++        referenceType: null,
++        referenceId: null,
++        updatedBy: null,
++      }),
++    ).not.toBeNull();
++    prisma.item.updateMany.mockResolvedValueOnce({ count: 0 });
++    expect(
++      await repo.transitionAtomic({
++        itemId: 'i1',
++        from: 'available',
++        to: 'reserved',
++        reason: null,
++        userId: null,
++        username: null,
++        referenceType: null,
++        referenceId: null,
++        updatedBy: null,
++      }),
++    ).toBeNull();
++    await repo.createHistory({
++      itemId: 'i1',
++      oldState: 'available',
++      newState: 'available',
++      reason: 'created',
++    });
++  });
++});
+diff --git a/docs/backend-v2/Architecture.md b/docs/backend-v2/Architecture.md
+index b8b5a23..03adac6 100644
+--- a/docs/backend-v2/Architecture.md
++++ b/docs/backend-v2/Architecture.md
+@@ -1,6 +1,6 @@
+ # Backend V2 Architecture
+ 
+-**Status:** Phase 4.1 Inventory Catalog Engine  
++**Status:** Phase 4.2 Inventory Lifecycle Foundation  
+ **Branch:** `backend-v2`  
+ **Spec source:** `backend-python/` (read-only Python FastAPI stack)
+ 
+@@ -119,3 +119,7 @@ Reusable `BarcodeModule` is the only barcode authority. Domains bind via `activa
+ ## Inventory catalog (Phase 4.1)
+ 
+ Generic Item Catalog in `src/inventory` — not a dress-specific engine. Taxonomy: Category (tree-ready), Brand, Color, Size. Items bind barcodes/media via platforms + `ItemBarcode`/`ItemMedia`. Catalog statuses only (draft/active/inactive/archived/retired). Docs: `InventoryDesign.md`.
++
++## Inventory lifecycle (Phase 4.2)
++
++Authoritative operational `lifecycleState` on `Item` with `ItemStateHistory` and `LifecycleService.transition` (CAS + audit). Availability predicates (`isRentable` / `isSellable` / …) only — no reservations or calendar. Docs: `InventoryDesign.md`.
+diff --git a/docs/backend-v2/DecisionLog.md b/docs/backend-v2/DecisionLog.md
+index 71ccb7f..4c12477 100644
+--- a/docs/backend-v2/DecisionLog.md
++++ b/docs/backend-v2/DecisionLog.md
+@@ -124,3 +124,11 @@
+ - **Context:** Need inventory foundation without freezing a dress-only model or embedding rental availability.
+ - **Decision:** Implement a reusable Item Catalog (Category/Brand/Color/Size/Item) with catalog-only statuses, soft delete/restore, `ItemMedia`/`ItemBarcode` joins that reference Media/Barcode platforms (no local generation or blobs). Frontend may keep “Dress” terminology; backend entity type remains `item`.
+ - **Consequences:** Reservations/rentals/calendar remain blocked. Coverage gate `pnpm test:cov:inventory` ≥95%. Future item types extend taxonomy without redesigning Item.
++
++## ADR-V2-017 - Inventory lifecycle foundation (Phase 4.2)
++
++- **Date:** 2026-08-02
++- **Status:** Accepted
++- **Context:** Rentals/sales will mutate item availability; embedding ad-hoc status flags in those modules would fork state machines.
++- **Decision:** Add operational `lifecycleState` (separate from catalog `status`) with a closed transition graph, append-only `ItemStateHistory`, CAS transitions, `inventory.transition` RBAC, and availability predicates (`isOperational`/`isRentable`/`isSellable`/`isEditable`). No reservations/calendar/payments.
++- **Consequences:** All future domains must call `LifecycleService`. Invalid/concurrent transitions → 409. Lost/damaged supported without schema redesign.
+diff --git a/docs/backend-v2/DevelopmentRoadmap.md b/docs/backend-v2/DevelopmentRoadmap.md
+index f16132b..f0ccff8 100644
+--- a/docs/backend-v2/DevelopmentRoadmap.md
++++ b/docs/backend-v2/DevelopmentRoadmap.md
+@@ -5,8 +5,8 @@
+ | 0 | Architecture | Docs, branch, rename, canvas |
+ | 1 | Foundation | Nest + Prisma + SQLite + `/health` |
+ | 2 | Identity & Security | Auth + audit remediation |
+-| 3 | Core Business | **3.1–3.5 DONE** (shared → customers → media → cert → barcode) |
+-| 4 | Inventory Engine | **4.1 Catalog DONE** — availability/rentals later |
++| 3 | Core Business | **3.1–3.5 DONE** |
++| 4 | Inventory Engine | **4.1 Catalog + 4.2 Lifecycle DONE** |
+ | 5 | Rental Engine | Reservations → returns |
+ | 6 | Financial Engine | Sales, settlements, payments |
+ | 7 | Reports & Analytics | Operational + financial |
+@@ -16,10 +16,10 @@
+ 
+ ## Current milestone
+ 
+-**Phase 4.1 Inventory Catalog Engine complete.**  
+-Doc: `InventoryDesign.md`.
++**Phase 4.2 Inventory Lifecycle Foundation complete.**  
++Doc: `InventoryDesign.md` (includes lifecycle diagram).
+ 
+-**Next (requires approval):** inventory availability / rental workflows — still no reservations, calendar, laundry, inspection, or sales.
++**Next (requires approval):** reservations / rental workflows — still no calendar booking, laundry, inspection logic, or payments.
+ 
+ ## Completion rule
+ 
+diff --git a/docs/backend-v2/InventoryDesign.md b/docs/backend-v2/InventoryDesign.md
+index e7123a5..aa6edc6 100644
+--- a/docs/backend-v2/InventoryDesign.md
++++ b/docs/backend-v2/InventoryDesign.md
+@@ -1,54 +1,88 @@
+-# Backend V2 Inventory Design (Phase 4.1 — Catalog Engine)
++# Backend V2 Inventory Design (Phase 4.1–4.2)
+ 
+ **Branch:** `backend-v2`  
+ **Module:** `backend-node/src/inventory`  
+-**Role:** Generic Item Catalog. Frontend may still say “Dress”; backend does not hardcode dress workflows.
++**Role:** Generic Item Catalog + authoritative operational lifecycle.
+ 
+ ## Scope
+ 
+-In scope: Category, Brand, Color, Size, Item CRUD; soft delete/restore; search/filter; ItemMedia + ItemBarcode relations; reuse of Media + Barcode platforms.
+-
+-**Out of scope:** reservations, rentals, availability calendar, penalties, laundry, inspection, sales.
+-
+-## Architecture
+-
+-```
+-Item ──► Category (optional parentId — tree-ready)
+-     ──► Brand
+-     ──► Color (optional #RRGGBB)
+-     ──► Size
+-     ──► ItemMedia ──► MediaFile   (no blobs in inventory)
+-     ──► ItemBarcode ──► Barcode   (no generation logic in inventory)
++**In scope:** Category, Brand, Color, Size, Item CRUD; soft delete/restore; search/filter; ItemMedia + ItemBarcode; **lifecycle state machine** + history + availability predicates.
++
++**Out of scope:** reservations, rentals, availability calendar, penalties, laundry/inspection workflows, payments/sales execution.
++
++## Two status dimensions
++
++| Dimension | Field | Purpose |
++|-----------|--------|---------|
++| Catalog | `status` | draft / active / inactive / archived / retired |
++| Lifecycle | `lifecycleState` | Operational machine used by future rentals/sales |
++
++Future modules **must** call `LifecycleService.transition` — never invent parallel state machines.
++
++## Lifecycle states
++
++`available` · `reserved` · `rented` · `return_pending` · `inspection` · `cleaning` · `maintenance` · `for_sale` · `sold` · `retired` · `lost` · `damaged`
++
++### Primary path
++
++```mermaid
++stateDiagram-v2
++  [*] --> available
++  available --> reserved
++  reserved --> rented
++  rented --> return_pending
++  return_pending --> inspection
++  inspection --> cleaning
++  cleaning --> available
++  available --> for_sale
++  for_sale --> sold
++  available --> maintenance
++  maintenance --> available
++  available --> retired
++  available --> lost
++  available --> damaged
++  damaged --> maintenance
++  damaged --> retired
++  lost --> available
++  lost --> retired
++  sold --> retired
+ ```
+ 
+-Entity type for platform binds: `item`. Module name: `inventory`.
+-
+-## Catalog status (not rental availability)
++Invalid edges are rejected (409). Concurrent transitions use CAS (`updateMany` where current state matches).
+ 
+-`draft` · `active` · `inactive` · `archived` · `retired`
++## Service
+ 
+-Optional condition: `new` · `good` · `fair` · `poor` · `unknown`
++`transition` · `canTransition` · `currentState` · `history` · `recordCreated`
+ 
+-## Item fields
++Availability helpers (no booking):
+ 
+-internalCode (auto `ITM-########`), displayName, taxonomy FKs, purchase/rental/sale prices (integer fils), condition, status, description, actors, soft-delete timestamps.
++- `isOperational()`
++- `isRentable()` — active catalog + `available`
++- `isSellable()` — active + `available` | `for_sale`
++- `isEditable()` — catalog fields when lifecycle allows
+ 
+ ## HTTP
+ 
+-| Area | Paths | Permissions |
+-|------|-------|-------------|
+-| Categories | `/categories` | `categories.*` (+ restore) |
+-| Brands | `/brands` | `inventory.*` |
+-| Colors | `/colors` | `inventory.*` |
+-| Sizes | `/sizes` | `inventory.*` |
+-| Items | `/items` | `inventory.view/create/update/delete/restore` |
++| Method | Path | Permission |
++|--------|------|------------|
++| GET | `/items/:id/state` | inventory.view |
++| GET | `/items/:id/history` | inventory.view |
++| POST | `/items/:id/transition` | inventory.transition |
+ 
+-Item extras: `GET /items/search`, `GET /items/code/:internalCode`, `POST /items/:id/media`, create with `generateBarcode` or `barcode`.
++Body: `{ newState, reason?, referenceType?, referenceId?, expectedState? }`
+ 
+-## Platforms
++## History
+ 
+-- Barcodes: `BarcodeService.generate|reserve` → `activate(..., 'item', itemId)` → `ItemBarcode`
+-- Media: upload via `/media`; attach via `MediaService.attach` + `ItemMedia`
++`ItemStateHistory`: old/new state, reason, user, optional reference entity, timestamp.
++
++## Architecture
++
++```
++Item ──► Category / Brand / Color / Size
++     ──► ItemMedia ──► MediaFile
++     ──► ItemBarcode ──► Barcode
++     ──► ItemStateHistory (append-only)
++```
+ 
+ ## Coverage
+ 
+diff --git a/docs/backend-v2/PROGRESS.md b/docs/backend-v2/PROGRESS.md
+index 398d27f..65317fe 100644
+--- a/docs/backend-v2/PROGRESS.md
++++ b/docs/backend-v2/PROGRESS.md
+@@ -1,19 +1,18 @@
+ # Backend V2 Progress Canvas
+ 
+ **Live canvas:** `juman-backend-v2-roadmap.canvas.tsx`  
+-**Branch:** `backend-v2` — **Updated:** 2026-08-02 — **Overall ~55%**
++**Branch:** `backend-v2` — **Updated:** 2026-08-02 — **Overall ~58%**
+ 
+ ```
+ Phase 0  Architecture                    DONE
+ Phase 1  Foundation                      DONE
+-Phase 2  Identity & Security
+-         2.1–2.4                         DONE (re-audit PASS 77/100)
+-Phase 3  Core Business
+-         3.1–3.5                         DONE (barcode platform)
++Phase 2  Identity & Security             DONE
++Phase 3  Core Business                   DONE
+ Phase 4  Inventory Engine
+          4.1 Catalog engine              DONE
+-         4.2+ availability / rentals     WAITING APPROVAL
++         4.2 Lifecycle foundation        DONE
++         4.3+ reservations / rentals     WAITING APPROVAL
+ Phase 5+ Rentals / Sales / Reports       BLOCKED until approved
+ ```
+ 
+-**YOU ARE HERE:** After Phase 4.1 catalog engine. Do not implement reservations, rentals, calendar, availability, laundry, inspection, or sales until explicit approval.
++**YOU ARE HERE:** After Phase 4.2 lifecycle foundation. Do not implement reservations, rentals, calendar, laundry/inspection workflows, or payments until explicit approval.
+-- 
+2.55.0.windows.2
+

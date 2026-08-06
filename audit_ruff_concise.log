@@ -1,0 +1,56 @@
+﻿[1malembic\env.py[0m[36m:[0m3[36m:[0m1[36m:[0m [1m[31mI001[0m [[36m*[0m] Import block is un-sorted or un-formatted
+[1malembic\versions\20260726_0016_customers_v2.py[0m[36m:[0m174[36m:[0m101[36m:[0m [1m[31mE501[0m Line too long (103 > 100)
+[1malembic\versions\20260727_0020_reservations.py[0m[36m:[0m204[36m:[0m101[36m:[0m [1m[31mE501[0m Line too long (105 > 100)
+[1mapp\api\v1\router.py[0m[36m:[0m3[36m:[0m1[36m:[0m [1m[31mI001[0m [[36m*[0m] Import block is un-sorted or un-formatted
+[1mapp\modules\calendar\repositories\dress_calendar_block.py[0m[36m:[0m34[36m:[0m101[36m:[0m [1m[31mE501[0m Line too long (101 > 100)
+[1mapp\modules\calendar\services\calendar.py[0m[36m:[0m13[36m:[0m41[36m:[0m [1m[31mF401[0m [[36m*[0m] `app.modules.audit.constants.AuditAction` imported but unused
+[1mapp\modules\identity\dependencies.py[0m[36m:[0m159[36m:[0m5[36m:[0m [1m[31mSIM102[0m Use a single `if` statement instead of nested `if` statements
+[1mapp\modules\identity\services\password.py[0m[36m:[0m123[36m:[0m101[36m:[0m [1m[31mE501[0m Line too long (104 > 100)
+[1mapp\modules\inspection\repositories\inspection.py[0m[36m:[0m107[36m:[0m101[36m:[0m [1m[31mE501[0m Line too long (106 > 100)
+[1mapp\modules\inspection\repositories\inspection.py[0m[36m:[0m108[36m:[0m101[36m:[0m [1m[31mE501[0m Line too long (102 > 100)
+[1mapp\modules\inventory\models\barcode_counter.py[0m[36m:[0m19[36m:[0m101[36m:[0m [1m[31mE501[0m Line too long (102 > 100)
+[1mapp\modules\inventory\services\barcode.py[0m[36m:[0m59[36m:[0m101[36m:[0m [1m[31mE501[0m Line too long (108 > 100)
+[1mapp\modules\inventory\services\barcode.py[0m[36m:[0m71[36m:[0m101[36m:[0m [1m[31mE501[0m Line too long (105 > 100)
+[1mapp\modules\processing\models\processing_batch.py[0m[36m:[0m8[36m:[0m43[36m:[0m [1m[31mF401[0m [[36m*[0m] `sqlalchemy.ForeignKey` imported but unused
+[1mapp\modules\rentals\repositories\rental.py[0m[36m:[0m5[36m:[0m22[36m:[0m [1m[31mF401[0m [[36m*[0m] `datetime.datetime` imported but unused
+[1mapp\modules\rentals\services\rental.py[0m[36m:[0m55[36m:[0m101[36m:[0m [1m[31mE501[0m Line too long (101 > 100)
+[1mapp\modules\rentals\services\rental.py[0m[36m:[0m82[36m:[0m101[36m:[0m [1m[31mE501[0m Line too long (101 > 100)
+[1mapp\modules\rentals\services\rental.py[0m[36m:[0m363[36m:[0m21[36m:[0m [1m[31mSIM105[0m Use `contextlib.suppress(NotFoundError)` instead of `try`-`except`-`pass`
+[1mapp\modules\reservations\models\reservation.py[0m[36m:[0m32[36m:[0m101[36m:[0m [1m[31mE501[0m Line too long (102 > 100)
+[1mapp\modules\reservations\repositories\reservation.py[0m[36m:[0m88[36m:[0m101[36m:[0m [1m[31mE501[0m Line too long (101 > 100)
+[1mapp\modules\reservations\services\reservation.py[0m[36m:[0m33[36m:[0m101[36m:[0m [1m[31mE501[0m Line too long (102 > 100)
+[1mapp\modules\reservations\services\reservation.py[0m[36m:[0m65[36m:[0m101[36m:[0m [1m[31mE501[0m Line too long (108 > 100)
+[1mapp\modules\reservations\services\reservation.py[0m[36m:[0m499[36m:[0m17[36m:[0m [1m[31mSIM105[0m Use `contextlib.suppress(NotFoundError)` instead of `try`-`except`-`pass`
+[1mapp\modules\returns\models\return_record.py[0m[36m:[0m49[36m:[0m101[36m:[0m [1m[31mE501[0m Line too long (102 > 100)
+[1mapp\modules\settings\validation.py[0m[36m:[0m161[36m:[0m5[36m:[0m [1m[31mSIM102[0m Use a single `if` statement instead of nested `if` statements
+[1mapp\modules\settings\validation.py[0m[36m:[0m184[36m:[0m5[36m:[0m [1m[31mSIM102[0m Use a single `if` statement instead of nested `if` statements
+[1mapp\modules\settings\validation.py[0m[36m:[0m207[36m:[0m5[36m:[0m [1m[31mSIM102[0m Use a single `if` statement instead of nested `if` statements
+[1mapp\modules\settings\validation.py[0m[36m:[0m230[36m:[0m5[36m:[0m [1m[31mSIM102[0m Use a single `if` statement instead of nested `if` statements
+[1mapp\modules\settings\validation.py[0m[36m:[0m253[36m:[0m5[36m:[0m [1m[31mSIM102[0m Use a single `if` statement instead of nested `if` statements
+[1mapp\modules\settings\validation.py[0m[36m:[0m276[36m:[0m5[36m:[0m [1m[31mSIM102[0m Use a single `if` statement instead of nested `if` statements
+[1mapp\modules\settings\validation.py[0m[36m:[0m299[36m:[0m5[36m:[0m [1m[31mSIM102[0m Use a single `if` statement instead of nested `if` statements
+[1mapp\modules\settings\validation.py[0m[36m:[0m322[36m:[0m5[36m:[0m [1m[31mSIM102[0m Use a single `if` statement instead of nested `if` statements
+[1mapp\modules\settlements\api\__init__.py[0m[36m:[0m3[36m:[0m1[36m:[0m [1m[31mI001[0m [[36m*[0m] Import block is un-sorted or un-formatted
+[1mapp\modules\settlements\api\__init__.py[0m[36m:[0m5[36m:[0m101[36m:[0m [1m[31mE501[0m Line too long (101 > 100)
+[1mapp\modules\settlements\models\settlement.py[0m[36m:[0m39[36m:[0m101[36m:[0m [1m[31mE501[0m Line too long (102 > 100)
+[1mapp\modules\settlements\models\settlement.py[0m[36m:[0m45[36m:[0m101[36m:[0m [1m[31mE501[0m Line too long (102 > 100)
+[1mtests\modules\calendar\conftest.py[0m[36m:[0m4[36m:[0m32[36m:[0m [1m[31mF401[0m [[36m*[0m] `datetime.timedelta` imported but unused
+[1mtests\modules\calendar\conftest.py[0m[36m:[0m95[36m:[0m60[36m:[0m [1m[31mUP017[0m [[36m*[0m] Use `datetime.UTC` alias
+[1mtests\modules\identity\test_password_service.py[0m[36m:[0m122[36m:[0m10[36m:[0m [1m[31mB017[0m Do not assert blind exception: `Exception`
+[1mtests\modules\inspection\conftest.py[0m[36m:[0m66[36m:[0m60[36m:[0m [1m[31mUP017[0m [[36m*[0m] Use `datetime.UTC` alias
+[1mtests\modules\inventory\test_dress_search.py[0m[36m:[0m150[36m:[0m24[36m:[0m [1m[31mUP017[0m [[36m*[0m] Use `datetime.UTC` alias
+[1mtests\modules\inventory\test_dress_status.py[0m[36m:[0m3[36m:[0m1[36m:[0m [1m[31mI001[0m [[36m*[0m] Import block is un-sorted or un-formatted
+[1mtests\modules\processing\conftest.py[0m[36m:[0m68[36m:[0m60[36m:[0m [1m[31mUP017[0m [[36m*[0m] Use `datetime.UTC` alias
+[1mtests\modules\rentals\conftest.py[0m[36m:[0m63[36m:[0m60[36m:[0m [1m[31mUP017[0m [[36m*[0m] Use `datetime.UTC` alias
+[1mtests\modules\rentals\test_rental_edges.py[0m[36m:[0m3[36m:[0m1[36m:[0m [1m[31mI001[0m [[36m*[0m] Import block is un-sorted or un-formatted
+[1mtests\modules\rentals\test_rental_edges.py[0m[36m:[0m9[36m:[0m101[36m:[0m [1m[31mE501[0m Line too long (104 > 100)
+[1mtests\modules\reservations\conftest.py[0m[36m:[0m61[36m:[0m60[36m:[0m [1m[31mUP017[0m [[36m*[0m] Use `datetime.UTC` alias
+[1mtests\modules\returns\conftest.py[0m[36m:[0m64[36m:[0m60[36m:[0m [1m[31mUP017[0m [[36m*[0m] Use `datetime.UTC` alias
+[1mtests\modules\returns\test_return_edges.py[0m[36m:[0m15[36m:[0m44[36m:[0m [1m[31mF401[0m [[36m*[0m] `tests.modules.returns.conftest.utc` imported but unused
+[1mtests\modules\settlements\conftest.py[0m[36m:[0m4[36m:[0m32[36m:[0m [1m[31mF401[0m [[36m*[0m] `datetime.timedelta` imported but unused
+[1mtests\modules\settlements\conftest.py[0m[36m:[0m74[36m:[0m60[36m:[0m [1m[31mUP017[0m [[36m*[0m] Use `datetime.UTC` alias
+[1mtests\modules\settlements\test_settlement_api.py[0m[36m:[0m3[36m:[0m1[36m:[0m [1m[31mI001[0m [[36m*[0m] Import block is un-sorted or un-formatted
+[1mtests\modules\settlements\test_settlement_edges.py[0m[36m:[0m3[36m:[0m1[36m:[0m [1m[31mI001[0m [[36m*[0m] Import block is un-sorted or un-formatted
+[1mtests\modules\settlements\test_settlement_edges.py[0m[36m:[0m306[36m:[0m10[36m:[0m [1m[31mB017[0m Do not assert blind exception: `Exception`
+Found 54 errors.
+[[36m*[0m] 21 fixable with the `--fix` option (2 hidden fixes can be enabled with the `--unsafe-fixes` option).

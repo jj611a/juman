@@ -22,5 +22,5 @@ Phase 8  Desktop Integration
 Phase 9+ Hardening / Production          WAITING
 ```
 
-**YOU ARE HERE:** Phase 6.7.1 Sales integrity certification **PASS** — review `PHASE_6_7_1_SALES_CERTIFICATION.md` + `cert_sales_671.json`.  
-**Next:** Approval before POS / receipts / returns / sales reports. Do not change Settlement formulas.
+**YOU ARE HERE:** Phase 9 Frontend Rebuild — **9.1 shell DONE** (awaiting approval). Backend Nest frozen.  
+**Next:** Phase 9.2 Authentication UI after explicit approval. Do not add Nest endpoints.

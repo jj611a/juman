@@ -2,6 +2,8 @@
 
 Juman records significant architecture and product-platform decisions as **Markdown Any Decision Records (MADR)**.
 
+> **Note (2026-08-04):** FastAPI/`backend-python` ADRs below are **historical**. Runtime backend is Nest `backend-node/` only (see `docs/backend-v2/DecisionLog.md` ADR-V2-034).
+
 ## Location
 
 ```text

@@ -1,107 +1,32 @@
-import { app, BrowserWindow, dialog } from 'electron'
+import { app, BrowserWindow } from 'electron'
 import { loadMainConfig } from './config'
 import { createHttpClient } from './http/client'
 import { SafeStorageCredentialStore } from './security/credentialStore'
 import { SessionManager } from './auth/sessionManager'
-import { createDesktopHandlers } from './desktop/stubs'
-import { createHardwareController, registerHardwareIpc } from './hardware/register'
 import { registerIpcHandlers } from './ipc/register'
-import { registerDiagnosticsIpc } from './diagnostics/register'
-import { appendMainLog } from './diagnostics/logCollectors'
-import { installApplicationMenu, wantsDiagnosticsOnly } from './menu'
-import {
-  createMainWindow,
-  createDiagnosticsWindow,
-  loadMainWindow,
-  loadDiagnosticsWindow
-} from './window'
-import {
-  ensureBackendBootstrapped,
-  ensurePortableApiRunning,
-  isPortableInstall,
-  needsBackendBootstrap,
-  stopPortableApiChild
-} from './hardware/serviceStatus'
+import { createMainWindow, loadMainWindow } from './window'
 
 let mainWindow: BrowserWindow | null = null
 
-const diagnosticsOnly = wantsDiagnosticsOnly()
 const config = loadMainConfig()
 const http = createHttpClient(config.apiBaseUrl)
 
 app.whenReady().then(async () => {
-  appendMainLog(`app ready diagnosticsOnly=${diagnosticsOnly} portable=${isPortableInstall()}`)
-
-  if (isPortableInstall()) {
-    const ok = await ensurePortableApiRunning()
-    appendMainLog(`portable API ready=${ok}`)
-  } else if (needsBackendBootstrap()) {
-    appendMainLog('backend bootstrap required (live PyPI + WinSW)')
-    const boot = await ensureBackendBootstrapped()
-    appendMainLog(`backend bootstrap ok=${boot.ok} ${boot.message}`)
-    if (!boot.ok) {
-      dialog.showErrorBox(
-        'Juman backend setup failed',
-        `${boot.message}\n\nFirst launch needs internet (PyPI).\nSee logs/INSTALL_PROGRESS.md and logs/bootstrap-*.log, or run Bootstrap Backend from the Start Menu.`
-      )
-    }
-  }
-
-  installApplicationMenu(() => mainWindow)
-  registerDiagnosticsIpc(() => mainWindow)
-
-  if (diagnosticsOnly) {
-    const diag = createDiagnosticsWindow()
-    const credentials = new SafeStorageCredentialStore()
-    const session = new SessionManager(http.getInstance(), credentials, () => diag)
-    const desktop = createDesktopHandlers(() => diag)
-    const hardware = createHardwareController(() => diag)
-    hardware.attachToWindow(diag)
-    registerIpcHandlers(session, desktop, http.getInstance())
-    registerHardwareIpc(hardware)
-    await session.bootstrap()
-    await loadDiagnosticsWindow(diag)
-    return
-  }
-
   mainWindow = createMainWindow()
-
   const credentials = new SafeStorageCredentialStore()
-  const session = new SessionManager(http.getInstance(), credentials, () => mainWindow)
-  const desktop = createDesktopHandlers(() => mainWindow)
-  const hardware = createHardwareController(() => mainWindow)
-  hardware.attachToWindow(mainWindow)
-
-  registerIpcHandlers(session, desktop, http.getInstance())
-  registerHardwareIpc(hardware)
-
+  const session = new SessionManager(http, credentials, () => mainWindow)
+  registerIpcHandlers(session, http, config)
   await session.bootstrap()
   await loadMainWindow(mainWindow)
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       mainWindow = createMainWindow()
-      hardware.attachToWindow(mainWindow)
       void loadMainWindow(mainWindow)
     }
   })
 })
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    if (isPortableInstall()) stopPortableApiChild()
-    app.quit()
-  }
-})
-
-app.on('before-quit', () => {
-  if (isPortableInstall()) stopPortableApiChild()
-})
-
-process.on('uncaughtException', (err) => {
-  appendMainLog(`uncaughtException ${err.stack || err.message}`)
-})
-
-process.on('unhandledRejection', (reason) => {
-  appendMainLog(`unhandledRejection ${reason instanceof Error ? reason.stack || reason.message : String(reason)}`)
+  if (process.platform !== 'darwin') app.quit()
 })

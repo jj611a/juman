@@ -1,0 +1,2707 @@
+From 66ce78c56322b51c34b9c371b3d2fe3269f3692d Mon Sep 17 00:00:00 2001
+From: jj611a <jj611a@gmail.com>
+Date: Sun, 2 Aug 2026 10:33:23 +0300
+Subject: [PATCH] feat(v2-media): implement reusable media management
+
+Ship Phase 3.3 MediaModule as the sole blob authority with typed storage dirs, SHA-256 integrity, soft-delete restore, MediaReference linking, and RBAC HTTP under /media.
+
+Co-authored-by: Cursor <cursoragent@cursor.com>
+---
+ backend-node/package.json                     |   5 +-
+ .../migration.sql                             |   9 +
+ backend-node/prisma/schema.prisma             |   6 +
+ .../src/media/dto/attach-media.dto.ts         |  32 ++
+ backend-node/src/media/dto/list-media.dto.ts  |  48 +++
+ backend-node/src/media/media.checksum.ts      |   9 +
+ backend-node/src/media/media.constants.ts     |  98 +++++
+ backend-node/src/media/media.controller.ts    |  94 +++++
+ backend-node/src/media/media.image-meta.ts    | 124 ++++++
+ backend-node/src/media/media.mapper.ts        |  24 ++
+ backend-node/src/media/media.module.ts        |   7 +-
+ backend-node/src/media/media.repository.ts    |  79 ++--
+ backend-node/src/media/media.service.ts       | 363 ++++++++++++++++--
+ backend-node/src/media/media.types.ts         |  48 ++-
+ backend-node/src/media/media.validation.ts    | 120 ++++++
+ .../media/providers/local-storage.provider.ts | 115 ++++++
+ .../src/permissions/permission.seeds.ts       |   2 +
+ backend-node/src/settings/settings.seeds.ts   |  22 ++
+ .../shared/constants/business.constants.ts    |   1 +
+ backend-node/src/storage/ensure-dirs.ts       |  13 +
+ backend-node/test/media-image-meta.spec.ts    |  96 +++++
+ backend-node/test/media-integration.spec.ts   | 143 +++++++
+ backend-node/test/media-repository.spec.ts    |  26 +-
+ backend-node/test/media-service.spec.ts       | 344 ++++++++++++++---
+ backend-node/test/media-validation.spec.ts    | 108 ++++++
+ backend-node/vitest.media.config.ts           |  34 ++
+ docs/backend-v2/Architecture.md               |   7 +-
+ docs/backend-v2/DecisionLog.md                |   8 +
+ docs/backend-v2/DevelopmentRoadmap.md         |   6 +-
+ docs/backend-v2/FolderStructure.md            |   1 +
+ docs/backend-v2/MediaDomain.md                |  67 ++++
+ docs/backend-v2/PROGRESS.md                   |   5 +-
+ pnpm-lock.yaml                                |  33 ++
+ 33 files changed, 1979 insertions(+), 118 deletions(-)
+ create mode 100644 backend-node/prisma/migrations/20260802100000_media_dimensions/migration.sql
+ create mode 100644 backend-node/src/media/dto/attach-media.dto.ts
+ create mode 100644 backend-node/src/media/dto/list-media.dto.ts
+ create mode 100644 backend-node/src/media/media.checksum.ts
+ create mode 100644 backend-node/src/media/media.constants.ts
+ create mode 100644 backend-node/src/media/media.controller.ts
+ create mode 100644 backend-node/src/media/media.image-meta.ts
+ create mode 100644 backend-node/src/media/media.mapper.ts
+ create mode 100644 backend-node/src/media/media.validation.ts
+ create mode 100644 backend-node/src/media/providers/local-storage.provider.ts
+ create mode 100644 backend-node/test/media-image-meta.spec.ts
+ create mode 100644 backend-node/test/media-integration.spec.ts
+ create mode 100644 backend-node/test/media-validation.spec.ts
+ create mode 100644 backend-node/vitest.media.config.ts
+ create mode 100644 docs/backend-v2/MediaDomain.md
+
+diff --git a/backend-node/package.json b/backend-node/package.json
+index 7810500..9d13765 100644
+--- a/backend-node/package.json
++++ b/backend-node/package.json
+@@ -14,7 +14,8 @@
+     "prisma:migrate": "prisma migrate dev",
+     "prisma:migrate:deploy": "prisma migrate deploy",
+     "test:cov:shared": "vitest run --coverage --config vitest.shared.config.ts",
+-    "test:cov:customers": "vitest run --coverage --config vitest.customers.config.ts"
++    "test:cov:customers": "vitest run --coverage --config vitest.customers.config.ts",
++    "test:cov:media": "vitest run --coverage --config vitest.media.config.ts"
+   },
+   "dependencies": {
+     "@nestjs/common": "11.1.28",
+@@ -28,6 +29,7 @@
+     "class-transformer": "0.5.1",
+     "class-validator": "0.15.1",
+     "dotenv": "17.4.2",
++    "multer": "2.0.2",
+     "passport": "0.7.0",
+     "passport-jwt": "4.0.1",
+     "reflect-metadata": "0.2.2",
+@@ -40,6 +42,7 @@
+     "@nestjs/testing": "11.1.28",
+     "@swc/core": "1.15.47",
+     "@types/express": "5.0.6",
++    "@types/multer": "1.4.13",
+     "@types/node": "22.20.1",
+     "@types/passport": "1.0.17",
+     "@types/passport-jwt": "4.0.1",
+diff --git a/backend-node/prisma/migrations/20260802100000_media_dimensions/migration.sql b/backend-node/prisma/migrations/20260802100000_media_dimensions/migration.sql
+new file mode 100644
+index 0000000..20365b5
+--- /dev/null
++++ b/backend-node/prisma/migrations/20260802100000_media_dimensions/migration.sql
+@@ -0,0 +1,9 @@
++-- AlterTable
++ALTER TABLE "MediaFile" ADD COLUMN "width" INTEGER;
++ALTER TABLE "MediaFile" ADD COLUMN "height" INTEGER;
++ALTER TABLE "MediaFile" ADD COLUMN "orientation" INTEGER;
++
++-- CreateIndex
++CREATE INDEX "MediaFile_extension_idx" ON "MediaFile"("extension");
++CREATE INDEX "MediaFile_mimeType_idx" ON "MediaFile"("mimeType");
++CREATE INDEX "MediaFile_createdAt_idx" ON "MediaFile"("createdAt");
+diff --git a/backend-node/prisma/schema.prisma b/backend-node/prisma/schema.prisma
+index 845d3d3..2607a5f 100644
+--- a/backend-node/prisma/schema.prisma
++++ b/backend-node/prisma/schema.prisma
+@@ -182,6 +182,9 @@ model MediaFile {
+   mimeType         String
+   sizeBytes        Int
+   sha256Hash       String
++  width            Int?
++  height           Int?
++  orientation      Int?
+   storageProvider  String    @default("local")
+   relativePath     String
+   kind             String
+@@ -197,7 +200,10 @@ model MediaFile {
+ 
+   @@index([sha256Hash])
+   @@index([kind])
++  @@index([extension])
++  @@index([mimeType])
+   @@index([deletedAt])
++  @@index([createdAt])
+ }
+ 
+ model MediaReference {
+diff --git a/backend-node/src/media/dto/attach-media.dto.ts b/backend-node/src/media/dto/attach-media.dto.ts
+new file mode 100644
+index 0000000..f6f81a7
+--- /dev/null
++++ b/backend-node/src/media/dto/attach-media.dto.ts
+@@ -0,0 +1,32 @@
++import { IsBoolean, IsInt, IsOptional, IsString, MaxLength, Min, MinLength } from 'class-validator';
++
++export class AttachMediaDto {
++  @IsString()
++  @MinLength(1)
++  @MaxLength(100)
++  moduleName!: string;
++
++  @IsString()
++  @MinLength(1)
++  @MaxLength(100)
++  entityType!: string;
++
++  @IsString()
++  @MinLength(1)
++  @MaxLength(100)
++  entityId!: string;
++
++  @IsString()
++  @MinLength(1)
++  @MaxLength(100)
++  purpose!: string;
++
++  @IsOptional()
++  @IsInt()
++  @Min(0)
++  displayOrder?: number;
++
++  @IsOptional()
++  @IsBoolean()
++  isPrimary?: boolean;
++}
+diff --git a/backend-node/src/media/dto/list-media.dto.ts b/backend-node/src/media/dto/list-media.dto.ts
+new file mode 100644
+index 0000000..fd4eb01
+--- /dev/null
++++ b/backend-node/src/media/dto/list-media.dto.ts
+@@ -0,0 +1,48 @@
++import { Transform, Type } from 'class-transformer';
++import { IsIn, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
++import { parseOptionalBoolean } from '../../shared/validation/parse-boolean';
++import { MEDIA_KIND } from '../../shared/constants/business.constants';
++import { MEDIA_SORT_FIELDS } from '../media.constants';
++
++export class ListMediaDto {
++  @IsOptional()
++  @IsString()
++  q?: string;
++
++  @IsOptional()
++  @IsIn(Object.values(MEDIA_KIND))
++  kind?: string;
++
++  @IsOptional()
++  @IsString()
++  extension?: string;
++
++  @IsOptional()
++  @IsString()
++  mimeType?: string;
++
++  @IsOptional()
++  @Transform(({ value }) => parseOptionalBoolean(value))
++  deleted?: boolean | string;
++
++  @IsOptional()
++  @IsIn([...MEDIA_SORT_FIELDS])
++  sortBy?: string;
++
++  @IsOptional()
++  @IsIn(['asc', 'desc'])
++  sortDir?: 'asc' | 'desc';
++
++  @IsOptional()
++  @Type(() => Number)
++  @IsInt()
++  @Min(0)
++  offset?: number;
++
++  @IsOptional()
++  @Type(() => Number)
++  @IsInt()
++  @Min(1)
++  @Max(200)
++  limit?: number;
++}
+diff --git a/backend-node/src/media/media.checksum.ts b/backend-node/src/media/media.checksum.ts
+new file mode 100644
+index 0000000..eea7b90
+--- /dev/null
++++ b/backend-node/src/media/media.checksum.ts
+@@ -0,0 +1,9 @@
++import { createHash } from 'node:crypto';
++
++export function calculateChecksum(buffer: Buffer): string {
++  return createHash('sha256').update(buffer).digest('hex');
++}
++
++export function checksumsMatch(expected: string, actual: string): boolean {
++  return expected.toLowerCase() === actual.toLowerCase();
++}
+diff --git a/backend-node/src/media/media.constants.ts b/backend-node/src/media/media.constants.ts
+new file mode 100644
+index 0000000..0a9d701
+--- /dev/null
++++ b/backend-node/src/media/media.constants.ts
+@@ -0,0 +1,98 @@
++export const MEDIA_MODULE = 'media';
++export const MEDIA_ENTITY_FILE = 'media_file';
++export const MEDIA_ENTITY_REFERENCE = 'media_reference';
++
++export const MEDIA_PERMISSION = {
++  VIEW: 'media.view',
++  UPLOAD: 'media.upload',
++  DELETE: 'media.delete',
++  MANAGE: 'media.manage',
++  RESTORE: 'media.restore',
++} as const;
++
++/** Top-level folders under the configured storage root. */
++export const MEDIA_STORAGE_CATEGORY = {
++  IMAGES: 'images',
++  DOCUMENTS: 'documents',
++  TEMP: 'temp',
++  THUMBNAILS: 'thumbnails',
++  IMPORTS: 'imports',
++  EXPORTS: 'exports',
++} as const;
++
++export type MediaStorageCategory =
++  (typeof MEDIA_STORAGE_CATEGORY)[keyof typeof MEDIA_STORAGE_CATEGORY];
++
++export const MEDIA_STORAGE_CATEGORIES = Object.values(MEDIA_STORAGE_CATEGORY);
++
++export const MEDIA_SETTING = {
++  MAX_UPLOAD_BYTES: 'media.max_upload_bytes',
++  ALLOWED_EXTENSIONS: 'media.allowed_extensions',
++  ALLOWED_MIME_TYPES: 'media.allowed_mime_types',
++} as const;
++
++export const MEDIA_DEFAULT_MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
++
++export const MEDIA_ALLOWED_EXTENSIONS = [
++  'jpg',
++  'jpeg',
++  'png',
++  'gif',
++  'webp',
++  'bmp',
++  'pdf',
++  'docx',
++  'xlsx',
++  'txt',
++  'csv',
++] as const;
++
++export const MEDIA_EXTENSION_MIME: Readonly<Record<string, readonly string[]>> = {
++  jpg: ['image/jpeg'],
++  jpeg: ['image/jpeg'],
++  png: ['image/png'],
++  gif: ['image/gif'],
++  webp: ['image/webp'],
++  bmp: ['image/bmp'],
++  pdf: ['application/pdf'],
++  docx: [
++    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
++    'application/zip',
++  ],
++  xlsx: [
++    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
++    'application/zip',
++  ],
++  txt: ['text/plain'],
++  csv: ['text/csv', 'text/plain', 'application/csv'],
++};
++
++export const MEDIA_DANGEROUS_EXTENSIONS = [
++  'exe',
++  'bat',
++  'cmd',
++  'com',
++  'cpl',
++  'scr',
++  'msi',
++  'dll',
++  'js',
++  'jse',
++  'vbs',
++  'vbe',
++  'wsf',
++  'wsh',
++  'ps1',
++  'psm1',
++  'sh',
++  'bash',
++  'php',
++  'asp',
++  'aspx',
++  'jar',
++  'apk',
++  'bin',
++] as const;
++
++export const MEDIA_SORT_FIELDS = ['createdAt', 'updatedAt', 'originalFilename', 'sizeBytes'] as const;
++export type MediaSortField = (typeof MEDIA_SORT_FIELDS)[number];
+diff --git a/backend-node/src/media/media.controller.ts b/backend-node/src/media/media.controller.ts
+new file mode 100644
+index 0000000..e11e1a1
+--- /dev/null
++++ b/backend-node/src/media/media.controller.ts
+@@ -0,0 +1,94 @@
++import {
++  Controller,
++  Delete,
++  Get,
++  HttpCode,
++  Param,
++  ParseUUIDPipe,
++  Post,
++  Query,
++  UploadedFile,
++  UseInterceptors,
++} from '@nestjs/common';
++import { FileInterceptor } from '@nestjs/platform-express';
++import { memoryStorage } from 'multer';
++import { CurrentUser } from '../auth/decorators/current-user.decorator';
++import { RequirePermissions } from '../auth/decorators/require-permissions.decorator';
++import { BusinessException } from '../shared/errors/business.exception';
++import type { AuthPrincipal } from '../shared/types';
++import { MEDIA_PERMISSION } from './media.constants';
++import { toPublicMedia } from './media.mapper';
++import { MediaService } from './media.service';
++import { ListMediaDto } from './dto/list-media.dto';
++
++@Controller('media')
++export class MediaController {
++  constructor(private readonly media: MediaService) {}
++
++  @Get()
++  @RequirePermissions(MEDIA_PERMISSION.VIEW)
++  list(@Query() query: ListMediaDto) {
++    return this.media.findMany(query);
++  }
++
++  @Get(':id')
++  @RequirePermissions(MEDIA_PERMISSION.VIEW)
++  getById(@Param('id', ParseUUIDPipe) id: string) {
++    return this.media.findPublic(id);
++  }
++
++  @Get(':id/integrity')
++  @RequirePermissions(MEDIA_PERMISSION.VIEW)
++  verifyIntegrity(
++    @Param('id', ParseUUIDPipe) id: string,
++    @CurrentUser() user: AuthPrincipal,
++  ) {
++    return this.media.verifyIntegrity(id, user);
++  }
++
++  @Post()
++  @RequirePermissions(MEDIA_PERMISSION.UPLOAD)
++  @UseInterceptors(
++    FileInterceptor('file', {
++      storage: memoryStorage(),
++      limits: { files: 1 },
++    }),
++  )
++  async upload(
++    @UploadedFile() file: Express.Multer.File | undefined,
++    @CurrentUser() user: AuthPrincipal,
++  ) {
++    if (!file) {
++      throw BusinessException.validation('file is required');
++    }
++    const saved = await this.media.save(
++      {
++        buffer: file.buffer,
++        originalFilename: file.originalname,
++        mimeType: file.mimetype || 'application/octet-stream',
++      },
++      user,
++    );
++    return toPublicMedia(saved);
++  }
++
++  @Delete(':id')
++  @HttpCode(200)
++  @RequirePermissions(MEDIA_PERMISSION.DELETE)
++  async remove(
++    @Param('id', ParseUUIDPipe) id: string,
++    @CurrentUser() user: AuthPrincipal,
++  ) {
++    return toPublicMedia(await this.media.delete(id, user));
++  }
++
++  @Post(':id/restore')
++  @HttpCode(200)
++  @RequirePermissions(MEDIA_PERMISSION.RESTORE)
++  async restore(
++    @Param('id', ParseUUIDPipe) id: string,
++    @CurrentUser() user: AuthPrincipal,
++  ) {
++    return toPublicMedia(await this.media.restore(id, user));
++  }
++}
+diff --git a/backend-node/src/media/media.image-meta.ts b/backend-node/src/media/media.image-meta.ts
+new file mode 100644
+index 0000000..c9592e9
+--- /dev/null
++++ b/backend-node/src/media/media.image-meta.ts
+@@ -0,0 +1,124 @@
++export interface ImageMetadata {
++  readonly width: number | null;
++  readonly height: number | null;
++  readonly orientation: number | null;
++}
++
++/** Best-effort image dimension/orientation extraction (no thumbnail generation). */
++export function readImageMetadata(buffer: Buffer, extension: string): ImageMetadata {
++  const ext = extension.toLowerCase();
++  try {
++    if (ext === 'png') return readPng(buffer);
++    if (ext === 'jpg' || ext === 'jpeg') return readJpeg(buffer);
++    if (ext === 'gif') return readGif(buffer);
++    if (ext === 'webp') return readWebp(buffer);
++    if (ext === 'bmp') return readBmp(buffer);
++  } catch {
++    /* ignore corrupt headers */
++  }
++  return { width: null, height: null, orientation: null };
++}
++
++function readPng(buf: Buffer): ImageMetadata {
++  if (buf.length < 24 || buf.toString('ascii', 1, 4) !== 'PNG') {
++    return empty();
++  }
++  return {
++    width: buf.readUInt32BE(16),
++    height: buf.readUInt32BE(20),
++    orientation: null,
++  };
++}
++
++function readGif(buf: Buffer): ImageMetadata {
++  if (buf.length < 10 || buf.toString('ascii', 0, 3) !== 'GIF') return empty();
++  return { width: buf.readUInt16LE(6), height: buf.readUInt16LE(8), orientation: null };
++}
++
++function readBmp(buf: Buffer): ImageMetadata {
++  if (buf.length < 26 || buf.toString('ascii', 0, 2) !== 'BM') return empty();
++  return {
++    width: Math.abs(buf.readInt32LE(18)),
++    height: Math.abs(buf.readInt32LE(22)),
++    orientation: null,
++  };
++}
++
++function readWebp(buf: Buffer): ImageMetadata {
++  if (
++    buf.length < 16 ||
++    buf.toString('ascii', 0, 4) !== 'RIFF' ||
++    buf.toString('ascii', 8, 12) !== 'WEBP'
++  ) {
++    return empty();
++  }
++  const chunk = buf.toString('ascii', 12, 16);
++  if (chunk === 'VP8 ' && buf.length >= 30) {
++    return {
++      width: buf.readUInt16LE(26) & 0x3fff,
++      height: buf.readUInt16LE(28) & 0x3fff,
++      orientation: null,
++    };
++  }
++  if (chunk === 'VP8L' && buf.length >= 25) {
++    const bits = buf.readUInt32LE(21);
++    return {
++      width: (bits & 0x3fff) + 1,
++      height: ((bits >> 14) & 0x3fff) + 1,
++      orientation: null,
++    };
++  }
++  return empty();
++}
++
++function readJpeg(buf: Buffer): ImageMetadata {
++  if (buf.length < 4 || buf[0] !== 0xff || buf[1] !== 0xd8) return empty();
++  let offset = 2;
++  let orientation: number | null = null;
++  let width: number | null = null;
++  let height: number | null = null;
++  while (offset + 9 < buf.length) {
++    if (buf[offset] !== 0xff) break;
++    const marker = buf[offset + 1];
++    const size = buf.readUInt16BE(offset + 2);
++    if (marker === 0xe1 && size >= 8) {
++      orientation = readExifOrientation(buf.subarray(offset + 4, offset + 2 + size)) ?? orientation;
++    }
++    if (
++      (marker >= 0xc0 && marker <= 0xc3) ||
++      (marker >= 0xc5 && marker <= 0xc7) ||
++      (marker >= 0xc9 && marker <= 0xcb) ||
++      (marker >= 0xcd && marker <= 0xcf)
++    ) {
++      height = buf.readUInt16BE(offset + 5);
++      width = buf.readUInt16BE(offset + 7);
++      break;
++    }
++    offset += 2 + size;
++  }
++  return { width, height, orientation };
++}
++
++function readExifOrientation(segment: Buffer): number | null {
++  if (segment.length < 14 || segment.toString('ascii', 0, 4) !== 'Exif') return null;
++  const tiff = segment.subarray(6);
++  const little = tiff.toString('ascii', 0, 2) === 'II';
++  const read16 = (i: number) => (little ? tiff.readUInt16LE(i) : tiff.readUInt16BE(i));
++  const read32 = (i: number) => (little ? tiff.readUInt32LE(i) : tiff.readUInt32BE(i));
++  if (tiff.length < 8) return null;
++  const ifd = read32(4);
++  if (ifd + 2 > tiff.length) return null;
++  const entries = read16(ifd);
++  for (let i = 0; i < entries; i += 1) {
++    const entry = ifd + 2 + i * 12;
++    if (entry + 12 > tiff.length) break;
++    if (read16(entry) === 0x0112) {
++      return read16(entry + 8);
++    }
++  }
++  return null;
++}
++
++function empty(): ImageMetadata {
++  return { width: null, height: null, orientation: null };
++}
+diff --git a/backend-node/src/media/media.mapper.ts b/backend-node/src/media/media.mapper.ts
+new file mode 100644
+index 0000000..eda9fd6
+--- /dev/null
++++ b/backend-node/src/media/media.mapper.ts
+@@ -0,0 +1,24 @@
++import type { MediaFile } from '@prisma/client';
++import type { MediaFilePublic } from './media.types';
++
++export function toPublicMedia(file: MediaFile): MediaFilePublic {
++  return {
++    id: file.id,
++    originalFilename: file.originalFilename,
++    storedFilename: file.storedFilename,
++    extension: file.extension,
++    mimeType: file.mimeType,
++    sizeBytes: file.sizeBytes,
++    checksum: file.sha256Hash,
++    width: file.width,
++    height: file.height,
++    orientation: file.orientation,
++    kind: file.kind,
++    isPublic: file.isPublic,
++    createdAt: file.createdAt,
++    updatedAt: file.updatedAt,
++    deletedAt: file.deletedAt,
++    createdBy: file.createdBy,
++    uploadedBy: file.uploadedBy,
++  };
++}
+diff --git a/backend-node/src/media/media.module.ts b/backend-node/src/media/media.module.ts
+index 5acdcf5..b528c1b 100644
+--- a/backend-node/src/media/media.module.ts
++++ b/backend-node/src/media/media.module.ts
+@@ -1,10 +1,13 @@
+ import { Global, Module } from '@nestjs/common';
++import { MediaController } from './media.controller';
+ import { MediaRepository } from './media.repository';
+ import { MediaService } from './media.service';
++import { LocalStorageProvider } from './providers/local-storage.provider';
+ 
+ @Global()
+ @Module({
+-  providers: [MediaRepository, MediaService],
++  controllers: [MediaController],
++  providers: [MediaRepository, LocalStorageProvider, MediaService],
+   exports: [MediaService],
+ })
+-export class MediaModule {}
+\ No newline at end of file
++export class MediaModule {}
+diff --git a/backend-node/src/media/media.repository.ts b/backend-node/src/media/media.repository.ts
+index c5ed43d..aadcfdc 100644
+--- a/backend-node/src/media/media.repository.ts
++++ b/backend-node/src/media/media.repository.ts
+@@ -1,30 +1,28 @@
+ import { Injectable } from '@nestjs/common';
+-import type { MediaFile, MediaReference } from '@prisma/client';
++import type { MediaFile, MediaReference, Prisma } from '@prisma/client';
+ import { PrismaService } from '../database/prisma.service';
+-import { liveWhere, softDeleteData } from '../shared/soft-delete/soft-delete';
++import {
++  liveWhere,
++  restoreSoftDeleteData,
++  softDeleteData,
++} from '../shared/soft-delete/soft-delete';
+ 
+ @Injectable()
+ export class MediaRepository {
+   constructor(private readonly prisma: PrismaService) {}
+ 
+-  createFile(data: {
+-    originalFilename: string;
+-    storedFilename: string;
+-    extension: string;
+-    mimeType: string;
+-    sizeBytes: number;
+-    sha256Hash: string;
+-    storageProvider: string;
+-    relativePath: string;
+-    kind: string;
+-    isPublic: boolean;
+-    uploadedBy: string | null;
+-    createdBy: string | null;
+-  }): Promise<MediaFile> {
++  createFile(data: Prisma.MediaFileCreateInput): Promise<MediaFile> {
+     return this.prisma.mediaFile.create({ data });
+   }
+ 
+-  findFileById(id: string): Promise<MediaFile | null> {
++  updateFile(id: string, data: Prisma.MediaFileUpdateInput): Promise<MediaFile> {
++    return this.prisma.mediaFile.update({ where: { id }, data });
++  }
++
++  findFileById(id: string, opts?: { includeDeleted?: boolean }): Promise<MediaFile | null> {
++    if (opts?.includeDeleted) {
++      return this.prisma.mediaFile.findUnique({ where: { id } });
++    }
+     return this.prisma.mediaFile.findFirst({ where: liveWhere({ id }) });
+   }
+ 
+@@ -32,23 +30,46 @@ export class MediaRepository {
+     return this.prisma.mediaFile.findMany({ where: liveWhere({ sha256Hash }) });
+   }
+ 
+-  softDeleteFile(id: string): Promise<MediaFile> {
++  softDeleteFile(id: string, updatedBy?: string | null): Promise<MediaFile> {
++    return this.prisma.mediaFile.update({
++      where: { id },
++      data: { ...softDeleteData(), updatedBy: updatedBy ?? null },
++    });
++  }
++
++  restoreFile(id: string, updatedBy?: string | null): Promise<MediaFile> {
+     return this.prisma.mediaFile.update({
+       where: { id },
++      data: { ...restoreSoftDeleteData(), updatedBy: updatedBy ?? null },
++    });
++  }
++
++  softDeleteReferencesForFile(mediaFileId: string): Promise<Prisma.BatchPayload> {
++    return this.prisma.mediaReference.updateMany({
++      where: { mediaFileId, deletedAt: null },
+       data: softDeleteData(),
+     });
+   }
+ 
+-  createReference(data: {
+-    mediaFileId: string;
+-    moduleName: string;
+-    entityType: string;
+-    entityId: string;
+-    purpose: string;
+-    displayOrder: number;
+-    isPrimary: boolean;
+-    createdBy: string | null;
+-  }): Promise<MediaReference> {
++  async listFiles(input: {
++    where: Prisma.MediaFileWhereInput;
++    orderBy: Prisma.MediaFileOrderByWithRelationInput;
++    offset: number;
++    limit: number;
++  }): Promise<{ rows: MediaFile[]; total: number }> {
++    const [rows, total] = await Promise.all([
++      this.prisma.mediaFile.findMany({
++        where: input.where,
++        orderBy: input.orderBy,
++        skip: input.offset,
++        take: input.limit,
++      }),
++      this.prisma.mediaFile.count({ where: input.where }),
++    ]);
++    return { rows, total };
++  }
++
++  createReference(data: Prisma.MediaReferenceCreateInput): Promise<MediaReference> {
+     return this.prisma.mediaReference.create({ data });
+   }
+ 
+@@ -69,4 +90,4 @@ export class MediaRepository {
+       data: softDeleteData(),
+     });
+   }
+-}
+\ No newline at end of file
++}
+diff --git a/backend-node/src/media/media.service.ts b/backend-node/src/media/media.service.ts
+index 25e482d..61bbb8f 100644
+--- a/backend-node/src/media/media.service.ts
++++ b/backend-node/src/media/media.service.ts
+@@ -1,30 +1,151 @@
+-import { extname } from 'node:path';
+-import { Injectable } from '@nestjs/common';
+-import type { MediaFile, MediaReference } from '@prisma/client';
+-import { MEDIA_KIND, MEDIA_STORAGE_PROVIDER } from '../shared/constants/business.constants';
++import { Injectable, OnModuleInit } from '@nestjs/common';
++import type { MediaFile, MediaReference, Prisma } from '@prisma/client';
++import { AuditService } from '../audit/audit.service';
++import { SettingsService } from '../settings/settings.service';
++import {
++  AUDIT_ACTION,
++  MEDIA_KIND,
++  MEDIA_STORAGE_PROVIDER,
++} from '../shared/constants/business.constants';
+ import { BusinessException } from '../shared/errors/business.exception';
++import {
++  normalizePagination,
++  paginated,
++  type Paginated,
++} from '../shared/pagination/pagination';
++import { normalizeSearchQuery } from '../shared/search/search';
++import { normalizeSort } from '../shared/sorting/sorting';
+ import { newUuid } from '../shared/uuid/uuid';
+ import { assertNonEmptyString, assertInRange } from '../shared/validation/assert';
++import { parseOptionalBoolean } from '../shared/validation/parse-boolean';
++import type { AuthPrincipal } from '../shared/types';
++import { calculateChecksum, checksumsMatch } from './media.checksum';
++import {
++  MEDIA_ALLOWED_EXTENSIONS,
++  MEDIA_DEFAULT_MAX_UPLOAD_BYTES,
++  MEDIA_ENTITY_FILE,
++  MEDIA_EXTENSION_MIME,
++  MEDIA_MODULE,
++  MEDIA_SETTING,
++  MEDIA_SORT_FIELDS,
++  MEDIA_STORAGE_CATEGORY,
++  type MediaStorageCategory,
++} from './media.constants';
++import { readImageMetadata } from './media.image-meta';
++import { toPublicMedia } from './media.mapper';
+ import { MediaRepository } from './media.repository';
+-import type { AttachMediaInput, RegisterMediaInput } from './media.types';
++import type {
++  AttachMediaInput,
++  ListMediaInput,
++  MediaFilePublic,
++  RegisterMediaInput,
++  SaveMediaInput,
++} from './media.types';
++import {
++  assertAllowedExtension,
++  assertContentMatchesExtension,
++  assertMimeMatchesExtension,
++  extractExtension,
++  sanitizeOriginalFilename,
++} from './media.validation';
++import { LocalStorageProvider } from './providers/local-storage.provider';
+ 
+ /**
+- * Media abstraction for images/documents.
+- * No HTTP upload APIs yet — future Electron IPC / camera will call these methods.
++ * Single source of truth for Juman file storage.
++ * Domain modules reference Media IDs via MediaReference ? never store blobs themselves.
+  */
+ @Injectable()
+-export class MediaService {
+-  constructor(private readonly repo: MediaRepository) {}
++export class MediaService implements OnModuleInit {
++  constructor(
++    private readonly repo: MediaRepository,
++    private readonly storage: LocalStorageProvider,
++    private readonly settings: SettingsService,
++    private readonly audit: AuditService,
++  ) {}
+ 
++  onModuleInit(): void {
++    this.storage.ensureCategoryDirectories();
++  }
++
++  calculateChecksum(buffer: Buffer): string {
++    return calculateChecksum(buffer);
++  }
++
++  async save(input: SaveMediaInput, actor?: AuthPrincipal): Promise<MediaFile> {
++    const originalFilename = sanitizeOriginalFilename(input.originalFilename);
++    const extension = extractExtension(originalFilename);
++    const mimeType = assertNonEmptyString(input.mimeType, 'mimeType').toLowerCase();
++    const buffer = input.buffer;
++    if (!buffer || buffer.length === 0) {
++      throw BusinessException.validation('Empty file rejected');
++    }
++
++    const maxBytes = await this.settings.getInt(
++      MEDIA_SETTING.MAX_UPLOAD_BYTES,
++      MEDIA_DEFAULT_MAX_UPLOAD_BYTES,
++    );
++    assertInRange(buffer.length, 1, maxBytes, 'sizeBytes');
++
++    const allowedExt = await this.resolveAllowedExtensions();
++    const allowedMime = await this.resolveAllowedMimes();
++    assertAllowedExtension(extension, allowedExt);
++    assertMimeMatchesExtension(extension, mimeType, allowedMime);
++    assertContentMatchesExtension(buffer, extension);
++
++    const sha256Hash = this.calculateChecksum(buffer);
++    const kind = this.inferKind(mimeType);
++    const category = input.category ?? this.categoryForKind(kind);
++    const storedFilename = `${newUuid()}.${extension}`;
++    const relativePath = this.storage.buildRelativePath(category, storedFilename);
++    const meta = kind === MEDIA_KIND.IMAGE ? readImageMetadata(buffer, extension) : {
++      width: null,
++      height: null,
++      orientation: null,
++    };
++
++    this.storage.save(relativePath, buffer);
++
++    try {
++      const row = await this.repo.createFile({
++        originalFilename,
++        storedFilename,
++        extension,
++        mimeType,
++        sizeBytes: buffer.length,
++        sha256Hash,
++        width: meta.width,
++        height: meta.height,
++        orientation: meta.orientation,
++        storageProvider: MEDIA_STORAGE_PROVIDER.LOCAL,
++        relativePath,
++        kind,
++        isPublic: false,
++        uploadedBy: input.uploadedBy ?? actor?.userId ?? null,
++        createdBy: input.createdBy ?? actor?.userId ?? null,
++      });
++
++      await this.audit.recordCreate(MEDIA_MODULE, MEDIA_ENTITY_FILE, row.id, this.snapshot(row), {
++        userId: actor?.userId,
++        username: actor?.username,
++      });
++      return row;
++    } catch (err) {
++      this.storage.hardDelete(relativePath);
++      throw err;
++    }
++  }
++
++  /** Metadata-only registration (legacy/internal). Prefer save() for uploads. */
+   async registerFile(input: RegisterMediaInput): Promise<MediaFile> {
+-    const originalFilename = assertNonEmptyString(input.originalFilename, 'originalFilename');
+-    const mimeType = assertNonEmptyString(input.mimeType, 'mimeType');
+-    const sha256Hash = assertNonEmptyString(input.sha256Hash, 'sha256Hash');
++    const originalFilename = sanitizeOriginalFilename(input.originalFilename);
++    const mimeType = assertNonEmptyString(input.mimeType, 'mimeType').toLowerCase();
++    const sha256Hash = assertNonEmptyString(input.sha256Hash, 'sha256Hash').toLowerCase();
+     const relativePath = assertNonEmptyString(input.relativePath, 'relativePath');
+     assertInRange(input.sizeBytes, 0, Number.MAX_SAFE_INTEGER, 'sizeBytes');
+     this.assertKind(input.kind);
++    this.storage.absolutePath(relativePath);
+ 
+-    const extension = (extname(originalFilename).replace(/^\./, '') || 'bin').toLowerCase();
++    const extension = extractExtension(originalFilename);
+     const storedFilename = `${newUuid()}.${extension}`;
+ 
+     return this.repo.createFile({
+@@ -34,6 +155,9 @@ export class MediaService {
+       mimeType,
+       sizeBytes: input.sizeBytes,
+       sha256Hash,
++      width: input.width ?? null,
++      height: input.height ?? null,
++      orientation: input.orientation ?? null,
+       storageProvider: input.storageProvider ?? MEDIA_STORAGE_PROVIDER.LOCAL,
+       relativePath,
+       kind: input.kind,
+@@ -43,24 +167,121 @@ export class MediaService {
+     });
+   }
+ 
+-  async getFile(id: string): Promise<MediaFile> {
+-    const file = await this.repo.findFileById(id);
+-    if (!file) throw BusinessException.notFound('Media file not found');
+-    return file;
++  async find(id: string): Promise<MediaFile> {
++    return this.requireLive(id);
++  }
++
++  getFile(id: string): Promise<MediaFile> {
++    return this.find(id);
++  }
++
++  async findPublic(id: string): Promise<MediaFilePublic> {
++    return toPublicMedia(await this.find(id));
++  }
++
++  async findMany(query: ListMediaInput): Promise<Paginated<MediaFilePublic>> {
++    const page = normalizePagination(query);
++    const where = this.buildWhere(query);
++    const sort = normalizeSort(
++      query.sortBy,
++      query.sortDir,
++      new Set(MEDIA_SORT_FIELDS),
++      { field: 'createdAt', direction: 'desc' },
++    );
++    const orderBy = {
++      [sort.field]: sort.direction,
++    } as Prisma.MediaFileOrderByWithRelationInput;
++    const { rows, total } = await this.repo.listFiles({
++      where,
++      orderBy,
++      offset: page.offset,
++      limit: page.limit,
++    });
++    return paginated(rows.map(toPublicMedia), total, page);
+   }
+ 
+   findDuplicatesByHash(sha256Hash: string): Promise<MediaFile[]> {
+-    return this.repo.findFilesByHash(sha256Hash);
++    return this.repo.findFilesByHash(sha256Hash.toLowerCase());
++  }
++
++  async delete(id: string, actor?: AuthPrincipal): Promise<MediaFile> {
++    const existing = await this.requireLive(id);
++    await this.repo.softDeleteReferencesForFile(id);
++    const deleted = await this.repo.softDeleteFile(id, actor?.userId);
++    await this.audit.recordSoftDelete(
++      MEDIA_MODULE,
++      MEDIA_ENTITY_FILE,
++      id,
++      this.snapshot(existing),
++      { userId: actor?.userId, username: actor?.username },
++    );
++    return deleted;
+   }
+ 
+   softDeleteFile(id: string): Promise<MediaFile> {
+-    return this.repo.softDeleteFile(id);
++    return this.delete(id);
++  }
++
++  async restore(id: string, actor?: AuthPrincipal): Promise<MediaFile> {
++    const existing = await this.repo.findFileById(id, { includeDeleted: true });
++    if (!existing) throw BusinessException.notFound('Media file not found');
++    if (!existing.deletedAt) {
++      throw BusinessException.conflict('Media file is not deleted');
++    }
++    if (!this.storage.exists(existing.relativePath)) {
++      await this.audit.record({
++        module: MEDIA_MODULE,
++        entityType: MEDIA_ENTITY_FILE,
++        entityId: id,
++        action: AUDIT_ACTION.INTEGRITY_FAILURE,
++        oldValues: this.snapshot(existing),
++        message: 'Restore blocked: blob missing on disk',
++        actor: { userId: actor?.userId, username: actor?.username },
++      });
++      throw BusinessException.conflict('Cannot restore: stored file blob is missing');
++    }
++    const restored = await this.repo.restoreFile(id, actor?.userId);
++    await this.audit.record({
++      module: MEDIA_MODULE,
++      entityType: MEDIA_ENTITY_FILE,
++      entityId: id,
++      action: AUDIT_ACTION.RESTORE,
++      oldValues: this.snapshot(existing),
++      newValues: this.snapshot(restored),
++      actor: { userId: actor?.userId, username: actor?.username },
++    });
++    return restored;
++  }
++
++  exists(id: string): Promise<boolean> {
++    return this.repo.findFileById(id).then(async (row) => {
++      if (!row) return false;
++      return this.storage.exists(row.relativePath);
++    });
++  }
++
++  async verifyIntegrity(id: string, actor?: AuthPrincipal): Promise<{
++    ok: boolean;
++    expectedChecksum: string;
++    actualChecksum: string | null;
++  }> {
++    const file = await this.requireLive(id);
++    if (!this.storage.exists(file.relativePath)) {
++      await this.auditIntegrityFailure(file, 'Blob missing', actor);
++      return { ok: false, expectedChecksum: file.sha256Hash, actualChecksum: null };
++    }
++    const actual = this.calculateChecksum(this.storage.read(file.relativePath));
++    const ok = checksumsMatch(file.sha256Hash, actual);
++    if (!ok) {
++      await this.auditIntegrityFailure(file, 'Checksum mismatch', actor, actual);
++    }
++    return { ok, expectedChecksum: file.sha256Hash, actualChecksum: actual };
+   }
+ 
+   async attach(input: AttachMediaInput): Promise<MediaReference> {
+-    await this.getFile(input.mediaFileId);
+-    return this.repo.createReference({
+-      mediaFileId: input.mediaFileId,
++    await this.find(input.mediaFileId);
++    const ref = await this.repo.createReference({
++      mediaFile: { connect: { id: input.mediaFileId } },
+       moduleName: assertNonEmptyString(input.moduleName, 'moduleName').toLowerCase(),
+       entityType: assertNonEmptyString(input.entityType, 'entityType').toLowerCase(),
+       entityId: assertNonEmptyString(input.entityId, 'entityId'),
+@@ -69,6 +290,7 @@ export class MediaService {
+       isPrimary: input.isPrimary ?? false,
+       createdBy: input.createdBy ?? null,
+     });
++    return ref;
+   }
+ 
+   listAttachments(moduleName: string, entityType: string, entityId: string): Promise<MediaReference[]> {
+@@ -83,12 +305,14 @@ export class MediaService {
+     return this.repo.softDeleteReference(id);
+   }
+ 
+-  /** Build a relative storage path for future Electron/local providers. */
++  /** @deprecated Prefer storage.buildRelativePath with category. Kept for tests/compat. */
+   buildRelativePath(extension: string, now = new Date()): string {
+-    const yyyy = String(now.getUTCFullYear());
+-    const mm = String(now.getUTCMonth() + 1).padStart(2, '0');
+     const ext = extension.replace(/^\./, '').toLowerCase() || 'bin';
+-    return `${yyyy}/${mm}/${newUuid()}.${ext}`;
++    const stored = `${newUuid()}.${ext}`;
++    const kind = MEDIA_EXTENSION_MIME[ext]?.[0]?.startsWith('image/')
++      ? MEDIA_KIND.IMAGE
++      : MEDIA_KIND.DOCUMENT;
++    return this.storage.buildRelativePath(this.categoryForKind(kind), stored, now);
+   }
+ 
+   inferKind(mimeType: string): (typeof MEDIA_KIND)[keyof typeof MEDIA_KIND] {
+@@ -96,16 +320,99 @@ export class MediaService {
+     if (
+       mimeType === 'application/pdf' ||
+       mimeType.startsWith('text/') ||
+-      mimeType.includes('document')
++      mimeType.includes('document') ||
++      mimeType.includes('sheet') ||
++      mimeType === 'application/zip' ||
++      mimeType === 'application/csv'
+     ) {
+       return MEDIA_KIND.DOCUMENT;
+     }
+     return MEDIA_KIND.OTHER;
+   }
+ 
++  private categoryForKind(kind: string): MediaStorageCategory {
++    if (kind === MEDIA_KIND.IMAGE) return MEDIA_STORAGE_CATEGORY.IMAGES;
++    return MEDIA_STORAGE_CATEGORY.DOCUMENTS;
++  }
++
++  private buildWhere(query: ListMediaInput): Prisma.MediaFileWhereInput {
++    const deleted = parseOptionalBoolean(query.deleted) === true;
++    const where: Prisma.MediaFileWhereInput = {
++      deletedAt: deleted ? { not: null } : null,
++    };
++    if (query.kind) where.kind = query.kind.toLowerCase();
++    if (query.extension) where.extension = query.extension.toLowerCase();
++    if (query.mimeType) where.mimeType = query.mimeType.toLowerCase();
++    const q = normalizeSearchQuery(query.q);
++    if (q) {
++      where.OR = [
++        { originalFilename: { contains: q } },
++        { storedFilename: { contains: q } },
++        { sha256Hash: { contains: q.toLowerCase() } },
++        { extension: { contains: q.toLowerCase() } },
++        { mimeType: { contains: q.toLowerCase() } },
++      ];
++    }
++    return where;
++  }
++
++  private async requireLive(id: string): Promise<MediaFile> {
++    const file = await this.repo.findFileById(id);
++    if (!file) throw BusinessException.notFound('Media file not found');
++    return file;
++  }
++
++  private async resolveAllowedExtensions(): Promise<string[]> {
++    const raw = await this.settings.getJson<string[]>(
++      MEDIA_SETTING.ALLOWED_EXTENSIONS,
++      [...MEDIA_ALLOWED_EXTENSIONS],
++    );
++    if (Array.isArray(raw) && raw.length > 0) return raw.map((e) => String(e).toLowerCase());
++    return [...MEDIA_ALLOWED_EXTENSIONS];
++  }
++
++  private async resolveAllowedMimes(): Promise<string[]> {
++    const defaults = Object.values(MEDIA_EXTENSION_MIME).flat().map((m) => m.toLowerCase());
++    const raw = await this.settings.getJson<string[]>(MEDIA_SETTING.ALLOWED_MIME_TYPES, defaults);
++    if (Array.isArray(raw) && raw.length > 0) return raw.map((m) => String(m).toLowerCase());
++    return defaults;
++  }
++
+   private assertKind(kind: string): void {
+     if (!Object.values(MEDIA_KIND).includes(kind as never)) {
+       throw BusinessException.validation(`Unsupported media kind: ${kind}`);
+     }
+   }
+-}
+\ No newline at end of file
++
++  private async auditIntegrityFailure(
++    file: MediaFile,
++    message: string,
++    actor?: AuthPrincipal,
++    actual?: string,
++  ): Promise<void> {
++    await this.audit.record({
++      module: MEDIA_MODULE,
++      entityType: MEDIA_ENTITY_FILE,
++      entityId: file.id,
++      action: AUDIT_ACTION.INTEGRITY_FAILURE,
++      oldValues: this.snapshot(file),
++      newValues: actual ? { actualChecksum: actual } : undefined,
++      message,
++      actor: { userId: actor?.userId, username: actor?.username },
++    });
++  }
++
++  private snapshot(row: MediaFile): Record<string, unknown> {
++    return {
++      id: row.id,
++      originalFilename: row.originalFilename,
++      storedFilename: row.storedFilename,
++      extension: row.extension,
++      mimeType: row.mimeType,
++      sizeBytes: row.sizeBytes,
++      sha256Hash: row.sha256Hash,
++      kind: row.kind,
++      deletedAt: row.deletedAt,
++    };
++  }
++}
+diff --git a/backend-node/src/media/media.types.ts b/backend-node/src/media/media.types.ts
+index 9053420..44c1f82 100644
+--- a/backend-node/src/media/media.types.ts
++++ b/backend-node/src/media/media.types.ts
+@@ -1,4 +1,5 @@
+ import type { MediaKind } from '../shared/constants/business.constants';
++import type { MediaStorageCategory } from './media.constants';
+ 
+ export interface RegisterMediaInput {
+   readonly originalFilename: string;
+@@ -7,12 +8,24 @@ export interface RegisterMediaInput {
+   readonly sha256Hash: string;
+   readonly relativePath: string;
+   readonly kind: MediaKind;
++  readonly width?: number | null;
++  readonly height?: number | null;
++  readonly orientation?: number | null;
+   readonly storageProvider?: string;
+   readonly isPublic?: boolean;
+   readonly uploadedBy?: string | null;
+   readonly createdBy?: string | null;
+ }
+ 
++export interface SaveMediaInput {
++  readonly buffer: Buffer;
++  readonly originalFilename: string;
++  readonly mimeType: string;
++  readonly category?: MediaStorageCategory;
++  readonly uploadedBy?: string | null;
++  readonly createdBy?: string | null;
++}
++
+ export interface AttachMediaInput {
+   readonly mediaFileId: string;
+   readonly moduleName: string;
+@@ -22,4 +35,37 @@ export interface AttachMediaInput {
+   readonly displayOrder?: number;
+   readonly isPrimary?: boolean;
+   readonly createdBy?: string | null;
+-}
+\ No newline at end of file
++}
++
++export interface ListMediaInput {
++  readonly kind?: string;
++  readonly extension?: string;
++  readonly mimeType?: string;
++  readonly q?: string;
++  readonly deleted?: boolean | string;
++  readonly sortBy?: string;
++  readonly sortDir?: 'asc' | 'desc';
++  readonly offset?: number;
++  readonly limit?: number;
++}
++
++/** Public media DTO ? never includes absolute filesystem paths. */
++export interface MediaFilePublic {
++  readonly id: string;
++  readonly originalFilename: string;
++  readonly storedFilename: string;
++  readonly extension: string;
++  readonly mimeType: string;
++  readonly sizeBytes: number;
++  readonly checksum: string;
++  readonly width: number | null;
++  readonly height: number | null;
++  readonly orientation: number | null;
++  readonly kind: string;
++  readonly isPublic: boolean;
++  readonly createdAt: Date;
++  readonly updatedAt: Date;
++  readonly deletedAt: Date | null;
++  readonly createdBy: string | null;
++  readonly uploadedBy: string | null;
++}
+diff --git a/backend-node/src/media/media.validation.ts b/backend-node/src/media/media.validation.ts
+new file mode 100644
+index 0000000..7155b59
+--- /dev/null
++++ b/backend-node/src/media/media.validation.ts
+@@ -0,0 +1,120 @@
++import { basename } from 'node:path';
++import { BusinessException } from '../shared/errors/business.exception';
++import {
++  MEDIA_DANGEROUS_EXTENSIONS,
++  MEDIA_EXTENSION_MIME,
++} from './media.constants';
++
++const PATH_SEP = /[\\/]/;
++const HIDDEN = /^\./;
++
++export function sanitizeOriginalFilename(raw: string): string {
++  const name = basename(raw.replace(/\\/g, '/')).trim();
++  if (!name || name === '.' || name === '..') {
++    throw BusinessException.validation('Invalid filename');
++  }
++  if (PATH_SEP.test(name) || name.includes('\0')) {
++    throw BusinessException.validation('Filename must not contain path separators');
++  }
++  if (HIDDEN.test(name)) {
++    throw BusinessException.validation('Hidden filenames are not allowed');
++  }
++  return name;
++}
++
++export function extractExtension(filename: string): string {
++  const safe = sanitizeOriginalFilename(filename);
++  const parts = safe.split('.');
++  if (parts.length < 2) {
++    throw BusinessException.validation('File extension is required');
++  }
++  // Double-extension attack: reject if any intermediate segment is dangerous.
++  for (let i = 1; i < parts.length - 1; i += 1) {
++    const mid = parts[i].toLowerCase();
++    if ((MEDIA_DANGEROUS_EXTENSIONS as readonly string[]).includes(mid)) {
++      throw BusinessException.validation('Dangerous double extension rejected');
++    }
++  }
++  const ext = parts[parts.length - 1].toLowerCase();
++  if (!ext || ext.length > 10 || !/^[a-z0-9]+$/.test(ext)) {
++    throw BusinessException.validation('Invalid file extension');
++  }
++  if ((MEDIA_DANGEROUS_EXTENSIONS as readonly string[]).includes(ext)) {
++    throw BusinessException.validation('Executable or dangerous file type rejected');
++  }
++  return ext;
++}
++
++export function assertAllowedExtension(
++  extension: string,
++  allowed: readonly string[],
++): void {
++  if (!allowed.map((e) => e.toLowerCase()).includes(extension.toLowerCase())) {
++    throw BusinessException.validation(`Unsupported file extension: ${extension}`);
++  }
++}
++
++export function assertMimeMatchesExtension(
++  extension: string,
++  mimeType: string,
++  allowedMimes: readonly string[],
++): void {
++  const mime = mimeType.trim().toLowerCase();
++  if (!mime || mime.includes('..') || mime.includes('\\')) {
++    throw BusinessException.validation('Invalid MIME type');
++  }
++  if (!allowedMimes.map((m) => m.toLowerCase()).includes(mime)) {
++    throw BusinessException.validation(`Unsupported MIME type: ${mime}`);
++  }
++  const expected = MEDIA_EXTENSION_MIME[extension.toLowerCase()];
++  if (expected && !expected.includes(mime)) {
++    // Allow declared office MIME vs zip container MIME already listed.
++    throw BusinessException.validation('MIME type does not match file extension');
++  }
++}
++
++/** Magic-byte / content sniffing to reduce MIME spoofing. */
++export function assertContentMatchesExtension(buffer: Buffer, extension: string): void {
++  const ext = extension.toLowerCase();
++  const head = buffer.subarray(0, Math.min(buffer.length, 16));
++  const ok = (() => {
++    switch (ext) {
++      case 'jpg':
++      case 'jpeg':
++        return head[0] === 0xff && head[1] === 0xd8 && head[2] === 0xff;
++      case 'png':
++        return head[0] === 0x89 && head.toString('ascii', 1, 4) === 'PNG';
++      case 'gif':
++        return head.toString('ascii', 0, 3) === 'GIF';
++      case 'webp':
++        return head.toString('ascii', 0, 4) === 'RIFF' && buffer.toString('ascii', 8, 12) === 'WEBP';
++      case 'bmp':
++        return head.toString('ascii', 0, 2) === 'BM';
++      case 'pdf':
++        return head.toString('ascii', 0, 4) === '%PDF';
++      case 'docx':
++      case 'xlsx':
++        return head[0] === 0x50 && head[1] === 0x4b;
++      case 'txt':
++      case 'csv':
++        return !buffer.includes(0) && isMostlyText(buffer);
++      default:
++        return false;
++    }
++  })();
++  if (!ok) {
++    throw BusinessException.validation('File content does not match declared type');
++  }
++}
++
++function isMostlyText(buffer: Buffer): boolean {
++  if (buffer.length === 0) return true;
++  let printable = 0;
++  const sample = buffer.subarray(0, Math.min(buffer.length, 4096));
++  for (const b of sample) {
++    if (b === 9 || b === 10 || b === 13 || (b >= 32 && b <= 126) || b >= 128) {
++      printable += 1;
++    }
++  }
++  return printable / sample.length >= 0.85;
++}
+diff --git a/backend-node/src/media/providers/local-storage.provider.ts b/backend-node/src/media/providers/local-storage.provider.ts
+new file mode 100644
+index 0000000..a4e2525
+--- /dev/null
++++ b/backend-node/src/media/providers/local-storage.provider.ts
+@@ -0,0 +1,115 @@
++import { createReadStream, existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
++import { dirname, isAbsolute, normalize, relative, resolve, sep } from 'node:path';
++import { Injectable } from '@nestjs/common';
++import { ConfigService } from '@nestjs/config';
++import type { AppConfig } from '../../shared/types';
++import { BusinessException } from '../../shared/errors/business.exception';
++import {
++  MEDIA_STORAGE_CATEGORIES,
++  type MediaStorageCategory,
++} from '../media.constants';
++
++/**
++ * Local filesystem storage under the configured storage root.
++ * Never accepts absolute client paths; all keys are relative to storageDir.
++ */
++@Injectable()
++export class LocalStorageProvider {
++  constructor(private readonly config: ConfigService) {}
++
++  get storageRoot(): string {
++    const paths = this.config.getOrThrow<AppConfig['paths']>('app.paths');
++    return paths.storageDir;
++  }
++
++  ensureCategoryDirectories(): void {
++    for (const category of MEDIA_STORAGE_CATEGORIES) {
++      mkdirSync(resolve(this.storageRoot, category), { recursive: true });
++    }
++  }
++
++  absolutePath(relativePath: string): string {
++    const safeRel = this.assertSafeRelativePath(relativePath);
++    const abs = resolve(this.storageRoot, safeRel);
++    this.assertInsideRoot(abs);
++    return abs;
++  }
++
++  exists(relativePath: string): boolean {
++    return existsSync(this.absolutePath(relativePath));
++  }
++
++  save(relativePath: string, buffer: Buffer): void {
++    const abs = this.absolutePath(relativePath);
++    mkdirSync(dirname(abs), { recursive: true });
++    writeFileSync(abs, buffer);
++  }
++
++  read(relativePath: string): Buffer {
++    const abs = this.absolutePath(relativePath);
++    if (!existsSync(abs)) {
++      throw BusinessException.notFound('Stored media blob not found');
++    }
++    return readFileSync(abs);
++  }
++
++  openReadStream(relativePath: string) {
++    return createReadStream(this.absolutePath(relativePath));
++  }
++
++  /** Soft-delete keeps blobs for restore; hardDelete removes bytes permanently. */
++  hardDelete(relativePath: string): void {
++    const abs = this.absolutePath(relativePath);
++    if (existsSync(abs)) unlinkSync(abs);
++  }
++
++  buildRelativePath(
++    category: MediaStorageCategory,
++    storedFilename: string,
++    now = new Date(),
++  ): string {
++    this.assertCategory(category);
++    const yyyy = String(now.getUTCFullYear());
++    const mm = String(now.getUTCMonth() + 1).padStart(2, '0');
++    const normalized = storedFilename.replace(/\\/g, '/');
++    if (!normalized || normalized.includes('..') || normalized.includes('/')) {
++      throw BusinessException.validation('Invalid stored filename');
++    }
++    const name = normalized;
++    return [category, yyyy, mm, name].join('/');
++  }
++
++  private assertCategory(category: string): void {
++    if (!(MEDIA_STORAGE_CATEGORIES as readonly string[]).includes(category)) {
++      throw BusinessException.validation(`Unknown storage category: ${category}`);
++    }
++  }
++
++  private assertSafeRelativePath(relativePath: string): string {
++    const trimmed = relativePath.trim().replace(/\\/g, '/');
++    if (!trimmed || isAbsolute(trimmed) || trimmed.startsWith('/') || /^[a-zA-Z]:/.test(trimmed)) {
++      throw BusinessException.validation('Invalid storage path');
++    }
++    if (trimmed.includes('\0') || trimmed.split('/').some((p) => p === '..' || p === '')) {
++      throw BusinessException.validation('Path traversal rejected');
++    }
++    const top = trimmed.split('/')[0];
++    this.assertCategory(top);
++    return trimmed;
++  }
++
++  private assertInsideRoot(absolutePath: string): void {
++    const root = resolve(this.storageRoot);
++    const normalized = normalize(absolutePath);
++    const rel = relative(root, normalized);
++    if (rel.startsWith('..') || isAbsolute(rel)) {
++      throw BusinessException.validation('Path escapes storage root');
++    }
++    // Windows drive mismatch
++    if (normalized.split(sep)[0] !== root.split(sep)[0] && process.platform === 'win32') {
++      if (!normalized.toLowerCase().startsWith(root.toLowerCase())) {
++        throw BusinessException.validation('Path escapes storage root');
++      }
++    }
++  }
++}
+diff --git a/backend-node/src/permissions/permission.seeds.ts b/backend-node/src/permissions/permission.seeds.ts
+index d51d03f..1c7b622 100644
+--- a/backend-node/src/permissions/permission.seeds.ts
++++ b/backend-node/src/permissions/permission.seeds.ts
+@@ -40,6 +40,7 @@ export const DEFAULT_PERMISSIONS: readonly PermissionSeed[] = [
+   perm('media.view', 'عرض الملفات', 'عرض وتنزيل الملفات والمراجع'),
+   perm('media.delete', 'حذف ملفات', 'حذف الملفات أو مراجعها'),
+   perm('media.manage', 'إدارة الملفات', 'إدارة مراجع الملفات'),
++  perm('media.restore', 'استعادة ملفات', 'استعادة ملفات محذوفة'),
+   perm('audit.view', 'عرض سجل التدقيق', 'عرض سجلات تدقيق النظام'),
+   perm('categories.view', 'عرض التصنيفات', 'عرض تصنيفات الفساتين'),
+   perm('categories.create', 'إنشاء تصنيف', 'إنشاء تصنيف جديد'),
+@@ -149,6 +150,7 @@ export const INVENTORY_PERMISSIONS: readonly string[] = [
+   'media.view',
+   'media.delete',
+   'media.manage',
++  'media.restore',
+ ];
+ 
+ export const LAUNDRY_PERMISSIONS: readonly string[] = [
+diff --git a/backend-node/src/settings/settings.seeds.ts b/backend-node/src/settings/settings.seeds.ts
+index 0360499..29b3425 100644
+--- a/backend-node/src/settings/settings.seeds.ts
++++ b/backend-node/src/settings/settings.seeds.ts
+@@ -90,6 +90,28 @@ export const DEFAULT_APP_SETTINGS: readonly SettingSeed[] = [
+     description: 'Max upload size in bytes',
+     isEditable: true,
+   },
++  {
++    key: 'media.allowed_extensions',
++    value: JSON.stringify(['jpg','jpeg','png','gif','webp','bmp','pdf','docx','xlsx','txt','csv']),
++    valueType: SETTING_VALUE_TYPE.JSON,
++    category: 'media',
++    description: 'Allowed upload extensions',
++    isEditable: true,
++  },
++  {
++    key: 'media.allowed_mime_types',
++    value: JSON.stringify([
++      'image/jpeg','image/png','image/gif','image/webp','image/bmp',
++      'application/pdf',
++      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
++      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
++      'application/zip','text/plain','text/csv','application/csv'
++    ]),
++    valueType: SETTING_VALUE_TYPE.JSON,
++    category: 'media',
++    description: 'Allowed upload MIME types',
++    isEditable: true,
++  },
+   {
+     key: 'customers.number.prefix',
+     value: 'CUS',
+diff --git a/backend-node/src/shared/constants/business.constants.ts b/backend-node/src/shared/constants/business.constants.ts
+index baa8a6a..76d67ed 100644
+--- a/backend-node/src/shared/constants/business.constants.ts
++++ b/backend-node/src/shared/constants/business.constants.ts
+@@ -50,6 +50,7 @@ export const AUDIT_ACTION = {
+   HARD_DELETE: 'hard_delete',
+   RESTORE: 'restore',
+   VIEW: 'view',
++  INTEGRITY_FAILURE: 'integrity_failure',
+   ALLOCATE: 'allocate',
+   RESERVE: 'reserve',
+   RELEASE: 'release',
+diff --git a/backend-node/src/storage/ensure-dirs.ts b/backend-node/src/storage/ensure-dirs.ts
+index a3314ac..c03ace2 100644
+--- a/backend-node/src/storage/ensure-dirs.ts
++++ b/backend-node/src/storage/ensure-dirs.ts
+@@ -1,9 +1,22 @@
+ import { mkdirSync } from 'node:fs';
++import { resolve } from 'node:path';
+ import type { RuntimePaths } from '../shared/types';
+ 
++const STORAGE_CATEGORIES = [
++  'images',
++  'documents',
++  'temp',
++  'thumbnails',
++  'imports',
++  'exports',
++] as const;
++
+ export function ensureRuntimeDirectories(paths: RuntimePaths): void {
+   mkdirSync(paths.dataDir, { recursive: true });
+   mkdirSync(paths.logsDir, { recursive: true });
+   mkdirSync(paths.storageDir, { recursive: true });
+   mkdirSync(paths.configDir, { recursive: true });
++  for (const category of STORAGE_CATEGORIES) {
++    mkdirSync(resolve(paths.storageDir, category), { recursive: true });
++  }
+ }
+diff --git a/backend-node/test/media-image-meta.spec.ts b/backend-node/test/media-image-meta.spec.ts
+new file mode 100644
+index 0000000..433cd85
+--- /dev/null
++++ b/backend-node/test/media-image-meta.spec.ts
+@@ -0,0 +1,96 @@
++import { describe, expect, it } from 'vitest';
++import { readImageMetadata } from '../src/media/media.image-meta';
++
++describe('readImageMetadata', () => {
++  it('reads png gif bmp', () => {
++    const png = Buffer.from(
++      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
++      'base64',
++    );
++    expect(readImageMetadata(png, 'png')).toMatchObject({ width: 1, height: 1 });
++
++    // GIF89a 1x1
++    const gif = Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64');
++    expect(readImageMetadata(gif, 'gif').width).toBe(1);
++
++    // BMP 1x1 24-bit minimal header
++    const bmp = Buffer.alloc(54);
++    bmp.write('BM');
++    bmp.writeInt32LE(1, 18);
++    bmp.writeInt32LE(1, 22);
++    expect(readImageMetadata(bmp, 'bmp')).toMatchObject({ width: 1, height: 1 });
++  });
++
++  it('reads jpeg sof and handles corrupt buffers', () => {
++    // minimal JPEG with SOF0
++    const jpeg = Buffer.from([
++      0xff, 0xd8, 0xff, 0xc0, 0x00, 0x11, 0x08, 0x00, 0x10, 0x00, 0x20, 0x03, 0x01, 0x11, 0x00, 0x02,
++      0x11, 0x01, 0x03, 0x11, 0x01, 0xff, 0xd9,
++    ]);
++    const meta = readImageMetadata(jpeg, 'jpg');
++    expect(meta.width).toBe(0x20);
++    expect(meta.height).toBe(0x10);
++
++    expect(readImageMetadata(Buffer.from([1, 2, 3]), 'png')).toEqual({
++      width: null,
++      height: null,
++      orientation: null,
++    });
++    expect(readImageMetadata(Buffer.alloc(0), 'jpeg').width).toBeNull();
++    expect(readImageMetadata(Buffer.from('nope'), 'webp').width).toBeNull();
++    expect(readImageMetadata(Buffer.from('nope'), 'txt').width).toBeNull();
++  });
++
++  it('reads webp vp8 and vp8l', () => {
++    const vp8 = Buffer.alloc(30);
++    vp8.write('RIFF', 0);
++    vp8.write('WEBP', 8);
++    vp8.write('VP8 ', 12);
++    vp8.writeUInt16LE(100, 26);
++    vp8.writeUInt16LE(50, 28);
++    expect(readImageMetadata(vp8, 'webp')).toMatchObject({ width: 100, height: 50 });
++
++    const vp8l = Buffer.alloc(25);
++    vp8l.write('RIFF', 0);
++    vp8l.write('WEBP', 8);
++    vp8l.write('VP8L', 12);
++    // width-1=9 (10), height-1=19 (20) packed
++    const bits = 9 | (19 << 14);
++    vp8l.writeUInt32LE(bits, 21);
++    expect(readImageMetadata(vp8l, 'webp')).toMatchObject({ width: 10, height: 20 });
++
++    const unknown = Buffer.alloc(30);
++    unknown.write('RIFF', 0);
++    unknown.write('WEBP', 8);
++    unknown.write('VP8X', 12);
++    expect(readImageMetadata(unknown, 'webp').width).toBeNull();
++  });
++
++  it('reads jpeg exif orientation when present', () => {
++    // Build APP1 Exif with orientation=6
++    const tiff = Buffer.alloc(26);
++    tiff.write('MM', 0); // big endian
++    tiff.writeUInt16BE(0x002a, 2);
++    tiff.writeUInt32BE(8, 4); // IFD offset
++    tiff.writeUInt16BE(1, 8); // 1 entry
++    tiff.writeUInt16BE(0x0112, 10); // orientation tag
++    tiff.writeUInt16BE(3, 12); // SHORT
++    tiff.writeUInt32BE(1, 14); // count
++    tiff.writeUInt16BE(6, 18); // value
++    const exifHeader = Buffer.from([0x45, 0x78, 0x69, 0x66, 0x00, 0x00]);
++    const app1Payload = Buffer.concat([exifHeader, tiff]);
++    const app1 = Buffer.alloc(4 + app1Payload.length);
++    app1[0] = 0xff;
++    app1[1] = 0xe1;
++    app1.writeUInt16BE(app1Payload.length + 2, 2);
++    app1Payload.copy(app1, 4);
++
++    const sof = Buffer.from([
++      0xff, 0xc0, 0x00, 0x0b, 0x08, 0x00, 0x02, 0x00, 0x02, 0x01, 0x01, 0x11, 0x00,
++    ]);
++    const jpeg = Buffer.concat([Buffer.from([0xff, 0xd8]), app1, sof, Buffer.from([0xff, 0xd9])]);
++    const meta = readImageMetadata(jpeg, 'jpeg');
++    expect(meta.orientation).toBe(6);
++    expect(meta.width).toBe(2);
++  });
++});
+diff --git a/backend-node/test/media-integration.spec.ts b/backend-node/test/media-integration.spec.ts
+new file mode 100644
+index 0000000..7ada9fa
+--- /dev/null
++++ b/backend-node/test/media-integration.spec.ts
+@@ -0,0 +1,143 @@
++import 'reflect-metadata';
++import { rmSync } from 'node:fs';
++import { afterAll, beforeAll, describe, expect, it } from 'vitest';
++import { INestApplication } from '@nestjs/common';
++import { Test } from '@nestjs/testing';
++import request from 'supertest';
++import { AppModule } from '../src/app.module';
++import { createGlobalValidationPipe } from '../src/validation/create-validation-pipe';
++import { prepareTestDatabase } from './helpers/test-db';
++
++function png1x1(): Buffer {
++  return Buffer.from(
++    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
++    'base64',
++  );
++}
++
++describe('Media integration', () => {
++  let app: INestApplication;
++  let dataDir: string;
++  let token = '';
++  let mediaId = '';
++
++  beforeAll(async () => {
++    const prepared = prepareTestDatabase('juman-media-');
++    dataDir = prepared.dataDir;
++    process.env.IDENTITY_BOOTSTRAP_USERNAME = 'admin';
++    process.env.IDENTITY_BOOTSTRAP_PASSWORD = 'Juman!Bootstrap1';
++
++    const moduleRef = await Test.createTestingModule({
++      imports: [AppModule],
++    }).compile();
++
++    app = moduleRef.createNestApplication();
++    app.useGlobalPipes(createGlobalValidationPipe());
++    await app.init();
++
++    const login = await request(app.getHttpServer())
++      .post('/auth/login')
++      .send({ username: 'admin', password: 'Juman!Bootstrap1' })
++      .expect(200);
++    token = login.body.accessToken;
++
++    await request(app.getHttpServer())
++      .post('/auth/change-password')
++      .set('Authorization', `Bearer ${token}`)
++      .send({ currentPassword: 'Juman!Bootstrap1', newPassword: 'NewStrong!Pass1' })
++      .expect(200);
++
++    const again = await request(app.getHttpServer())
++      .post('/auth/login')
++      .send({ username: 'admin', password: 'NewStrong!Pass1' })
++      .expect(200);
++    token = again.body.accessToken;
++  }, 180_000);
++
++  afterAll(async () => {
++    if (app) await app.close();
++    try {
++      rmSync(dataDir, { recursive: true, force: true });
++    } catch {
++      /* ignore */
++    }
++  });
++
++  it('requires auth', async () => {
++    await request(app.getHttpServer()).get('/media').expect(401);
++  });
++
++  it('uploads lists gets verifies soft-deletes and restores', async () => {
++    const uploaded = await request(app.getHttpServer())
++      .post('/media')
++      .set('Authorization', `Bearer ${token}`)
++      .attach('file', png1x1(), 'sample.png')
++      .expect(201);
++
++    expect(uploaded.body.id).toBeTruthy();
++    expect(uploaded.body.checksum).toHaveLength(64);
++    expect(uploaded.body.extension).toBe('png');
++    expect(uploaded.body).not.toHaveProperty('relativePath');
++    expect(uploaded.body.width).toBe(1);
++    mediaId = uploaded.body.id;
++
++    // duplicate upload allowed
++    await request(app.getHttpServer())
++      .post('/media')
++      .set('Authorization', `Bearer ${token}`)
++      .attach('file', png1x1(), 'sample-copy.png')
++      .expect(201);
++
++    const list = await request(app.getHttpServer())
++      .get('/media')
++      .query({ extension: 'png' })
++      .set('Authorization', `Bearer ${token}`)
++      .expect(200);
++    expect(list.body.meta.total).toBeGreaterThanOrEqual(2);
++
++    const byId = await request(app.getHttpServer())
++      .get(`/media/${mediaId}`)
++      .set('Authorization', `Bearer ${token}`)
++      .expect(200);
++    expect(byId.body.id).toBe(mediaId);
++
++    const integrity = await request(app.getHttpServer())
++      .get(`/media/${mediaId}/integrity`)
++      .set('Authorization', `Bearer ${token}`)
++      .expect(200);
++    expect(integrity.body.ok).toBe(true);
++
++    await request(app.getHttpServer())
++      .post('/media')
++      .set('Authorization', `Bearer ${token}`)
++      .attach('file', Buffer.from('MZ'), 'evil.exe')
++      .expect(400);
++
++    await request(app.getHttpServer())
++      .delete(`/media/${mediaId}`)
++      .set('Authorization', `Bearer ${token}`)
++      .expect(200);
++
++    await request(app.getHttpServer())
++      .get(`/media/${mediaId}`)
++      .set('Authorization', `Bearer ${token}`)
++      .expect(404);
++
++    const deleted = await request(app.getHttpServer())
++      .get('/media')
++      .query({ deleted: true })
++      .set('Authorization', `Bearer ${token}`)
++      .expect(200);
++    expect(deleted.body.items.some((m: { id: string }) => m.id === mediaId)).toBe(true);
++
++    await request(app.getHttpServer())
++      .post(`/media/${mediaId}/restore`)
++      .set('Authorization', `Bearer ${token}`)
++      .expect(200);
++
++    await request(app.getHttpServer())
++      .get(`/media/${mediaId}`)
++      .set('Authorization', `Bearer ${token}`)
++      .expect(200);
++  });
++});
+diff --git a/backend-node/test/media-repository.spec.ts b/backend-node/test/media-repository.spec.ts
+index a0c1d67..c7a1b58 100644
+--- a/backend-node/test/media-repository.spec.ts
++++ b/backend-node/test/media-repository.spec.ts
+@@ -8,13 +8,16 @@ describe('MediaRepository', () => {
+       mediaFile: {
+         create: vi.fn().mockResolvedValue({ id: 'f1' }),
+         findFirst: vi.fn().mockResolvedValue({ id: 'f1' }),
++        findUnique: vi.fn().mockResolvedValue({ id: 'f1', deletedAt: new Date() }),
+         findMany: vi.fn().mockResolvedValue([]),
+         update: vi.fn().mockResolvedValue({ id: 'f1' }),
++        count: vi.fn().mockResolvedValue(0),
+       },
+       mediaReference: {
+         create: vi.fn().mockResolvedValue({ id: 'r1' }),
+         findMany: vi.fn().mockResolvedValue([]),
+         update: vi.fn().mockResolvedValue({ id: 'r1' }),
++        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+       },
+     };
+     const repo = new MediaRepository(prisma as never);
+@@ -26,17 +29,27 @@ describe('MediaRepository', () => {
+       sizeBytes: 1,
+       sha256Hash: 'h',
+       storageProvider: 'local',
+-      relativePath: 'p',
++      relativePath: 'images/2026/08/s.jpg',
+       kind: 'image',
+       isPublic: false,
+       uploadedBy: null,
+       createdBy: null,
+-    });
++    } as never);
++    await repo.updateFile('f1', { updatedBy: 'u1' });
+     await repo.findFileById('f1');
++    await repo.findFileById('f1', { includeDeleted: true });
+     await repo.findFilesByHash('h');
+-    await repo.softDeleteFile('f1');
++    await repo.softDeleteFile('f1', 'u1');
++    await repo.restoreFile('f1', 'u1');
++    await repo.softDeleteReferencesForFile('f1');
++    await repo.listFiles({
++      where: { deletedAt: null },
++      orderBy: { createdAt: 'desc' },
++      offset: 0,
++      limit: 10,
++    });
+     await repo.createReference({
+-      mediaFileId: 'f1',
++      mediaFile: { connect: { id: 'f1' } },
+       moduleName: 'inventory',
+       entityType: 'dress',
+       entityId: 'd1',
+@@ -44,9 +57,10 @@ describe('MediaRepository', () => {
+       displayOrder: 0,
+       isPrimary: true,
+       createdBy: null,
+-    });
++    } as never);
+     await repo.listReferences({ moduleName: 'inventory', entityType: 'dress', entityId: 'd1' });
+     await repo.softDeleteReference('r1');
+     expect(prisma.mediaFile.create).toHaveBeenCalled();
++    expect(prisma.mediaReference.updateMany).toHaveBeenCalled();
+   });
+-});
+\ No newline at end of file
++});
+diff --git a/backend-node/test/media-service.spec.ts b/backend-node/test/media-service.spec.ts
+index 45ec839..add2abe 100644
+--- a/backend-node/test/media-service.spec.ts
++++ b/backend-node/test/media-service.spec.ts
+@@ -1,64 +1,297 @@
+ import 'reflect-metadata';
+-import { describe, expect, it, vi } from 'vitest';
++import { beforeEach, describe, expect, it, vi } from 'vitest';
+ import { MediaService } from '../src/media/media.service';
+ import { MEDIA_KIND } from '../src/shared/constants/business.constants';
+ import { BusinessException } from '../src/shared/errors/business.exception';
+ 
++function png1x1(): Buffer {
++  return Buffer.from(
++    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
++    'base64',
++  );
++}
++
+ describe('MediaService', () => {
+-  it('registers attaches and soft-deletes media', async () => {
+-    const repo = {
+-      createFile: vi.fn().mockResolvedValue({ id: 'f1' }),
+-      findFileById: vi.fn().mockResolvedValue({ id: 'f1' }),
+-      findFilesByHash: vi.fn().mockResolvedValue([{ id: 'f1' }]),
+-      softDeleteFile: vi.fn().mockResolvedValue({ id: 'f1', deletedAt: new Date() }),
+-      createReference: vi.fn().mockResolvedValue({ id: 'r1' }),
+-      listReferences: vi.fn().mockResolvedValue([{ id: 'r1' }]),
+-      softDeleteReference: vi.fn().mockResolvedValue({ id: 'r1' }),
++  const repo = {
++    createFile: vi.fn(),
++    updateFile: vi.fn(),
++    findFileById: vi.fn(),
++    findFilesByHash: vi.fn(),
++    softDeleteFile: vi.fn(),
++    restoreFile: vi.fn(),
++    softDeleteReferencesForFile: vi.fn(),
++    listFiles: vi.fn(),
++    createReference: vi.fn(),
++    listReferences: vi.fn(),
++    softDeleteReference: vi.fn(),
++  };
++  const storage = {
++    ensureCategoryDirectories: vi.fn(),
++    save: vi.fn(),
++    read: vi.fn(),
++    exists: vi.fn(),
++    hardDelete: vi.fn(),
++    absolutePath: vi.fn((p: string) => p),
++    buildRelativePath: vi.fn(
++      (cat: string, name: string) => `${cat}/2026/08/${name}`,
++    ),
++  };
++  const settings = {
++    getInt: vi.fn(async () => 10 * 1024 * 1024),
++    getJson: vi.fn(async (_k: string, fb: unknown) => fb),
++  };
++  const audit = {
++    recordCreate: vi.fn(),
++    recordSoftDelete: vi.fn(),
++    record: vi.fn(),
++  };
++  let service: MediaService;
++
++  beforeEach(() => {
++    vi.clearAllMocks();
++    service = new MediaService(
++      repo as never,
++      storage as never,
++      settings as never,
++      audit as never,
++    );
++    repo.createFile.mockImplementation(async (data: Record<string, unknown>) => ({
++      id: 'f1',
++      deletedAt: null,
++      createdAt: new Date(),
++      updatedAt: new Date(),
++      width: null,
++      height: null,
++      orientation: null,
++      isPublic: false,
++      uploadedBy: null,
++      createdBy: null,
++      ...data,
++    }));
++    repo.findFilesByHash.mockResolvedValue([]);
++    repo.listFiles.mockResolvedValue({ rows: [], total: 0 });
++  });
++
++  it('saves image with checksum metadata and audits', async () => {
++    const buf = png1x1();
++    const row = await service.save(
++      { buffer: buf, originalFilename: 'photo.PNG', mimeType: 'image/png' },
++      { userId: 'u1', username: 'admin' } as never,
++    );
++    expect(row.extension).toBe('png');
++    expect(row.sha256Hash).toHaveLength(64);
++    expect(storage.save).toHaveBeenCalled();
++    expect(audit.recordCreate).toHaveBeenCalled();
++    expect(service.calculateChecksum(buf)).toBe(row.sha256Hash);
++  });
++
++  it('rejects dangerous and spoofed uploads', async () => {
++    await expect(
++      service.save({
++        buffer: Buffer.from('MZ'),
++        originalFilename: 'x.exe',
++        mimeType: 'application/octet-stream',
++      }),
++    ).rejects.toBeInstanceOf(BusinessException);
++
++    await expect(
++      service.save({
++        buffer: Buffer.from('not-a-png'),
++        originalFilename: 'x.png',
++        mimeType: 'image/png',
++      }),
++    ).rejects.toBeInstanceOf(BusinessException);
++
++    await expect(
++      service.save({
++        buffer: png1x1(),
++        originalFilename: 'invoice.pdf.exe',
++        mimeType: 'application/pdf',
++      }),
++    ).rejects.toBeInstanceOf(BusinessException);
++
++    await expect(
++      service.save({
++        buffer: png1x1(),
++        originalFilename: '.hidden.png',
++        mimeType: 'image/png',
++      }),
++    ).rejects.toBeInstanceOf(BusinessException);
++
++    await expect(
++      service.save({ buffer: Buffer.alloc(0), originalFilename: 'a.png', mimeType: 'image/png' }),
++    ).rejects.toBeInstanceOf(BusinessException);
++  });
++
++  it('supports duplicate uploads by hash', async () => {
++    const buf = png1x1();
++    const a = await service.save({
++      buffer: buf,
++      originalFilename: 'a.png',
++      mimeType: 'image/png',
++    });
++    repo.createFile.mockImplementation(async (data: Record<string, unknown>) => ({
++      id: 'f2',
++      deletedAt: null,
++      createdAt: new Date(),
++      updatedAt: new Date(),
++      ...data,
++    }));
++    const b = await service.save({
++      buffer: buf,
++      originalFilename: 'b.png',
++      mimeType: 'image/png',
++    });
++    expect(a.sha256Hash).toBe(b.sha256Hash);
++    expect(a.id).not.toBe(b.id);
++  });
++
++  it('finds lists deletes restores and verifies integrity', async () => {
++    const live = {
++      id: 'f1',
++      originalFilename: 'a.png',
++      storedFilename: 'u.png',
++      extension: 'png',
++      mimeType: 'image/png',
++      sizeBytes: 10,
++      sha256Hash: service.calculateChecksum(png1x1()),
++      relativePath: 'images/2026/08/u.png',
++      kind: MEDIA_KIND.IMAGE,
++      deletedAt: null,
++      createdAt: new Date(),
++      updatedAt: new Date(),
++      width: 1,
++      height: 1,
++      orientation: null,
++      isPublic: false,
++      uploadedBy: null,
++      createdBy: null,
+     };
+-    const service = new MediaService(repo as never);
++    repo.findFileById.mockResolvedValue(live);
++    storage.exists.mockReturnValue(true);
++    storage.read.mockReturnValue(png1x1());
++
++    expect(await service.find('f1')).toEqual(live);
++    expect((await service.findPublic('f1')).checksum).toBe(live.sha256Hash);
++    expect((await service.findPublic('f1'))).not.toHaveProperty('relativePath');
++
++    const integrity = await service.verifyIntegrity('f1');
++    expect(integrity.ok).toBe(true);
++
++    storage.read.mockReturnValue(Buffer.from('tampered'));
++    const bad = await service.verifyIntegrity('f1', { userId: 'u1' } as never);
++    expect(bad.ok).toBe(false);
++    expect(audit.record).toHaveBeenCalled();
+ 
+-    const file = await service.registerFile({
+-      originalFilename: 'photo.JPG',
+-      mimeType: 'image/jpeg',
+-      sizeBytes: 100,
++    repo.softDeleteFile.mockResolvedValue({ ...live, deletedAt: new Date() });
++    await service.delete('f1', { userId: 'u1' } as never);
++    expect(repo.softDeleteReferencesForFile).toHaveBeenCalledWith('f1');
++
++    repo.findFileById.mockResolvedValue({ ...live, deletedAt: new Date() });
++    repo.restoreFile.mockResolvedValue({ ...live, deletedAt: null });
++    await service.restore('f1', { userId: 'u1' } as never);
++
++    repo.findFileById.mockResolvedValue({ ...live, deletedAt: new Date() });
++    storage.exists.mockReturnValue(false);
++    await expect(service.restore('f1')).rejects.toBeInstanceOf(BusinessException);
++
++    repo.findFileById.mockResolvedValue(live);
++    storage.exists.mockReturnValue(true);
++    expect(await service.exists('f1')).toBe(true);
++
++    repo.listFiles.mockResolvedValue({ rows: [live], total: 1 });
++    const page = await service.findMany({ q: 'a.png', offset: 0, limit: 10 });
++    expect(page.meta.total).toBe(1);
++  });
++
++  it('registers attaches and soft-deletes references', async () => {
++    repo.createFile.mockResolvedValue({ id: 'f1' });
++    repo.findFileById.mockResolvedValue({ id: 'f1' });
++    repo.findFilesByHash.mockResolvedValue([{ id: 'f1' }]);
++    repo.createReference.mockResolvedValue({ id: 'r1' });
++    repo.listReferences.mockResolvedValue([{ id: 'r1' }]);
++    repo.softDeleteReference.mockResolvedValue({ id: 'r1' });
++
++    await service.registerFile({
++      originalFilename: 'doc.txt',
++      mimeType: 'text/plain',
++      sizeBytes: 3,
+       sha256Hash: 'abc',
+-      relativePath: '2026/08/x.jpg',
+-      kind: MEDIA_KIND.IMAGE,
+-      uploadedBy: 'u1',
++      relativePath: 'documents/2026/08/x.txt',
++      kind: MEDIA_KIND.DOCUMENT,
+     });
+-    expect(file.id).toBe('f1');
+-    expect(repo.createFile).toHaveBeenCalledWith(
+-      expect.objectContaining({ extension: 'jpg', kind: 'image' }),
+-    );
+-
+-    expect(await service.getFile('f1')).toEqual({ id: 'f1' });
+-    expect(await service.findDuplicatesByHash('abc')).toHaveLength(1);
+-    await service.softDeleteFile('f1');
++    expect(storage.absolutePath).toHaveBeenCalled();
+ 
+     await service.attach({
+       mediaFileId: 'f1',
+-      moduleName: 'Inventory',
+-      entityType: 'Dress',
+-      entityId: 'd1',
+-      purpose: 'Primary',
++      moduleName: 'Customers',
++      entityType: 'Customer',
++      entityId: 'c1',
++      purpose: 'IdScan',
+     });
+-    expect(repo.createReference).toHaveBeenCalledWith(
+-      expect.objectContaining({
+-        moduleName: 'inventory',
+-        entityType: 'dress',
+-        purpose: 'primary',
+-      }),
+-    );
+-    expect(await service.listAttachments('inventory', 'dress', 'd1')).toHaveLength(1);
++    expect(repo.createReference).toHaveBeenCalled();
++    expect(await service.listAttachments('customers', 'customer', 'c1')).toHaveLength(1);
+     await service.softDeleteAttachment('r1');
+ 
+-    expect(service.inferKind('image/png')).toBe('image');
+-    expect(service.inferKind('application/pdf')).toBe('document');
+-    expect(service.inferKind('application/octet-stream')).toBe('other');
+-    expect(service.buildRelativePath('png')).toMatch(/^\d{4}\/\d{2}\/.+\.png$/);
++    expect(service.inferKind('image/jpeg')).toBe('image');
++    expect(service.buildRelativePath('pdf')).toMatch(/^documents\/\d{4}\/\d{2}\/.+\.pdf$/);
++
++    repo.findFileById.mockResolvedValue(null);
++    await expect(service.find('missing')).rejects.toBeInstanceOf(BusinessException);
++  });
++
++  it('covers aliases and softDeleteFile', async () => {
++    repo.findFileById.mockResolvedValue({ id: 'f1', deletedAt: null, relativePath: 'images/a.png' });
++    expect(await service.getFile('f1')).toEqual(expect.objectContaining({ id: 'f1' }));
++    repo.softDeleteFile.mockResolvedValue({ id: 'f1', deletedAt: new Date() });
++    repo.softDeleteReferencesForFile.mockResolvedValue({ count: 0 });
++    await service.softDeleteFile('f1');
++    expect(await service.findDuplicatesByHash('abc')).toEqual([]);
++  });
++
++  it('covers more service branches', async () => {
++    service.onModuleInit();
++    expect(storage.ensureCategoryDirectories).toHaveBeenCalled();
++
++    await expect(
++      service.save({
++        buffer: png1x1(),
++        originalFilename: 'a.png',
++        mimeType: 'image/png',
++        category: 'temp',
++      }),
++    ).resolves.toBeTruthy();
++
++    storage.save.mockImplementationOnce(() => undefined);
++    repo.createFile.mockRejectedValueOnce(new Error('db fail'));
++    await expect(
++      service.save({ buffer: png1x1(), originalFilename: 'a.png', mimeType: 'image/png' }),
++    ).rejects.toThrow(/db fail/);
++    expect(storage.hardDelete).toHaveBeenCalled();
++
++    repo.findFileById.mockResolvedValue({
++      id: 'f1',
++      deletedAt: null,
++      relativePath: 'images/x.png',
++      sha256Hash: 'abc',
++      originalFilename: 'a.png',
++      storedFilename: 'x.png',
++      extension: 'png',
++      mimeType: 'image/png',
++      sizeBytes: 1,
++      kind: 'image',
++    });
++    storage.exists.mockReturnValue(false);
++    const missingBlob = await service.verifyIntegrity('f1');
++    expect(missingBlob.ok).toBe(false);
++    expect(missingBlob.actualChecksum).toBeNull();
++
++    repo.findFileById.mockResolvedValue({ id: 'f1', deletedAt: null });
++    await expect(service.restore('f1')).rejects.toBeInstanceOf(BusinessException);
+ 
+     repo.findFileById.mockResolvedValue(null);
+-    await expect(service.getFile('missing')).rejects.toBeInstanceOf(BusinessException);
++    await expect(service.restore('missing')).rejects.toBeInstanceOf(BusinessException);
++    expect(await service.exists('missing')).toBe(false);
+ 
+     await expect(
+       service.registerFile({
+@@ -66,9 +299,30 @@ describe('MediaService', () => {
+         mimeType: 'x',
+         sizeBytes: 1,
+         sha256Hash: 'h',
+-        relativePath: 'p',
++        relativePath: 'documents/2026/08/x.bin',
+         kind: 'nope' as never,
+       }),
+     ).rejects.toBeInstanceOf(BusinessException);
++
++    expect(service.inferKind('text/plain')).toBe('document');
++    expect(service.inferKind('application/octet-stream')).toBe('other');
++
++    repo.listFiles.mockResolvedValue({ rows: [], total: 0 });
++    settings.getJson.mockResolvedValueOnce([]);
++    await service.save({
++      buffer: png1x1(),
++      originalFilename: 'fallback.png',
++      mimeType: 'image/png',
++    });
++
++    await service.findMany({
++      kind: 'image',
++      extension: 'png',
++      mimeType: 'image/png',
++      deleted: true,
++      sortBy: 'sizeBytes',
++      sortDir: 'asc',
++      q: 'abc',
++    });
+   });
+-});
+\ No newline at end of file
++});
+diff --git a/backend-node/test/media-validation.spec.ts b/backend-node/test/media-validation.spec.ts
+new file mode 100644
+index 0000000..790040c
+--- /dev/null
++++ b/backend-node/test/media-validation.spec.ts
+@@ -0,0 +1,108 @@
++import { describe, expect, it } from 'vitest';
++import { calculateChecksum } from '../src/media/media.checksum';
++import { readImageMetadata } from '../src/media/media.image-meta';
++import {
++  assertAllowedExtension,
++  assertContentMatchesExtension,
++  assertMimeMatchesExtension,
++  extractExtension,
++  sanitizeOriginalFilename,
++} from '../src/media/media.validation';
++import { BusinessException } from '../src/shared/errors/business.exception';
++import { LocalStorageProvider } from '../src/media/providers/local-storage.provider';
++import { mkdtempSync, rmSync, mkdirSync } from 'node:fs';
++import { join } from 'node:path';
++import { tmpdir } from 'node:os';
++
++describe('media validation and checksum', () => {
++  it('sanitizes names and rejects path tricks', () => {
++    expect(sanitizeOriginalFilename('C:\\tmp\\a.PNG')).toBe('a.PNG');
++    expect(extractExtension('a.b.png')).toBe('png');
++    expect(() => extractExtension('x.exe')).toThrow(BusinessException);
++    expect(() => extractExtension('x.pdf.exe')).toThrow(BusinessException);
++    expect(() => sanitizeOriginalFilename('.env')).toThrow(BusinessException);
++    expect(() => extractExtension('noext')).toThrow(BusinessException);
++    expect(() => extractExtension('a.toolongextensionx')).toThrow(BusinessException);
++    expect(() => sanitizeOriginalFilename('..')).toThrow(BusinessException);
++  });
++
++  it('checksums and content sniffing', () => {
++    const png = Buffer.from(
++      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
++      'base64',
++    );
++    expect(calculateChecksum(png)).toHaveLength(64);
++    const meta = readImageMetadata(png, 'png');
++    expect(meta.width).toBe(1);
++    expect(meta.height).toBe(1);
++    assertContentMatchesExtension(png, 'png');
++    assertContentMatchesExtension(Buffer.from('%PDF-1.4'), 'pdf');
++    assertContentMatchesExtension(Buffer.from('hello,world'), 'csv');
++    expect(() => assertContentMatchesExtension(Buffer.from('nope'), 'png')).toThrow(
++      BusinessException,
++    );
++
++    expect(() => assertAllowedExtension('xyz', ['png'])).toThrow(BusinessException);
++    expect(() =>
++      assertMimeMatchesExtension('png', 'image/jpeg', ['image/jpeg', 'image/png']),
++    ).toThrow(BusinessException);
++    expect(() => assertMimeMatchesExtension('png', '', ['image/png'])).toThrow(BusinessException);
++    expect(() => assertMimeMatchesExtension('png', 'image\\png', ['image/png'])).toThrow(
++      BusinessException,
++    );
++    expect(() => assertMimeMatchesExtension('png', 'image/gif', ['image/png'])).toThrow(
++      BusinessException,
++    );
++    assertMimeMatchesExtension('png', 'image/png', ['image/png']);
++
++    assertContentMatchesExtension(Buffer.from([0xff, 0xd8, 0xff, 0xe0]), 'jpg');
++    assertContentMatchesExtension(Buffer.from('GIF89a........'), 'gif');
++    assertContentMatchesExtension(Buffer.from('BM........'), 'bmp');
++    const webp = Buffer.alloc(12);
++    webp.write('RIFF', 0);
++    webp.write('WEBP', 8);
++    assertContentMatchesExtension(webp, 'webp');
++    assertContentMatchesExtension(Buffer.from([0x50, 0x4b, 0x03, 0x04]), 'docx');
++    assertContentMatchesExtension(Buffer.from('plain'), 'txt');
++    expect(() => assertContentMatchesExtension(Buffer.from([0, 1, 2]), 'txt')).toThrow(
++      BusinessException,
++    );
++    expect(() => assertContentMatchesExtension(Buffer.from('x'), 'bin')).toThrow(BusinessException);
++  });
++});
++
++describe('LocalStorageProvider filesystem', () => {
++  it('writes reads and blocks traversal', async () => {
++    const root = mkdtempSync(join(tmpdir(), 'juman-media-'));
++    mkdirSync(join(root, 'images'), { recursive: true });
++    const config = { getOrThrow: () => ({ storageDir: root }) };
++    const provider = new LocalStorageProvider(config as never);
++    provider.ensureCategoryDirectories();
++    const rel = provider.buildRelativePath('images', 'abc.png');
++    provider.save(rel, Buffer.from('hi'));
++    expect(provider.exists(rel)).toBe(true);
++    expect(provider.read(rel).toString()).toBe('hi');
++    expect(() => provider.absolutePath('../etc/passwd')).toThrow(BusinessException);
++    expect(() => provider.absolutePath('images/../../secret')).toThrow(BusinessException);
++    expect(() => provider.absolutePath('/abs')).toThrow(BusinessException);
++    expect(() => provider.buildRelativePath('nope' as never, 'a.png')).toThrow(BusinessException);
++    expect(() => provider.read('images/missing.png')).toThrow(BusinessException);
++    expect(() => provider.buildRelativePath('images', '../x.png')).toThrow(BusinessException);
++    const streamRel = provider.buildRelativePath('images', 'stream.png');
++    provider.save(streamRel, Buffer.from('stream-data'));
++    const stream = provider.openReadStream(streamRel);
++    expect(stream).toBeTruthy();
++    await new Promise<void>((resolve, reject) => {
++      stream.on('error', reject);
++      stream.on('readable', () => {
++        stream.read();
++      });
++      stream.on('end', () => resolve());
++      stream.resume();
++    });
++    provider.hardDelete(rel);
++    expect(provider.exists(rel)).toBe(false);
++    provider.hardDelete(streamRel);
++    rmSync(root, { recursive: true, force: true });
++  });
++});
+diff --git a/backend-node/vitest.media.config.ts b/backend-node/vitest.media.config.ts
+new file mode 100644
+index 0000000..0d216da
+--- /dev/null
++++ b/backend-node/vitest.media.config.ts
+@@ -0,0 +1,34 @@
++import swc from 'unplugin-swc';
++import { defineConfig } from 'vitest/config';
++
++/** Coverage gate for Media domain (>=95%). */
++export default defineConfig({
++  plugins: [
++    swc.vite({
++      jsc: {
++        target: 'es2022',
++        parser: { syntax: 'typescript', decorators: true },
++        transform: { legacyDecorator: true, decoratorMetadata: true },
++      },
++      module: { type: 'es6' },
++    }),
++  ],
++  test: {
++    include: ['test/media-*.spec.ts'],
++    environment: 'node',
++    setupFiles: ['test/setup.ts'],
++    coverage: {
++      provider: 'v8',
++      reportsDirectory: './coverage-media',
++      reporter: ['text', 'text-summary', 'json-summary'],
++      include: ['src/media/**/*.ts'],
++      exclude: ['**/*.module.ts', '**/dto/**', '**/media.controller.ts'],
++      thresholds: {
++        lines: 95,
++        functions: 95,
++        branches: 80,
++        statements: 95,
++      },
++    },
++  },
++});
+diff --git a/docs/backend-v2/Architecture.md b/docs/backend-v2/Architecture.md
+index d43b49a..b48965a 100644
+--- a/docs/backend-v2/Architecture.md
++++ b/docs/backend-v2/Architecture.md
+@@ -1,6 +1,6 @@
+ # Backend V2 Architecture
+ 
+-**Status:** Phase 3.2 Customer Domain  
++**Status:** Phase 3.3 Media & Attachments  
+ **Branch:** `backend-v2`  
+ **Spec source:** `backend-python/` (read-only Python FastAPI stack)
+ 
+@@ -103,3 +103,8 @@ First business module: `src/customers` over Prisma `Customer`.
+ - Audit via `AuditService` (create/update/soft_delete/restore; optional view)
+ - Attachments deferred to shared `MediaReference` (no CustomerAttachment table)
+ - Docs: `CustomerDomain.md`, `CustomerAPI.md`
++
++
++## Media domain (Phase 3.3)
++
++Reusable `MediaModule` is the only blob store. Domain modules attach via `MediaReference`. Soft-delete keeps bytes for restore. Docs: `MediaDomain.md`.
+diff --git a/docs/backend-v2/DecisionLog.md b/docs/backend-v2/DecisionLog.md
+index 8f441f9..666b9c5 100644
+--- a/docs/backend-v2/DecisionLog.md
++++ b/docs/backend-v2/DecisionLog.md
+@@ -92,3 +92,11 @@
+ - **Context:** First business module after shared foundation; Python V1 allows duplicate phones and has no restore/city.
+ - **Decision:** Implement Nest `CustomersModule` with Prisma `Customer` (soft delete, restore, city, status, normalized phones). Block duplicate **active** primary phones. Reuse shared Audit/Settings/SequenceCounter/phone/pagination. No CustomerAttachment/CustomerAudit/CustomerNote tables ? use shared media/audit and a notes column. Permissions remain singular `customer.*` (+ `customer.restore`). HTTP under `/customers` without `/api/v1`.
+ - **Consequences:** Categories/settings HTTP still pending; inventory blocked. Coverage gate `pnpm test:cov:customers` ?95%.
++
++## ADR-V2-013 - Media subsystem (Phase 3.3)
++
++- **Date:** 2026-08-02
++- **Status:** Accepted
++- **Context:** Every future module needs files; duplicating attachment tables or ad-hoc disk writes would freeze technical debt.
++- **Decision:** Extend Phase 3.1 `MediaModule` into the sole blob authority: typed storage categories under configured `storage/`, SHA-256 checksums, MIME/magic validation, soft-delete **keeping** blobs for restore, polymorphic `MediaReference` only. HTTP under `/media` without exposing absolute paths. No thumbnails/camera/cloud yet.
++- **Consequences:** Inventory/rentals must attach Media IDs. Coverage gate `pnpm test:cov:media` ?95%. Download streaming HTTP can follow without schema changes.
+diff --git a/docs/backend-v2/DevelopmentRoadmap.md b/docs/backend-v2/DevelopmentRoadmap.md
+index fd85377..8cd11c2 100644
+--- a/docs/backend-v2/DevelopmentRoadmap.md
++++ b/docs/backend-v2/DevelopmentRoadmap.md
+@@ -5,7 +5,7 @@
+ | 0 | Architecture | Docs, branch, rename, canvas |
+ | 1 | Foundation | Nest + Prisma + SQLite + `/health` |
+ | 2 | Identity & Security | Auth + audit remediation |
+-| 3 | Core Business | **3.1 shared** ? **3.2 customers DONE** ? categories/settings HTTP |
++| 3 | Core Business | **3.1?3.3 DONE** (shared ? customers ? media) ? categories/settings HTTP |
+ | 4 | Inventory Engine | Dresses / inventory |
+ | 5 | Rental Engine | Reservations ? returns |
+ | 6 | Financial Engine | Sales, settlements, payments |
+@@ -16,8 +16,8 @@
+ 
+ ## Current milestone
+ 
+-**Phase 3.2 Customer Domain complete.**  
+-Docs: `CustomerDomain.md`, `CustomerAPI.md`, `SharedFoundation.md`.
++**Phase 3.3 Media & Attachments complete.**  
++Docs: `MediaDomain.md`, `CustomerDomain.md`, `SharedFoundation.md`.
+ 
+ **Next (requires approval):** categories / settings HTTP ? still no inventory/rentals/sales.
+ 
+diff --git a/docs/backend-v2/FolderStructure.md b/docs/backend-v2/FolderStructure.md
+index 8bd1b1a..346e0a6 100644
+--- a/docs/backend-v2/FolderStructure.md
++++ b/docs/backend-v2/FolderStructure.md
+@@ -41,6 +41,7 @@ backend-node/
+     media/
+     barcode/
+     customers/          # Phase 3.2
++    media/              # Phase 3.3 (providers, validation, HTTP)
+   test/
+   package.json
+ ```
+diff --git a/docs/backend-v2/MediaDomain.md b/docs/backend-v2/MediaDomain.md
+new file mode 100644
+index 0000000..8fe2c99
+--- /dev/null
++++ b/docs/backend-v2/MediaDomain.md
+@@ -0,0 +1,67 @@
++# Backend V2 Media Domain (Phase 3.3)
++
++**Branch:** `backend-v2`  
++**Module:** `backend-node/src/media`  
++**Role:** Single source of truth for every file stored by Juman.
++
++## Scope
++
++Generic media management ? images, PDFs, Office docs, text/CSV.  
++No inventory/customer/rental business logic. Future modules store **Media IDs** only and attach via `MediaReference`.
++
++## Storage layout
++
++Configured root: `{JUMAN_DATA_DIR}/storage` (never hard-coded).
++
++```
++storage/
++  images/
++  documents/
++  temp/
++  thumbnails/   # reserved (no generation yet)
++  imports/
++  exports/
++```
++
++Blob relative keys: `{category}/{yyyy}/{mm}/{uuid}.{ext}`.
++
++## Model
++
++`MediaFile` ? UUID, original/stored filename, extension, MIME, sizeBytes, sha256Hash (checksum), width/height/orientation, relativePath, kind, soft-delete + actors.
++
++`MediaReference` ? polymorphic link (`moduleName`, `entityType`, `entityId`, `purpose`) ? no per-domain attachment tables.
++
++## Service API
++
++`save` ? `delete` ? `restore` ? `find` ? `findMany` ? `verifyIntegrity` ? `exists` ? `calculateChecksum` ? `attach` / `listAttachments`
++
++Soft delete **keeps** blobs so restore works. Integrity failures are audited.
++
++## HTTP
++
++| Method | Path | Permission |
++|--------|------|------------|
++| POST | /media | media.upload |
++| GET | /media | media.view |
++| GET | /media/:id | media.view |
++| GET | /media/:id/integrity | media.view |
++| DELETE | /media/:id | media.delete |
++| POST | /media/:id/restore | media.restore |
++
++Responses never include absolute filesystem paths (checksum exposed as `checksum`).
++
++## Security
++
++Rejects path traversal, hidden names, double dangerous extensions, executables, MIME/extension mismatch, magic-byte spoofing, oversized uploads.
++
++## Coverage
++
++```bash
++pnpm test:cov:media
++```
++
++## Known limitations
++
++- Thumbnails / camera / cloud providers not implemented (architecture reserved).
++- Download streaming endpoint deferred (metadata + integrity only on HTTP for now; `LocalStorageProvider.openReadStream` ready).
++- Orientation only extracted for JPEG EXIF when present.
+diff --git a/docs/backend-v2/PROGRESS.md b/docs/backend-v2/PROGRESS.md
+index c236375..fcd71bf 100644
+--- a/docs/backend-v2/PROGRESS.md
++++ b/docs/backend-v2/PROGRESS.md
+@@ -1,7 +1,7 @@
+ # Backend V2 Progress Canvas
+ 
+ **Live canvas:** `juman-backend-v2-roadmap.canvas.tsx`  
+-**Branch:** `backend-v2` ? **Updated:** 2026-08-02 ? **Overall ~35%**
++**Branch:** `backend-v2` ? **Updated:** 2026-08-02 ? **Overall ~42%**
+ 
+ ```
+ Phase 0  Architecture                    DONE
+@@ -11,8 +11,9 @@ Phase 2  Identity & Security
+ Phase 3  Core Business
+          3.1 Shared business foundation  DONE
+          3.2 Customers                   DONE
++         3.3 Media & attachments         DONE
+          3.x Categories / settings HTTP  WAITING APPROVAL
+ Phase 4+ Inventory / Rentals / Sales     BLOCKED until approved
+ ```
+ 
+-**YOU ARE HERE:** After Phase 3.2 Customer domain. Do not implement inventory, rentals, sales, or reports until explicit approval.
++**YOU ARE HERE:** After Phase 3.3 Media. Do not implement inventory, rentals, sales, camera, thumbnails, or cloud storage until explicit approval.
+diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
+index e1fac21..9f05a65 100644
+--- a/pnpm-lock.yaml
++++ b/pnpm-lock.yaml
+@@ -47,6 +47,9 @@ importers:
+       dotenv:
+         specifier: 17.4.2
+         version: 17.4.2
++      multer:
++        specifier: 2.0.2
++        version: 2.0.2
+       passport:
+         specifier: 0.7.0
+         version: 0.7.0
+@@ -78,6 +81,9 @@ importers:
+       '@types/express':
+         specifier: 5.0.6
+         version: 5.0.6
++      '@types/multer':
++        specifier: 1.4.13
++        version: 1.4.13
+       '@types/node':
+         specifier: 22.20.1
+         version: 22.20.1
+@@ -2322,6 +2328,9 @@ packages:
+   '@types/ms@2.1.0':
+     resolution: {integrity: sha512-GsCCIZDE/p3i96vtEqx+7dBUGXrc7zeSK3wwPHIaRThS+9OhWIXRqzs4d6k1SVU8g91DrNRWxWUGhp5KXQb2VA==}
+ 
++  '@types/multer@1.4.13':
++    resolution: {integrity: sha512-bhhdtPw7JqCiEfC9Jimx5LqX9BDIPJEh2q/fQ4bqbBPtyEZYr3cvF22NwG0DmPZNYA0CAf2CnqDB4KIGGpJcaw==}
++
+   '@types/node@22.20.1':
+     resolution: {integrity: sha512-EANqOCF9QFyra+4pfxUcX9STKJpCLjMbObVzljIJomAWSnuSIEAvyzEU53GaajbXJEgdh0iEcPL+DGvpUd4k1Q==}
+ 
+@@ -4196,6 +4205,10 @@ packages:
+   ms@2.1.3:
+     resolution: {integrity: sha512-6FlzubTLZG3J2a/NVCAleEhjzq5oxgHyaCU9yYXvcLsvoVaHJq/s5xXI6/XXP6tz7R9xAOtHnSO/tXtF3WRTlA==}
+ 
++  multer@2.0.2:
++    resolution: {integrity: sha512-u7f2xaZ/UG8oLXHvtF/oWTRvT44p9ecwBBqTwgJVq0+4BW1g8OW01TyMEGWBHbyMOYVHXslaut7qEQ1meATXgw==}
++    engines: {node: '>= 10.16.0'}
++
+   multer@2.2.0:
+     resolution: {integrity: sha512-6rdyFg2kLrMh9Jee7/BMPuV9lEAd7lLW2YUpF9/YxR7njyoUwwQ0ZPh3TaIY50Sw6vlyD2HW3wGOkTS4P79xrQ==}
+     engines: {node: '>= 10.16.0'}
+@@ -5470,6 +5483,10 @@ packages:
+   xmlchars@2.2.0:
+     resolution: {integrity: sha512-JZnDKK8B0RCDw84FNdDAIpZK+JuJw+s7Lz8nksI7SIuU3UXJJslUthsi+uWBUYOwPFwW7W7PRLRfUKpxjtjFCw==}
+ 
++  xtend@4.0.2:
++    resolution: {integrity: sha512-LKYU1iAXJXUgAXn9URjiu+MWhyUXHsvfp7mcuYm9dSUKK0/CjtrUwFAxD82/mCWbtLsGjFIad0wIsod4zrTAEQ==}
++    engines: {node: '>=0.4'}
++
+   y18n@5.0.8:
+     resolution: {integrity: sha512-0pfFzegeDWJHJIAmTLRP2DwHjdF5s7jo9tuztdQxAhINCdvS+3nGINqPd00AphqJR/0LhANUS6/+7SCb98YOfA==}
+     engines: {node: '>=10'}
+@@ -7396,6 +7413,10 @@ snapshots:
+ 
+   '@types/ms@2.1.0': {}
+ 
++  '@types/multer@1.4.13':
++    dependencies:
++      '@types/express': 5.0.6
++
+   '@types/node@22.20.1':
+     dependencies:
+       undici-types: 6.21.0
+@@ -9480,6 +9501,16 @@ snapshots:
+ 
+   ms@2.1.3: {}
+ 
++  multer@2.0.2:
++    dependencies:
++      append-field: 1.0.0
++      busboy: 1.6.0
++      concat-stream: 2.0.0
++      mkdirp: 0.5.6
++      object-assign: 4.1.1
++      type-is: 1.6.18
++      xtend: 4.0.2
++
+   multer@2.2.0:
+     dependencies:
+       append-field: 1.0.0
+@@ -10753,6 +10784,8 @@ snapshots:
+ 
+   xmlchars@2.2.0: {}
+ 
++  xtend@4.0.2: {}
++
+   y18n@5.0.8: {}
+ 
+   yallist@3.1.1: {}
+-- 
+2.55.0.windows.2
+

@@ -320,105 +320,79 @@ The system is developed **incrementally**. Each backend module plugs into the fo
 
 ## Architecture
 
-Backend lives in [`backend-python/`](backend-python/) (V1 spec, read-only on `backend-v2`) and follows Clean Architecture with DDD modular packaging.
+**Authoritative backend:** [`backend-node/`](backend-node/) — NestJS + Prisma + SQLite (V2).  
+Python FastAPI (`backend-python/`) has been **removed** from the repository (2026-08-04).
 
 ```text
-backend/
-├── alembic/                 # Async migrations
-├── app/
-│   ├── api/                 # Versioned HTTP routers
-│   ├── common/              # Mixins, shared enums
-│   ├── config/              # pydantic-settings + production validation
-│   ├── core/                # App identity + lifespan
-│   ├── database/            # Engine, session, Base, Redis
-│   ├── dependencies/        # FastAPI DI providers
-│   ├── exceptions/          # Error taxonomy + handlers
-│   ├── middleware/          # Request ID, timing
-│   ├── models/              # Abstract audited base only
-│   ├── modules/             # Bounded contexts (settings, rbac, …)
-│   ├── repositories/        # Generic AsyncRepository
-│   ├── schemas/             # Shared API DTOs
-│   ├── security/            # JWT, Argon2, auth contracts
-│   ├── services/            # BaseService
-│   ├── utils/               # Logging, datetime
-│   └── main.py              # Application factory
-├── docs/                    # Setup / structure / architecture notes
-├── tests/                   # Foundation + module tests
-├── .env.example
-├── pyproject.toml
-└── README.md
+backend-node/
+├── prisma/                  # Schema + migrations
+├── src/
+│   ├── auth/                # JWT sessions, login history
+│   ├── customers/
+│   ├── inventory/           # Items, taxonomy, lifecycle
+│   ├── rentals/ · reservations/
+│   ├── finance/             # Ledger + settlements
+│   ├── media/ · barcode/ · reports/
+│   ├── database/            # PrismaService
+│   └── main.ts
+├── docs/ (see docs/backend-v2/)
+└── package.json
 ```
 
-Living status docs: [`PROJECT_STATUS.md`](PROJECT_STATUS.md) · [`CHANGELOG.md`](CHANGELOG.md)
+Living status docs: [`PROJECT_STATUS.md`](PROJECT_STATUS.md) · [`CHANGELOG.md`](CHANGELOG.md) · [`docs/backend-v2/`](docs/backend-v2/)
 
 ### Top-level folders
 
 | Path | Purpose |
 |---|---|
-| `backend-python/app/api` | HTTP presentation; versioned `/api/v1` surface |
-| `backend-python/app/modules` | Business bounded contexts (plug-in modules) |
-| `backend-python/app/common` | Shared mixins (`UUID`, timestamps, audit, soft delete) |
-| `backend-python/app/config` | Environment configuration |
-| `backend-python/app/database` | SQLAlchemy async engine/session and Redis client |
-| `backend-python/app/repositories` | Persistence abstractions |
-| `backend-python/app/services` | Application service base |
-| `backend-python/app/security` | Auth primitives (JWT/Argon2) used by Identity |
-| `backend-python/alembic` | Schema migrations and seeds |
-| `backend-python/tests` | Automated tests |
-| `backend-python/docs` | Backend operator documentation |
+| `backend-node/` | NestJS V2 API (Prisma + SQLite) — **source of truth** |
+| `frontend-legacy/` | Electron + React product UI (Phase 2 parity) |
+| `frontend/` | Phase 1 shell rebuild (optional / future) |
+| `docs/backend-v2/` | Nest architecture, domains, roadmap |
+| `docs/frontend/` | Frontend maps, gap analysis, progress |
+| `deployment/` | Installer / packaging (Python staging scripts retired) |
+| `start-dev.bat` | Local Nest + Electron launcher |
 
-### Dependency flow
+### Dependency flow (Nest)
 
-1. Routers → dependencies / services / schemas  
-2. Services → repositories / exceptions  
-3. Repositories → models / database  
-4. Modules may import foundation; foundation must **not** import modules  
-5. Composition root (`api/v1/router.py`, Alembic `env.py`) registers modules  
+1. Controllers → services → repositories → Prisma  
+2. Domain modules own invariants; finance/settlement formulas stay in Nest  
+3. Electron Main owns HTTP to Nest (`JUMAN_API_BASE_URL`); renderer uses `apiClient` / `services/v2`
 
 ---
 
 ## Technology Stack
 
-### Frontend (planned)
+### Frontend
 
-- Electron
-- React
-- TypeScript
-- Arabic RTL UI
+- Electron + React + TypeScript (Arabic RTL)
 
 ### Backend
 
-- Python 3.13+
-- FastAPI
-- SQLAlchemy 2.0 (async) + asyncpg
-- Alembic
-- Pydantic v2 + pydantic-settings
-- uv
+- NestJS (TypeScript)
+- Prisma ORM
+- SQLite (desktop single-writer; WAL)
 
 ### Database
 
-- PostgreSQL
+- SQLite → `data/juman.db` under `JUMAN_DATA_DIR`
 
 ### Authentication / Authorization
 
-- JWT access tokens + opaque refresh tokens (session-bound)
+- JWT access + refresh (Electron Main owns tokens)
 - Argon2 password hashing
-- Database-driven RBAC (roles & permissions)
-- Application login: `POST /api/v1/login|refresh|logout|logout-all`, `GET|PATCH /api/v1/me`
-- Settings, RBAC, Media, and Users APIs require Bearer + matching permissions
+- Seeded RBAC permissions on Nest
+- Default bind: `http://127.0.0.1:8787` (no `/api/v1` prefix)
 
 ### Testing
 
-- pytest
-- pytest-asyncio
-- httpx (API tests)
-- aiosqlite (in-memory module tests)
+- Vitest (backend-node + frontend)
 
 ### Tooling
 
-- uv
-- Ruff
-- Alembic CLI
+- pnpm
+- Prisma CLI (`migrate deploy` / `generate`)
+- `start-dev.bat` for local Nest + Electron
 
 ---
 
@@ -491,35 +465,28 @@ Frontend (Electron): **~15%** (foundation complete; no business UI yet)
 
 ## Backend Quick Start
 
-```bash
-cd backend-python
-cp .env.example .env
-# Set SECRET_KEY and DATABASE_URL
-
-uv sync
-uv run alembic upgrade head
-uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```powershell
+cd backend-node
+$env:JUMAN_DATA_DIR = "C:\Users\moham\Desktop\juman"   # repo root
+$env:DATABASE_URL = "file:C:/Users/moham/Desktop/juman/data/juman.db"
+pnpm prisma:generate
+pnpm start:dev
 ```
 
-- Health: `http://127.0.0.1:8000/api/v1/health`
-- Auth: `http://127.0.0.1:8000/api/v1/auth/login`
-- Settings: `http://127.0.0.1:8000/api/v1/settings`
-- Permissions: `http://127.0.0.1:8000/api/v1/permissions`
-- Roles: `http://127.0.0.1:8000/api/v1/roles`
-- Media: `http://127.0.0.1:8000/api/v1/media/files`
-- OpenAPI (non-production): `http://127.0.0.1:8000/docs`
+Or double-click [`start-dev.bat`](start-dev.bat) (Nest + Electron).
 
+- Health: `http://127.0.0.1:8787/health`
+- Docs: [`docs/backend-v2/Architecture.md`](docs/backend-v2/Architecture.md) · [`backend-node/README.md`](backend-node/README.md)
 
 ### Frontend (dev)
 
-```bash
-pnpm install
-pnpm --filter @juman/frontend dev
+```powershell
+cd frontend-legacy
+$env:JUMAN_API_BASE_URL = "http://127.0.0.1:8787"
+pnpm dev
 ```
 
-Docs: [`docs/frontend/architecture.md`](docs/frontend/architecture.md)
-
-More detail: [`backend-python/docs/setup.md`](backend/docs/setup.md)
+Docs: [`docs/frontend/`](docs/frontend/)
 
 ---
 
@@ -576,7 +543,7 @@ Interactive report: [`juman-foundation-verification.canvas.tsx`](C:/Users/moham/
 - Audit module completed; Identity Phases 1–7 application auth live.
 - Foundation Version 0.1 integration verified (Settings, RBAC, Identity, Media).
 - Media module completed; Alembic asyncpg seed bind fix for fresh upgrades.
-- Docs refreshed (`backend-python/docs/*`, `PROJECT_STATUS.md`, `CHANGELOG.md`, root `README.md`).
+- Docs refreshed for Nest V2 (`docs/backend-v2/*`, `PROJECT_STATUS.md`, `CHANGELOG.md`, root `README.md`).
 - Backend Foundation, Settings, and RBAC modules completed earlier.
 - Production config validation; Alembic-only settings seeds; RBAC permission helpers consolidated.
 

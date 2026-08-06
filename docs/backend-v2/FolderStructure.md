@@ -4,13 +4,16 @@
 
 ```
 juman/
-  backend-python/     # READ ONLY — Python V1 specification
-  backend-node/       # NestJS + Prisma + SQLite (V2)
-  frontend/
+  backend-node/       # NestJS + Prisma + SQLite (V2) — only backend
+  frontend-legacy/    # Electron product UI
+  frontend/           # Phase 1 shell (optional rebuild)
   docs/backend-v2/
-  installer/
+  docs/frontend/
   deployment/
+  start-dev.bat
 ```
+
+> `backend-python/` was removed 2026-08-04.
 
 ## `backend-node/` (Phase 2.1)
 

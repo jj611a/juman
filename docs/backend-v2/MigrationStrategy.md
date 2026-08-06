@@ -1,34 +1,29 @@
 # Backend V2 Migration Strategy
 
-This is **not** a code migration. Python is the specification.
+**Update (2026-08-04):** `backend-python/` has been **removed** from the repository. Nest `backend-node/` is the only backend source of truth.
 
-## Flow per module
+Historical context (for docs / ADRs that still mention Python):
+
+## Former flow per module
 
 ```
-Python backend-python
+Python backend-python (removed)
         ↓
 Analyze behavior (routes, invariants, edge cases, tests)
         ↓
 Reimplement cleanly in Nest + Prisma + SQLite
         ↓
 Verify behavior (automated + manual parity)
-        ↓
-Mark module completed on V2 roadmap canvas
 ```
 
-## Rules
+## Rules (current)
 
-1. Do not copy Python code into TypeScript.
-2. Do not delete `backend-python/` until **all** modules reach parity.
-3. Prefer behavioral tests extracted from Python suites as acceptance criteria.
-4. SQLite schema is designed for desktop single-writer workloads; do not assume Postgres features.
-5. Installer cutover happens only after Phase 8–10 gates.
+1. Do not revive FastAPI / SQLAlchemy / Alembic / uv packaging paths.
+2. Do not invent Nest HTTP for domains that were never shipped on V2 without product approval.
+3. SQLite schema is designed for desktop single-writer workloads.
+4. Installer cutover (Phase 8.2+) must stage **Nest**, not Python `juman-api.exe`.
 
-## Cutover
-
-Only after full parity may `backend-python/` be archived (e.g. moved to `archive/` or removed in a dedicated release decision). Until then it remains read-only documentation.
-
-## Schema migrations (Nest packaging)
+## Schema migrations (Nest)
 
 1. Prefer `prisma migrate deploy` for all environments (including tests / CI).
 2. Ban `prisma db push` for application startup and CI proof of schema.

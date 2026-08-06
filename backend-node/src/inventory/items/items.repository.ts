@@ -306,6 +306,38 @@ export class ItemsRepository {
     });
   }
 
+  /**
+   * Activate a reserved platform barcode and bind it as item primary.
+   * Caller must ensure the item has no live ItemBarcode rows.
+   */
+  async attachBarcodeAtomic(
+    itemId: string,
+    barcodeId: string,
+    userId?: string | null,
+  ) {
+    await this.prisma.$transaction(async (tx) => {
+      await tx.barcode.update({
+        where: { id: barcodeId },
+        data: {
+          status: BARCODE_STATUS.ACTIVATED,
+          entityType: ITEM_ENTITY,
+          entityId: itemId,
+          activatedAt: new Date(),
+          updatedBy: userId ?? null,
+        },
+      });
+      await tx.itemBarcode.create({
+        data: {
+          itemId,
+          barcodeId,
+          isPrimary: true,
+          createdBy: userId ?? null,
+        },
+      });
+    });
+    return this.findById(itemId);
+  }
+
   async listMediaForItem(itemId: string): Promise<ItemMediaAttachment[]> {
     const refs = await this.prisma.mediaReference.findMany({
       where: {

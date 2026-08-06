@@ -1,0 +1,3453 @@
+From 934744e315f0420c714bb5cf3b761de4925f0c82 Mon Sep 17 00:00:00 2001
+From: jj611a <jj611a@gmail.com>
+Date: Sun, 2 Aug 2026 11:21:03 +0300
+Subject: [PATCH] feat(v2-inventory): implement catalog engine
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Generic Item catalog with taxonomy, soft delete/restore, and Media/Barcode platform binds — no rental or reservation workflows.
+
+Co-authored-by: Cursor <cursoragent@cursor.com>
+---
+ backend-node/package.json                     |   3 +-
+ .../migration.sql                             | 157 +++++++++
+ backend-node/prisma/schema.prisma             | 175 +++++++++-
+ backend-node/src/app.module.ts                |   2 +
+ .../src/inventory/brands/brands.controller.ts |  69 ++++
+ .../src/inventory/brands/brands.repository.ts |   9 +
+ .../src/inventory/brands/brands.service.ts    |  10 +
+ .../src/inventory/brands/dto/brand.dto.ts     |  58 +++
+ .../categories/categories.controller.ts       |  69 ++++
+ .../categories/categories.repository.ts       |   9 +
+ .../categories/categories.service.ts          |  10 +
+ .../inventory/categories/dto/category.dto.ts  |  62 ++++
+ .../src/inventory/colors/colors.controller.ts |  69 ++++
+ .../src/inventory/colors/colors.repository.ts |   9 +
+ .../src/inventory/colors/colors.service.ts    |  10 +
+ .../src/inventory/colors/dto/color.dto.ts     |  58 +++
+ .../src/inventory/inventory.constants.ts      |  51 +++
+ .../src/inventory/inventory.module.ts         |  45 +++
+ backend-node/src/inventory/inventory.types.ts |  89 +++++
+ .../src/inventory/items/dto/item.dto.ts       | 210 +++++++++++
+ .../src/inventory/items/items.controller.ts   |  95 +++++
+ .../src/inventory/items/items.mapper.ts       |  45 +++
+ .../src/inventory/items/items.repository.ts   | 114 ++++++
+ .../src/inventory/items/items.service.ts      | 330 ++++++++++++++++++
+ .../src/inventory/sizes/dto/size.dto.ts       |  58 +++
+ .../src/inventory/sizes/sizes.controller.ts   |  69 ++++
+ .../src/inventory/sizes/sizes.repository.ts   |   9 +
+ .../src/inventory/sizes/sizes.service.ts      |  10 +
+ backend-node/src/inventory/taxonomy.ts        | 246 +++++++++++++
+ .../src/permissions/permission.seeds.ts       |   4 +
+ backend-node/src/settings/settings.seeds.ts   |   4 +
+ .../test/inventory-controllers.spec.ts        |  61 ++++
+ .../test/inventory-integration.spec.ts        | 206 +++++++++++
+ .../test/inventory-items-service.spec.ts      | 206 +++++++++++
+ .../test/inventory-repository.spec.ts         |  76 ++++
+ .../test/inventory-taxonomy-service.spec.ts   | 147 ++++++++
+ backend-node/vitest.inventory.config.ts       |   1 +
+ docs/JUMAN_MASTER_ROADMAP.md                  |  17 +-
+ docs/backend-v2/Architecture.md               |  10 +-
+ docs/backend-v2/DecisionLog.md                |   8 +
+ docs/backend-v2/DevelopmentRoadmap.md         |   8 +-
+ docs/backend-v2/FolderStructure.md            |   1 +
+ docs/backend-v2/InventoryDesign.md            |  57 +++
+ docs/backend-v2/PROGRESS.md                   |  15 +-
+ 44 files changed, 2954 insertions(+), 17 deletions(-)
+ create mode 100644 backend-node/prisma/migrations/20260802140000_inventory_catalog/migration.sql
+ create mode 100644 backend-node/src/inventory/brands/brands.controller.ts
+ create mode 100644 backend-node/src/inventory/brands/brands.repository.ts
+ create mode 100644 backend-node/src/inventory/brands/brands.service.ts
+ create mode 100644 backend-node/src/inventory/brands/dto/brand.dto.ts
+ create mode 100644 backend-node/src/inventory/categories/categories.controller.ts
+ create mode 100644 backend-node/src/inventory/categories/categories.repository.ts
+ create mode 100644 backend-node/src/inventory/categories/categories.service.ts
+ create mode 100644 backend-node/src/inventory/categories/dto/category.dto.ts
+ create mode 100644 backend-node/src/inventory/colors/colors.controller.ts
+ create mode 100644 backend-node/src/inventory/colors/colors.repository.ts
+ create mode 100644 backend-node/src/inventory/colors/colors.service.ts
+ create mode 100644 backend-node/src/inventory/colors/dto/color.dto.ts
+ create mode 100644 backend-node/src/inventory/inventory.constants.ts
+ create mode 100644 backend-node/src/inventory/inventory.module.ts
+ create mode 100644 backend-node/src/inventory/inventory.types.ts
+ create mode 100644 backend-node/src/inventory/items/dto/item.dto.ts
+ create mode 100644 backend-node/src/inventory/items/items.controller.ts
+ create mode 100644 backend-node/src/inventory/items/items.mapper.ts
+ create mode 100644 backend-node/src/inventory/items/items.repository.ts
+ create mode 100644 backend-node/src/inventory/items/items.service.ts
+ create mode 100644 backend-node/src/inventory/sizes/dto/size.dto.ts
+ create mode 100644 backend-node/src/inventory/sizes/sizes.controller.ts
+ create mode 100644 backend-node/src/inventory/sizes/sizes.repository.ts
+ create mode 100644 backend-node/src/inventory/sizes/sizes.service.ts
+ create mode 100644 backend-node/src/inventory/taxonomy.ts
+ create mode 100644 backend-node/test/inventory-controllers.spec.ts
+ create mode 100644 backend-node/test/inventory-integration.spec.ts
+ create mode 100644 backend-node/test/inventory-items-service.spec.ts
+ create mode 100644 backend-node/test/inventory-repository.spec.ts
+ create mode 100644 backend-node/test/inventory-taxonomy-service.spec.ts
+ create mode 100644 backend-node/vitest.inventory.config.ts
+ create mode 100644 docs/backend-v2/InventoryDesign.md
+
+diff --git a/backend-node/package.json b/backend-node/package.json
+index 3900c76..5f69093 100644
+--- a/backend-node/package.json
++++ b/backend-node/package.json
+@@ -16,7 +16,8 @@
+     "test:cov:shared": "vitest run --coverage --config vitest.shared.config.ts",
+     "test:cov:customers": "vitest run --coverage --config vitest.customers.config.ts",
+     "test:cov:media": "vitest run --coverage --config vitest.media.config.ts",
+-    "test:cov:barcode": "vitest run --coverage --config vitest.barcode.config.ts"
++    "test:cov:barcode": "vitest run --coverage --config vitest.barcode.config.ts",
++    "test:cov:inventory": "vitest run --coverage --config vitest.inventory.config.ts"
+   },
+   "dependencies": {
+     "@nestjs/common": "11.1.28",
+diff --git a/backend-node/prisma/migrations/20260802140000_inventory_catalog/migration.sql b/backend-node/prisma/migrations/20260802140000_inventory_catalog/migration.sql
+new file mode 100644
+index 0000000..3f09888
+--- /dev/null
++++ b/backend-node/prisma/migrations/20260802140000_inventory_catalog/migration.sql
+@@ -0,0 +1,157 @@
++-- Phase 4.1 Inventory Catalog Engine
++CREATE TABLE "Category" (
++    "id" TEXT NOT NULL PRIMARY KEY,
++    "name" TEXT NOT NULL,
++    "nameEn" TEXT,
++    "description" TEXT,
++    "parentId" TEXT,
++    "sortOrder" INTEGER NOT NULL DEFAULT 0,
++    "isActive" BOOLEAN NOT NULL DEFAULT true,
++    "deletedAt" DATETIME,
++    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
++    "updatedAt" DATETIME NOT NULL,
++    "createdBy" TEXT,
++    "updatedBy" TEXT,
++    "deletedBy" TEXT,
++    CONSTRAINT "Category_parentId_fkey" FOREIGN KEY ("parentId") REFERENCES "Category" ("id") ON DELETE SET NULL ON UPDATE CASCADE
++);
++
++CREATE TABLE "Brand" (
++    "id" TEXT NOT NULL PRIMARY KEY,
++    "name" TEXT NOT NULL,
++    "description" TEXT,
++    "isActive" BOOLEAN NOT NULL DEFAULT true,
++    "deletedAt" DATETIME,
++    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
++    "updatedAt" DATETIME NOT NULL,
++    "createdBy" TEXT,
++    "updatedBy" TEXT,
++    "deletedBy" TEXT
++);
++
++CREATE TABLE "Color" (
++    "id" TEXT NOT NULL PRIMARY KEY,
++    "name" TEXT NOT NULL,
++    "hexCode" TEXT,
++    "isActive" BOOLEAN NOT NULL DEFAULT true,
++    "deletedAt" DATETIME,
++    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
++    "updatedAt" DATETIME NOT NULL,
++    "createdBy" TEXT,
++    "updatedBy" TEXT,
++    "deletedBy" TEXT
++);
++
++CREATE TABLE "Size" (
++    "id" TEXT NOT NULL PRIMARY KEY,
++    "name" TEXT NOT NULL,
++    "sortOrder" INTEGER NOT NULL DEFAULT 0,
++    "isActive" BOOLEAN NOT NULL DEFAULT true,
++    "deletedAt" DATETIME,
++    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
++    "updatedAt" DATETIME NOT NULL,
++    "createdBy" TEXT,
++    "updatedBy" TEXT,
++    "deletedBy" TEXT
++);
++
++CREATE TABLE "Item" (
++    "id" TEXT NOT NULL PRIMARY KEY,
++    "internalCode" TEXT NOT NULL,
++    "displayName" TEXT NOT NULL,
++    "categoryId" TEXT,
++    "brandId" TEXT,
++    "colorId" TEXT,
++    "sizeId" TEXT,
++    "purchasePrice" INTEGER NOT NULL DEFAULT 0,
++    "rentalPrice" INTEGER NOT NULL DEFAULT 0,
++    "salePrice" INTEGER NOT NULL DEFAULT 0,
++    "condition" TEXT,
++    "status" TEXT NOT NULL DEFAULT 'draft',
++    "description" TEXT,
++    "deletedAt" DATETIME,
++    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
++    "updatedAt" DATETIME NOT NULL,
++    "createdBy" TEXT,
++    "updatedBy" TEXT,
++    "deletedBy" TEXT,
++    CONSTRAINT "Item_categoryId_fkey" FOREIGN KEY ("categoryId") REFERENCES "Category" ("id") ON DELETE SET NULL ON UPDATE CASCADE,
++    CONSTRAINT "Item_brandId_fkey" FOREIGN KEY ("brandId") REFERENCES "Brand" ("id") ON DELETE SET NULL ON UPDATE CASCADE,
++    CONSTRAINT "Item_colorId_fkey" FOREIGN KEY ("colorId") REFERENCES "Color" ("id") ON DELETE SET NULL ON UPDATE CASCADE,
++    CONSTRAINT "Item_sizeId_fkey" FOREIGN KEY ("sizeId") REFERENCES "Size" ("id") ON DELETE SET NULL ON UPDATE CASCADE
++);
++
++CREATE TABLE "ItemMedia" (
++    "id" TEXT NOT NULL PRIMARY KEY,
++    "itemId" TEXT NOT NULL,
++    "mediaFileId" TEXT NOT NULL,
++    "purpose" TEXT NOT NULL DEFAULT 'gallery',
++    "displayOrder" INTEGER NOT NULL DEFAULT 0,
++    "isPrimary" BOOLEAN NOT NULL DEFAULT false,
++    "deletedAt" DATETIME,
++    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
++    "updatedAt" DATETIME NOT NULL,
++    "createdBy" TEXT,
++    "updatedBy" TEXT,
++    CONSTRAINT "ItemMedia_itemId_fkey" FOREIGN KEY ("itemId") REFERENCES "Item" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
++    CONSTRAINT "ItemMedia_mediaFileId_fkey" FOREIGN KEY ("mediaFileId") REFERENCES "MediaFile" ("id") ON DELETE RESTRICT ON UPDATE CASCADE
++);
++
++CREATE TABLE "ItemBarcode" (
++    "id" TEXT NOT NULL PRIMARY KEY,
++    "itemId" TEXT NOT NULL,
++    "barcodeId" TEXT NOT NULL,
++    "isPrimary" BOOLEAN NOT NULL DEFAULT true,
++    "deletedAt" DATETIME,
++    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
++    "updatedAt" DATETIME NOT NULL,
++    "createdBy" TEXT,
++    "updatedBy" TEXT,
++    CONSTRAINT "ItemBarcode_itemId_fkey" FOREIGN KEY ("itemId") REFERENCES "Item" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
++    CONSTRAINT "ItemBarcode_barcodeId_fkey" FOREIGN KEY ("barcodeId") REFERENCES "Barcode" ("id") ON DELETE RESTRICT ON UPDATE CASCADE
++);
++
++CREATE UNIQUE INDEX "Item_internalCode_key" ON "Item"("internalCode");
++CREATE UNIQUE INDEX "ItemBarcode_barcodeId_key" ON "ItemBarcode"("barcodeId");
++CREATE UNIQUE INDEX "ItemMedia_itemId_mediaFileId_purpose_key" ON "ItemMedia"("itemId", "mediaFileId", "purpose");
++
++CREATE INDEX "Category_name_idx" ON "Category"("name");
++CREATE INDEX "Category_parentId_idx" ON "Category"("parentId");
++CREATE INDEX "Category_isActive_idx" ON "Category"("isActive");
++CREATE INDEX "Category_deletedAt_idx" ON "Category"("deletedAt");
++CREATE INDEX "Category_sortOrder_idx" ON "Category"("sortOrder");
++CREATE INDEX "Brand_name_idx" ON "Brand"("name");
++CREATE INDEX "Brand_isActive_idx" ON "Brand"("isActive");
++CREATE INDEX "Brand_deletedAt_idx" ON "Brand"("deletedAt");
++CREATE INDEX "Color_name_idx" ON "Color"("name");
++CREATE INDEX "Color_hexCode_idx" ON "Color"("hexCode");
++CREATE INDEX "Color_isActive_idx" ON "Color"("isActive");
++CREATE INDEX "Color_deletedAt_idx" ON "Color"("deletedAt");
++CREATE INDEX "Size_name_idx" ON "Size"("name");
++CREATE INDEX "Size_sortOrder_idx" ON "Size"("sortOrder");
++CREATE INDEX "Size_isActive_idx" ON "Size"("isActive");
++CREATE INDEX "Size_deletedAt_idx" ON "Size"("deletedAt");
++CREATE INDEX "Item_displayName_idx" ON "Item"("displayName");
++CREATE INDEX "Item_internalCode_idx" ON "Item"("internalCode");
++CREATE INDEX "Item_categoryId_idx" ON "Item"("categoryId");
++CREATE INDEX "Item_brandId_idx" ON "Item"("brandId");
++CREATE INDEX "Item_colorId_idx" ON "Item"("colorId");
++CREATE INDEX "Item_sizeId_idx" ON "Item"("sizeId");
++CREATE INDEX "Item_status_idx" ON "Item"("status");
++CREATE INDEX "Item_condition_idx" ON "Item"("condition");
++CREATE INDEX "Item_deletedAt_idx" ON "Item"("deletedAt");
++CREATE INDEX "Item_createdAt_idx" ON "Item"("createdAt");
++CREATE INDEX "Item_updatedAt_idx" ON "Item"("updatedAt");
++CREATE INDEX "Item_status_deletedAt_idx" ON "Item"("status", "deletedAt");
++CREATE INDEX "ItemMedia_itemId_idx" ON "ItemMedia"("itemId");
++CREATE INDEX "ItemMedia_mediaFileId_idx" ON "ItemMedia"("mediaFileId");
++CREATE INDEX "ItemMedia_purpose_idx" ON "ItemMedia"("purpose");
++CREATE INDEX "ItemMedia_deletedAt_idx" ON "ItemMedia"("deletedAt");
++CREATE INDEX "ItemBarcode_itemId_idx" ON "ItemBarcode"("itemId");
++CREATE INDEX "ItemBarcode_barcodeId_idx" ON "ItemBarcode"("barcodeId");
++CREATE INDEX "ItemBarcode_deletedAt_idx" ON "ItemBarcode"("deletedAt");
++
++CREATE UNIQUE INDEX "Category_live_name_ci_key" ON "Category"(lower("name")) WHERE "deletedAt" IS NULL;
++CREATE UNIQUE INDEX "Brand_live_name_ci_key" ON "Brand"(lower("name")) WHERE "deletedAt" IS NULL;
++CREATE UNIQUE INDEX "Color_live_name_ci_key" ON "Color"(lower("name")) WHERE "deletedAt" IS NULL;
++CREATE UNIQUE INDEX "Size_live_name_ci_key" ON "Size"(lower("name")) WHERE "deletedAt" IS NULL;
+diff --git a/backend-node/prisma/schema.prisma b/backend-node/prisma/schema.prisma
+index e70a927..1f45acf 100644
+--- a/backend-node/prisma/schema.prisma
++++ b/backend-node/prisma/schema.prisma
+@@ -197,6 +197,7 @@ model MediaFile {
+   updatedBy        String?
+ 
+   references MediaReference[]
++  itemMedia  ItemMedia[]
+ 
+   @@index([sha256Hash])
+   @@index([kind])
+@@ -246,6 +247,7 @@ model Barcode {
+   updatedAt   DateTime  @updatedAt
+   createdBy   String?
+   updatedBy   String?
++  itemBarcodes ItemBarcode[]
+ 
+   @@index([prefix])
+   @@index([status])
+@@ -317,4 +319,175 @@ model Customer {
+   @@index([createdAt])
+   @@index([updatedAt])
+   @@index([status, phoneNormalized, deletedAt])
+-}
+\ No newline at end of file
++}
++
++/// Catalog taxonomy: tree-ready via optional parentId (Phase 4.1).
++model Category {
++  id          String    @id @default(uuid())
++  name        String
++  nameEn      String?
++  description String?
++  parentId    String?
++  sortOrder   Int       @default(0)
++  isActive    Boolean   @default(true)
++  deletedAt   DateTime?
++  createdAt   DateTime  @default(now())
++  updatedAt   DateTime  @updatedAt
++  createdBy   String?
++  updatedBy   String?
++  deletedBy   String?
++
++  parent   Category?  @relation("CategoryTree", fields: [parentId], references: [id])
++  children Category[] @relation("CategoryTree")
++  items    Item[]
++
++  @@index([name])
++  @@index([parentId])
++  @@index([isActive])
++  @@index([deletedAt])
++  @@index([sortOrder])
++}
++
++model Brand {
++  id          String    @id @default(uuid())
++  name        String
++  description String?
++  isActive    Boolean   @default(true)
++  deletedAt   DateTime?
++  createdAt   DateTime  @default(now())
++  updatedAt   DateTime  @updatedAt
++  createdBy   String?
++  updatedBy   String?
++  deletedBy   String?
++
++  items Item[]
++
++  @@index([name])
++  @@index([isActive])
++  @@index([deletedAt])
++}
++
++model Color {
++  id          String    @id @default(uuid())
++  name        String
++  hexCode     String?
++  isActive    Boolean   @default(true)
++  deletedAt   DateTime?
++  createdAt   DateTime  @default(now())
++  updatedAt   DateTime  @updatedAt
++  createdBy   String?
++  updatedBy   String?
++  deletedBy   String?
++
++  items Item[]
++
++  @@index([name])
++  @@index([hexCode])
++  @@index([isActive])
++  @@index([deletedAt])
++}
++
++model Size {
++  id          String    @id @default(uuid())
++  name        String
++  sortOrder   Int       @default(0)
++  isActive    Boolean   @default(true)
++  deletedAt   DateTime?
++  createdAt   DateTime  @default(now())
++  updatedAt   DateTime  @updatedAt
++  createdBy   String?
++  updatedBy   String?
++  deletedBy   String?
++
++  items Item[]
++
++  @@index([name])
++  @@index([sortOrder])
++  @@index([isActive])
++  @@index([deletedAt])
++}
++
++/// Generic catalog item (frontend may label as Dress; backend stays type-agnostic).
++model Item {
++  id            String    @id @default(uuid())
++  internalCode  String    @unique
++  displayName   String
++  categoryId    String?
++  brandId       String?
++  colorId       String?
++  sizeId        String?
++  purchasePrice Int       @default(0)
++  rentalPrice   Int       @default(0)
++  salePrice     Int       @default(0)
++  condition     String?
++  status        String    @default("draft")
++  description   String?
++  deletedAt     DateTime?
++  createdAt     DateTime  @default(now())
++  updatedAt     DateTime  @updatedAt
++  createdBy     String?
++  updatedBy     String?
++  deletedBy     String?
++
++  category Category? @relation(fields: [categoryId], references: [id])
++  brand    Brand?    @relation(fields: [brandId], references: [id])
++  color    Color?    @relation(fields: [colorId], references: [id])
++  size     Size?     @relation(fields: [sizeId], references: [id])
++  media    ItemMedia[]
++  barcodes ItemBarcode[]
++
++  @@index([displayName])
++  @@index([internalCode])
++  @@index([categoryId])
++  @@index([brandId])
++  @@index([colorId])
++  @@index([sizeId])
++  @@index([status])
++  @@index([condition])
++  @@index([deletedAt])
++  @@index([createdAt])
++  @@index([updatedAt])
++  @@index([status, deletedAt])
++}
++
++model ItemMedia {
++  id           String    @id @default(uuid())
++  itemId       String
++  mediaFileId  String
++  purpose      String    @default("gallery")
++  displayOrder Int       @default(0)
++  isPrimary    Boolean   @default(false)
++  deletedAt    DateTime?
++  createdAt    DateTime  @default(now())
++  updatedAt    DateTime  @updatedAt
++  createdBy    String?
++  updatedBy    String?
++
++  item      Item      @relation(fields: [itemId], references: [id])
++  mediaFile MediaFile @relation(fields: [mediaFileId], references: [id])
++
++  @@index([itemId])
++  @@index([mediaFileId])
++  @@index([purpose])
++  @@index([deletedAt])
++  @@unique([itemId, mediaFileId, purpose])
++}
++
++model ItemBarcode {
++  id         String    @id @default(uuid())
++  itemId     String
++  barcodeId  String    @unique
++  isPrimary  Boolean   @default(true)
++  deletedAt  DateTime?
++  createdAt  DateTime  @default(now())
++  updatedAt  DateTime  @updatedAt
++  createdBy  String?
++  updatedBy  String?
++
++  item    Item    @relation(fields: [itemId], references: [id])
++  barcode Barcode @relation(fields: [barcodeId], references: [id])
++
++  @@index([itemId])
++  @@index([barcodeId])
++  @@index([deletedAt])
++}
+diff --git a/backend-node/src/app.module.ts b/backend-node/src/app.module.ts
+index 6d668e6..75c21b2 100644
+--- a/backend-node/src/app.module.ts
++++ b/backend-node/src/app.module.ts
+@@ -12,6 +12,7 @@ import { validateEnvironment } from './config/env.validation';
+ import { CustomersModule } from './customers/customers.module';
+ import { PrismaModule } from './database/prisma.module';
+ import { HealthModule } from './health/health.module';
++import { InventoryModule } from './inventory/inventory.module';
+ import { LoggerModule } from './logging/logger.module';
+ import { MediaModule } from './media/media.module';
+ import { PermissionsModule } from './permissions/permissions.module';
+@@ -38,6 +39,7 @@ import { UsersModule } from './users/users.module';
+     UsersModule,
+     AuthModule,
+     CustomersModule,
++    InventoryModule,
+     HealthModule,
+   ],
+   providers: [
+diff --git a/backend-node/src/inventory/brands/brands.controller.ts b/backend-node/src/inventory/brands/brands.controller.ts
+new file mode 100644
+index 0000000..588ecf4
+--- /dev/null
++++ b/backend-node/src/inventory/brands/brands.controller.ts
+@@ -0,0 +1,69 @@
++import {
++  Body,
++  Controller,
++  Delete,
++  Get,
++  HttpCode,
++  Param,
++  ParseUUIDPipe,
++  Patch,
++  Post,
++  Query,
++} from '@nestjs/common';
++import { CurrentUser } from '../../auth/decorators/current-user.decorator';
++import { RequirePermissions } from '../../auth/decorators/require-permissions.decorator';
++import type { AuthPrincipal } from '../../shared/types';
++import { INVENTORY_PERMISSION } from '../inventory.constants';
++import { BrandsService } from './brands.service';
++import { BrandDto, ListBrandsDto } from './dto/brand.dto';
++
++@Controller('brands')
++export class BrandsController {
++  constructor(private readonly service: BrandsService) {}
++
++  @Get()
++  @RequirePermissions(INVENTORY_PERMISSION.VIEW)
++  list(@Query() q: ListBrandsDto) {
++    return this.service.list(q);
++  }
++
++  @Get(':id')
++  @RequirePermissions(INVENTORY_PERMISSION.VIEW)
++  get(@Param('id', ParseUUIDPipe) id: string) {
++    return this.service.getById(id);
++  }
++
++  @Post()
++  @RequirePermissions(INVENTORY_PERMISSION.CREATE)
++  create(@Body() d: BrandDto, @CurrentUser() u: AuthPrincipal) {
++    return this.service.create(d, u);
++  }
++
++  @Patch(':id')
++  @RequirePermissions(INVENTORY_PERMISSION.UPDATE)
++  update(
++    @Param('id', ParseUUIDPipe) id: string,
++    @Body() d: BrandDto,
++    @CurrentUser() u: AuthPrincipal,
++  ) {
++    return this.service.update(id, d, u);
++  }
++  @Delete(':id')
++  @HttpCode(200)
++  @RequirePermissions(INVENTORY_PERMISSION.DELETE)
++  delete(
++    @Param('id', ParseUUIDPipe) id: string,
++    @CurrentUser() u: AuthPrincipal,
++  ) {
++    return this.service.softDelete(id, u);
++  }
++  @Post(':id/restore')
++  @HttpCode(200)
++  @RequirePermissions(INVENTORY_PERMISSION.RESTORE)
++  restore(
++    @Param('id', ParseUUIDPipe) id: string,
++    @CurrentUser() u: AuthPrincipal,
++  ) {
++    return this.service.restore(id, u);
++  }
++}
+diff --git a/backend-node/src/inventory/brands/brands.repository.ts b/backend-node/src/inventory/brands/brands.repository.ts
+new file mode 100644
+index 0000000..224ec7e
+--- /dev/null
++++ b/backend-node/src/inventory/brands/brands.repository.ts
+@@ -0,0 +1,9 @@
++import { Injectable } from '@nestjs/common';
++import { PrismaService } from '../../database/prisma.service';
++import { TaxonomyRepository } from '../taxonomy';
++@Injectable()
++export class BrandsRepository extends TaxonomyRepository {
++  constructor(prisma: PrismaService) {
++    super(prisma, 'brand');
++  }
++}
+diff --git a/backend-node/src/inventory/brands/brands.service.ts b/backend-node/src/inventory/brands/brands.service.ts
+new file mode 100644
+index 0000000..16d0897
+--- /dev/null
++++ b/backend-node/src/inventory/brands/brands.service.ts
+@@ -0,0 +1,10 @@
++import { Injectable } from '@nestjs/common';
++import { AuditService } from '../../audit/audit.service';
++import { TaxonomyService } from '../taxonomy';
++import { BrandsRepository } from './brands.repository';
++@Injectable()
++export class BrandsService extends TaxonomyService {
++  constructor(repo: BrandsRepository, audit: AuditService) {
++    super(repo, audit, 'brand');
++  }
++}
+diff --git a/backend-node/src/inventory/brands/dto/brand.dto.ts b/backend-node/src/inventory/brands/dto/brand.dto.ts
+new file mode 100644
+index 0000000..ab9f934
+--- /dev/null
++++ b/backend-node/src/inventory/brands/dto/brand.dto.ts
+@@ -0,0 +1,58 @@
++import {
++  IsBoolean,
++  IsInt,
++  IsOptional,
++  IsString,
++  MaxLength,
++  Matches,
++} from 'class-validator';
++
++export class BrandDto {
++  @IsOptional()
++  @IsString()
++  @MaxLength(200)
++  name?: string;
++
++  @IsOptional()
++  @IsString()
++  @MaxLength(1000)
++  description?: string;
++
++  @IsOptional()
++  @IsBoolean()
++  isActive?: boolean;
++
++  @IsOptional()
++  @IsInt()
++  sortOrder?: number;
++
++  @IsOptional()
++  @IsString()
++  parentId?: string;
++
++  @IsOptional()
++  @IsString()
++  nameEn?: string;
++
++  @IsOptional()
++  @Matches(/^#[0-9A-Fa-f]{6}$/)
++  hexCode?: string;
++}
++
++export class ListBrandsDto {
++  @IsOptional()
++  @IsString()
++  q?: string;
++
++  @IsOptional()
++  @IsString()
++  deleted?: string;
++
++  @IsOptional()
++  @IsInt()
++  offset?: number;
++
++  @IsOptional()
++  @IsInt()
++  limit?: number;
++}
+diff --git a/backend-node/src/inventory/categories/categories.controller.ts b/backend-node/src/inventory/categories/categories.controller.ts
+new file mode 100644
+index 0000000..b625b44
+--- /dev/null
++++ b/backend-node/src/inventory/categories/categories.controller.ts
+@@ -0,0 +1,69 @@
++import {
++  Body,
++  Controller,
++  Delete,
++  Get,
++  HttpCode,
++  Param,
++  ParseUUIDPipe,
++  Patch,
++  Post,
++  Query,
++} from '@nestjs/common';
++import { CurrentUser } from '../../auth/decorators/current-user.decorator';
++import { RequirePermissions } from '../../auth/decorators/require-permissions.decorator';
++import type { AuthPrincipal } from '../../shared/types';
++import { CATEGORY_PERMISSION } from '../inventory.constants';
++import { CategoriesService } from './categories.service';
++import { CategoryDto, ListCategoriesDto } from './dto/category.dto';
++
++@Controller('categories')
++export class CategoriesController {
++  constructor(private readonly service: CategoriesService) {}
++
++  @Get()
++  @RequirePermissions(CATEGORY_PERMISSION.VIEW)
++  list(@Query() q: ListCategoriesDto) {
++    return this.service.list(q);
++  }
++
++  @Get(':id')
++  @RequirePermissions(CATEGORY_PERMISSION.VIEW)
++  get(@Param('id', ParseUUIDPipe) id: string) {
++    return this.service.getById(id);
++  }
++
++  @Post()
++  @RequirePermissions(CATEGORY_PERMISSION.CREATE)
++  create(@Body() d: CategoryDto, @CurrentUser() u: AuthPrincipal) {
++    return this.service.create(d, u);
++  }
++
++  @Patch(':id')
++  @RequirePermissions(CATEGORY_PERMISSION.UPDATE)
++  update(
++    @Param('id', ParseUUIDPipe) id: string,
++    @Body() d: CategoryDto,
++    @CurrentUser() u: AuthPrincipal,
++  ) {
++    return this.service.update(id, d, u);
++  }
++  @Delete(':id')
++  @HttpCode(200)
++  @RequirePermissions(CATEGORY_PERMISSION.DELETE)
++  delete(
++    @Param('id', ParseUUIDPipe) id: string,
++    @CurrentUser() u: AuthPrincipal,
++  ) {
++    return this.service.softDelete(id, u);
++  }
++  @Post(':id/restore')
++  @HttpCode(200)
++  @RequirePermissions(CATEGORY_PERMISSION.RESTORE)
++  restore(
++    @Param('id', ParseUUIDPipe) id: string,
++    @CurrentUser() u: AuthPrincipal,
++  ) {
++    return this.service.restore(id, u);
++  }
++}
+diff --git a/backend-node/src/inventory/categories/categories.repository.ts b/backend-node/src/inventory/categories/categories.repository.ts
+new file mode 100644
+index 0000000..f7fe4f2
+--- /dev/null
++++ b/backend-node/src/inventory/categories/categories.repository.ts
+@@ -0,0 +1,9 @@
++import { Injectable } from '@nestjs/common';
++import { PrismaService } from '../../database/prisma.service';
++import { TaxonomyRepository } from '../taxonomy';
++@Injectable()
++export class CategoriesRepository extends TaxonomyRepository {
++  constructor(prisma: PrismaService) {
++    super(prisma, 'category');
++  }
++}
+diff --git a/backend-node/src/inventory/categories/categories.service.ts b/backend-node/src/inventory/categories/categories.service.ts
+new file mode 100644
+index 0000000..1d15743
+--- /dev/null
++++ b/backend-node/src/inventory/categories/categories.service.ts
+@@ -0,0 +1,10 @@
++import { Injectable } from '@nestjs/common';
++import { AuditService } from '../../audit/audit.service';
++import { TaxonomyService } from '../taxonomy';
++import { CategoriesRepository } from './categories.repository';
++@Injectable()
++export class CategoriesService extends TaxonomyService {
++  constructor(repo: CategoriesRepository, audit: AuditService) {
++    super(repo, audit, 'category');
++  }
++}
+diff --git a/backend-node/src/inventory/categories/dto/category.dto.ts b/backend-node/src/inventory/categories/dto/category.dto.ts
+new file mode 100644
+index 0000000..a53878e
+--- /dev/null
++++ b/backend-node/src/inventory/categories/dto/category.dto.ts
+@@ -0,0 +1,62 @@
++import {
++  IsBoolean,
++  IsInt,
++  IsOptional,
++  IsString,
++  MaxLength,
++  Matches,
++} from 'class-validator';
++
++export class CategoryDto {
++  @IsOptional()
++  @IsString()
++  @MaxLength(200)
++  name?: string;
++
++  @IsOptional()
++  @IsString()
++  @MaxLength(1000)
++  description?: string;
++
++  @IsOptional()
++  @IsBoolean()
++  isActive?: boolean;
++
++  @IsOptional()
++  @IsInt()
++  sortOrder?: number;
++
++  @IsOptional()
++  @IsString()
++  parentId?: string;
++
++  @IsOptional()
++  @IsString()
++  nameEn?: string;
++
++  @IsOptional()
++  @Matches(/^#[0-9A-Fa-f]{6}$/)
++  hexCode?: string;
++}
++
++export class ListCategoriesDto {
++  @IsOptional()
++  @IsString()
++  q?: string;
++
++  @IsOptional()
++  @IsString()
++  deleted?: string;
++
++  @IsOptional()
++  @IsString()
++  parentId?: string;
++
++  @IsOptional()
++  @IsInt()
++  offset?: number;
++
++  @IsOptional()
++  @IsInt()
++  limit?: number;
++}
+diff --git a/backend-node/src/inventory/colors/colors.controller.ts b/backend-node/src/inventory/colors/colors.controller.ts
+new file mode 100644
+index 0000000..e76fa8f
+--- /dev/null
++++ b/backend-node/src/inventory/colors/colors.controller.ts
+@@ -0,0 +1,69 @@
++import {
++  Body,
++  Controller,
++  Delete,
++  Get,
++  HttpCode,
++  Param,
++  ParseUUIDPipe,
++  Patch,
++  Post,
++  Query,
++} from '@nestjs/common';
++import { CurrentUser } from '../../auth/decorators/current-user.decorator';
++import { RequirePermissions } from '../../auth/decorators/require-permissions.decorator';
++import type { AuthPrincipal } from '../../shared/types';
++import { INVENTORY_PERMISSION } from '../inventory.constants';
++import { ColorsService } from './colors.service';
++import { ColorDto, ListColorsDto } from './dto/color.dto';
++
++@Controller('colors')
++export class ColorsController {
++  constructor(private readonly service: ColorsService) {}
++
++  @Get()
++  @RequirePermissions(INVENTORY_PERMISSION.VIEW)
++  list(@Query() q: ListColorsDto) {
++    return this.service.list(q);
++  }
++
++  @Get(':id')
++  @RequirePermissions(INVENTORY_PERMISSION.VIEW)
++  get(@Param('id', ParseUUIDPipe) id: string) {
++    return this.service.getById(id);
++  }
++
++  @Post()
++  @RequirePermissions(INVENTORY_PERMISSION.CREATE)
++  create(@Body() d: ColorDto, @CurrentUser() u: AuthPrincipal) {
++    return this.service.create(d, u);
++  }
++
++  @Patch(':id')
++  @RequirePermissions(INVENTORY_PERMISSION.UPDATE)
++  update(
++    @Param('id', ParseUUIDPipe) id: string,
++    @Body() d: ColorDto,
++    @CurrentUser() u: AuthPrincipal,
++  ) {
++    return this.service.update(id, d, u);
++  }
++  @Delete(':id')
++  @HttpCode(200)
++  @RequirePermissions(INVENTORY_PERMISSION.DELETE)
++  delete(
++    @Param('id', ParseUUIDPipe) id: string,
++    @CurrentUser() u: AuthPrincipal,
++  ) {
++    return this.service.softDelete(id, u);
++  }
++  @Post(':id/restore')
++  @HttpCode(200)
++  @RequirePermissions(INVENTORY_PERMISSION.RESTORE)
++  restore(
++    @Param('id', ParseUUIDPipe) id: string,
++    @CurrentUser() u: AuthPrincipal,
++  ) {
++    return this.service.restore(id, u);
++  }
++}
+diff --git a/backend-node/src/inventory/colors/colors.repository.ts b/backend-node/src/inventory/colors/colors.repository.ts
+new file mode 100644
+index 0000000..23b65eb
+--- /dev/null
++++ b/backend-node/src/inventory/colors/colors.repository.ts
+@@ -0,0 +1,9 @@
++import { Injectable } from '@nestjs/common';
++import { PrismaService } from '../../database/prisma.service';
++import { TaxonomyRepository } from '../taxonomy';
++@Injectable()
++export class ColorsRepository extends TaxonomyRepository {
++  constructor(prisma: PrismaService) {
++    super(prisma, 'color');
++  }
++}
+diff --git a/backend-node/src/inventory/colors/colors.service.ts b/backend-node/src/inventory/colors/colors.service.ts
+new file mode 100644
+index 0000000..f39727b
+--- /dev/null
++++ b/backend-node/src/inventory/colors/colors.service.ts
+@@ -0,0 +1,10 @@
++import { Injectable } from '@nestjs/common';
++import { AuditService } from '../../audit/audit.service';
++import { TaxonomyService } from '../taxonomy';
++import { ColorsRepository } from './colors.repository';
++@Injectable()
++export class ColorsService extends TaxonomyService {
++  constructor(repo: ColorsRepository, audit: AuditService) {
++    super(repo, audit, 'color');
++  }
++}
+diff --git a/backend-node/src/inventory/colors/dto/color.dto.ts b/backend-node/src/inventory/colors/dto/color.dto.ts
+new file mode 100644
+index 0000000..c78a5ef
+--- /dev/null
++++ b/backend-node/src/inventory/colors/dto/color.dto.ts
+@@ -0,0 +1,58 @@
++import {
++  IsBoolean,
++  IsInt,
++  IsOptional,
++  IsString,
++  MaxLength,
++  Matches,
++} from 'class-validator';
++
++export class ColorDto {
++  @IsOptional()
++  @IsString()
++  @MaxLength(200)
++  name?: string;
++
++  @IsOptional()
++  @IsString()
++  @MaxLength(1000)
++  description?: string;
++
++  @IsOptional()
++  @IsBoolean()
++  isActive?: boolean;
++
++  @IsOptional()
++  @IsInt()
++  sortOrder?: number;
++
++  @IsOptional()
++  @IsString()
++  parentId?: string;
++
++  @IsOptional()
++  @IsString()
++  nameEn?: string;
++
++  @IsOptional()
++  @Matches(/^#[0-9A-Fa-f]{6}$/)
++  hexCode?: string;
++}
++
++export class ListColorsDto {
++  @IsOptional()
++  @IsString()
++  q?: string;
++
++  @IsOptional()
++  @IsString()
++  deleted?: string;
++
++  @IsOptional()
++  @IsInt()
++  offset?: number;
++
++  @IsOptional()
++  @IsInt()
++  limit?: number;
++}
+diff --git a/backend-node/src/inventory/inventory.constants.ts b/backend-node/src/inventory/inventory.constants.ts
+new file mode 100644
+index 0000000..78ef102
+--- /dev/null
++++ b/backend-node/src/inventory/inventory.constants.ts
+@@ -0,0 +1,51 @@
++export const INVENTORY_MODULE = 'inventory';
++export const ITEM_ENTITY = 'item';
++export const TAXONOMY_ENTITY = {
++  CATEGORY: 'category',
++  BRAND: 'brand',
++  COLOR: 'color',
++  SIZE: 'size',
++} as const;
++export const INVENTORY_PERMISSION = {
++  VIEW: 'inventory.view',
++  CREATE: 'inventory.create',
++  UPDATE: 'inventory.update',
++  DELETE: 'inventory.delete',
++  RESTORE: 'inventory.restore',
++} as const;
++export const CATEGORY_PERMISSION = {
++  VIEW: 'categories.view',
++  CREATE: 'categories.create',
++  UPDATE: 'categories.update',
++  DELETE: 'categories.delete',
++  RESTORE: 'categories.restore',
++} as const;
++export const ITEM_STATUS = {
++  DRAFT: 'draft',
++  ACTIVE: 'active',
++  INACTIVE: 'inactive',
++  ARCHIVED: 'archived',
++  RETIRED: 'retired',
++} as const;
++export const ITEM_CONDITION = {
++  NEW: 'new',
++  GOOD: 'good',
++  FAIR: 'fair',
++  POOR: 'poor',
++  UNKNOWN: 'unknown',
++} as const;
++export const ITEM_SORT_FIELDS = [
++  'displayName',
++  'internalCode',
++  'status',
++  'createdAt',
++  'updatedAt',
++] as const;
++export const INVENTORY_ITEM_SETTING = {
++  PREFIX: 'inventory.item.prefix',
++  SEPARATOR: 'inventory.item.separator',
++  PADDING: 'inventory.item.padding',
++} as const;
++export const ITEM_DEFAULT_PREFIX = 'ITM';
++export const ITEM_DEFAULT_SEPARATOR = '-';
++export const ITEM_DEFAULT_PADDING = 8;
+diff --git a/backend-node/src/inventory/inventory.module.ts b/backend-node/src/inventory/inventory.module.ts
+new file mode 100644
+index 0000000..982ae39
+--- /dev/null
++++ b/backend-node/src/inventory/inventory.module.ts
+@@ -0,0 +1,45 @@
++import { Module } from '@nestjs/common';
++import { CategoriesController } from './categories/categories.controller';
++import { CategoriesRepository } from './categories/categories.repository';
++import { CategoriesService } from './categories/categories.service';
++import { BrandsController } from './brands/brands.controller';
++import { BrandsRepository } from './brands/brands.repository';
++import { BrandsService } from './brands/brands.service';
++import { ColorsController } from './colors/colors.controller';
++import { ColorsRepository } from './colors/colors.repository';
++import { ColorsService } from './colors/colors.service';
++import { SizesController } from './sizes/sizes.controller';
++import { SizesRepository } from './sizes/sizes.repository';
++import { SizesService } from './sizes/sizes.service';
++import { ItemsController } from './items/items.controller';
++import { ItemsRepository } from './items/items.repository';
++import { ItemsService } from './items/items.service';
++@Module({
++  controllers: [
++    CategoriesController,
++    BrandsController,
++    ColorsController,
++    SizesController,
++    ItemsController,
++  ],
++  providers: [
++    CategoriesRepository,
++    CategoriesService,
++    BrandsRepository,
++    BrandsService,
++    ColorsRepository,
++    ColorsService,
++    SizesRepository,
++    SizesService,
++    ItemsRepository,
++    ItemsService,
++  ],
++  exports: [
++    CategoriesService,
++    BrandsService,
++    ColorsService,
++    SizesService,
++    ItemsService,
++  ],
++})
++export class InventoryModule {}
+diff --git a/backend-node/src/inventory/inventory.types.ts b/backend-node/src/inventory/inventory.types.ts
+new file mode 100644
+index 0000000..8bd00a5
+--- /dev/null
++++ b/backend-node/src/inventory/inventory.types.ts
+@@ -0,0 +1,89 @@
++import type {
++  Brand,
++  Category,
++  Color,
++  Item,
++  ItemBarcode,
++  ItemMedia,
++  MediaFile,
++  Prisma,
++  Size,
++} from '@prisma/client';
++import type { PaginationInput } from '../shared/pagination/pagination';
++
++export type TaxonomyKind = 'category' | 'brand' | 'color' | 'size';
++
++export interface ListTaxonomyQuery extends PaginationInput {
++  q?: string;
++  deleted?: boolean | string;
++  parentId?: string;
++}
++
++export interface TaxonomyPayload {
++  name?: string;
++  description?: string | null;
++  isActive?: boolean;
++  sortOrder?: number;
++  parentId?: string | null;
++  nameEn?: string | null;
++  hexCode?: string | null;
++}
++
++export type TaxonomyCreateInput =
++  | Prisma.CategoryUncheckedCreateInput
++  | Prisma.BrandUncheckedCreateInput
++  | Prisma.ColorUncheckedCreateInput
++  | Prisma.SizeUncheckedCreateInput;
++export type TaxonomyUpdateInput =
++  | Prisma.CategoryUncheckedUpdateInput
++  | Prisma.BrandUncheckedUpdateInput
++  | Prisma.ColorUncheckedUpdateInput
++  | Prisma.SizeUncheckedUpdateInput;
++export type TaxonomyRow = Category | Brand | Color | Size;
++
++export interface ListItemsQuery extends PaginationInput {
++  q?: string;
++  barcode?: string;
++  categoryId?: string;
++  brandId?: string;
++  colorId?: string;
++  sizeId?: string;
++  status?: string;
++  displayName?: string;
++  internalCode?: string;
++  deleted?: boolean | string;
++  sortBy?: string;
++  sortDir?: string;
++}
++
++export interface ItemPayload {
++  displayName?: string;
++  categoryId?: string;
++  brandId?: string;
++  colorId?: string;
++  sizeId?: string;
++  purchasePrice?: number;
++  rentalPrice?: number;
++  salePrice?: number;
++  status?: string;
++  condition?: string;
++  description?: string;
++  barcode?: string;
++  generateBarcode?: boolean;
++}
++
++export interface AttachItemMediaPayload {
++  mediaFileId: string;
++  purpose?: string;
++  isPrimary?: boolean;
++  displayOrder?: number;
++}
++
++export type ItemWithRelations = Item & {
++  category: Category | null;
++  brand: Brand | null;
++  color: Color | null;
++  size: Size | null;
++  barcodes: (ItemBarcode & { barcode: { code: string } })[];
++  media: (ItemMedia & { mediaFile: Pick<MediaFile, 'id' | 'originalFilename' | 'mimeType' | 'relativePath'> })[];
++};
+diff --git a/backend-node/src/inventory/items/dto/item.dto.ts b/backend-node/src/inventory/items/dto/item.dto.ts
+new file mode 100644
+index 0000000..82287a5
+--- /dev/null
++++ b/backend-node/src/inventory/items/dto/item.dto.ts
+@@ -0,0 +1,210 @@
++import { Type } from 'class-transformer';
++import {
++  IsBoolean,
++  IsIn,
++  IsInt,
++  IsOptional,
++  IsString,
++  MaxLength,
++  Min,
++} from 'class-validator';
++import { ITEM_CONDITION, ITEM_STATUS } from '../../inventory.constants';
++export class CreateItemDto {
++  @IsString()
++  @MaxLength(200)
++  displayName!: string;
++
++  @IsOptional()
++  @IsString()
++  categoryId?: string;
++
++  @IsOptional()
++  @IsString()
++  brandId?: string;
++
++  @IsOptional()
++  @IsString()
++  colorId?: string;
++
++  @IsOptional()
++  @IsString()
++  sizeId?: string;
++
++  @IsOptional()
++  @Type(() => Number)
++  @IsInt()
++  @Min(0)
++  purchasePrice?: number;
++
++  @IsOptional()
++  @Type(() => Number)
++  @IsInt()
++  @Min(0)
++  rentalPrice?: number;
++
++  @IsOptional()
++  @Type(() => Number)
++  @IsInt()
++  @Min(0)
++  salePrice?: number;
++
++  @IsOptional()
++  @IsIn(Object.values(ITEM_STATUS))
++  status?: string;
++
++  @IsOptional()
++  @IsIn(Object.values(ITEM_CONDITION))
++  condition?: string;
++
++  @IsOptional()
++  @IsString()
++  description?: string;
++
++  @IsOptional()
++  @IsString()
++  barcode?: string;
++
++  @IsOptional()
++  @IsBoolean()
++  generateBarcode?: boolean;
++}
++
++export class AttachItemMediaDto {
++  @IsString()
++  mediaFileId!: string;
++
++  @IsOptional()
++  @IsString()
++  purpose?: string;
++
++  @IsOptional()
++  @IsBoolean()
++  isPrimary?: boolean;
++
++  @IsOptional()
++  @IsInt()
++  displayOrder?: number;
++}
++
++export class ListItemsDto {
++  @IsOptional()
++  @IsString()
++  q?: string;
++
++  @IsOptional()
++  @IsString()
++  barcode?: string;
++
++  @IsOptional()
++  @IsString()
++  categoryId?: string;
++
++  @IsOptional()
++  @IsString()
++  brandId?: string;
++
++  @IsOptional()
++  @IsString()
++  colorId?: string;
++
++  @IsOptional()
++  @IsString()
++  sizeId?: string;
++
++  @IsOptional()
++  @IsString()
++  status?: string;
++
++  @IsOptional()
++  @IsString()
++  displayName?: string;
++
++  @IsOptional()
++  @IsString()
++  internalCode?: string;
++
++  @IsOptional()
++  @IsString()
++  deleted?: string;
++
++  @IsOptional()
++  @IsString()
++  sortBy?: string;
++
++  @IsOptional()
++  @IsString()
++  sortDir?: string;
++
++  @IsOptional()
++  @Type(() => Number)
++  @IsInt()
++  @Min(0)
++  offset?: number;
++
++  @IsOptional()
++  @Type(() => Number)
++  @IsInt()
++  @Min(1)
++  limit?: number;
++}
++
++export class UpdateItemDto {
++  @IsOptional()
++  @IsString()
++  @MaxLength(200)
++  displayName?: string;
++
++  @IsOptional()
++  @IsString()
++  categoryId?: string;
++
++  @IsOptional()
++  @IsString()
++  brandId?: string;
++
++  @IsOptional()
++  @IsString()
++  colorId?: string;
++
++  @IsOptional()
++  @IsString()
++  sizeId?: string;
++
++  @IsOptional()
++  @Type(() => Number)
++  @IsInt()
++  @Min(0)
++  purchasePrice?: number;
++
++  @IsOptional()
++  @Type(() => Number)
++  @IsInt()
++  @Min(0)
++  rentalPrice?: number;
++
++  @IsOptional()
++  @Type(() => Number)
++  @IsInt()
++  @Min(0)
++  salePrice?: number;
++
++  @IsOptional()
++  @IsIn(Object.values(ITEM_STATUS))
++  status?: string;
++
++  @IsOptional()
++  @IsIn(Object.values(ITEM_CONDITION))
++  condition?: string;
++
++  @IsOptional()
++  @IsString()
++  description?: string;
++
++  @IsOptional()
++  @IsString()
++  barcode?: string;
++
++  @IsOptional()
++  @IsBoolean()
++  generateBarcode?: boolean;
++}
+diff --git a/backend-node/src/inventory/items/items.controller.ts b/backend-node/src/inventory/items/items.controller.ts
+new file mode 100644
+index 0000000..2ceb0db
+--- /dev/null
++++ b/backend-node/src/inventory/items/items.controller.ts
+@@ -0,0 +1,95 @@
++import {
++  Body,
++  Controller,
++  Delete,
++  Get,
++  HttpCode,
++  Param,
++  ParseUUIDPipe,
++  Patch,
++  Post,
++  Query,
++} from '@nestjs/common';
++import { CurrentUser } from '../../auth/decorators/current-user.decorator';
++import { RequirePermissions } from '../../auth/decorators/require-permissions.decorator';
++import type { AuthPrincipal } from '../../shared/types';
++import { INVENTORY_PERMISSION } from '../inventory.constants';
++import { ItemsService } from './items.service';
++import {
++  AttachItemMediaDto,
++  CreateItemDto,
++  ListItemsDto,
++  UpdateItemDto,
++} from './dto/item.dto';
++
++@Controller('items')
++export class ItemsController {
++  constructor(private readonly items: ItemsService) {}
++
++  @Get()
++  @RequirePermissions(INVENTORY_PERMISSION.VIEW)
++  list(@Query() q: ListItemsDto) {
++    return this.items.list(q);
++  }
++
++  @Get('search')
++  @RequirePermissions(INVENTORY_PERMISSION.VIEW)
++  search(@Query() q: ListItemsDto) {
++    return this.items.search(q);
++  }
++
++  @Get('code/:internalCode')
++  @RequirePermissions(INVENTORY_PERMISSION.VIEW)
++  code(@Param('internalCode') c: string) {
++    return this.items.getByInternalCode(c);
++  }
++  @Get(':id')
++  @RequirePermissions(INVENTORY_PERMISSION.VIEW)
++  get(@Param('id', ParseUUIDPipe) id: string) {
++    return this.items.getPublicById(id);
++  }
++
++  @Post()
++  @RequirePermissions(INVENTORY_PERMISSION.CREATE)
++  create(@Body() d: CreateItemDto, @CurrentUser() u: AuthPrincipal) {
++    return this.items.create(d, u);
++  }
++
++  @Patch(':id')
++  @RequirePermissions(INVENTORY_PERMISSION.UPDATE)
++  update(
++    @Param('id', ParseUUIDPipe) id: string,
++    @Body() d: UpdateItemDto,
++    @CurrentUser() u: AuthPrincipal,
++  ) {
++    return this.items.update(id, d, u);
++  }
++
++  @Delete(':id')
++  @HttpCode(200)
++  @RequirePermissions(INVENTORY_PERMISSION.DELETE)
++  delete(
++    @Param('id', ParseUUIDPipe) id: string,
++    @CurrentUser() u: AuthPrincipal,
++  ) {
++    return this.items.softDelete(id, u);
++  }
++  @Post(':id/restore')
++  @HttpCode(200)
++  @RequirePermissions(INVENTORY_PERMISSION.RESTORE)
++  restore(
++    @Param('id', ParseUUIDPipe) id: string,
++    @CurrentUser() u: AuthPrincipal,
++  ) {
++    return this.items.restore(id, u);
++  }
++  @Post(':id/media')
++  @RequirePermissions(INVENTORY_PERMISSION.UPDATE)
++  media(
++    @Param('id', ParseUUIDPipe) id: string,
++    @Body() d: AttachItemMediaDto,
++    @CurrentUser() u: AuthPrincipal,
++  ) {
++    return this.items.attachMedia(id, d, u);
++  }
++}
+diff --git a/backend-node/src/inventory/items/items.mapper.ts b/backend-node/src/inventory/items/items.mapper.ts
+new file mode 100644
+index 0000000..729efd6
+--- /dev/null
++++ b/backend-node/src/inventory/items/items.mapper.ts
+@@ -0,0 +1,45 @@
++import type { ItemWithRelations } from '../inventory.types';
++
++export function toItemPublic(row: ItemWithRelations) {
++  return {
++    id: row.id,
++    internalCode: row.internalCode,
++    displayName: row.displayName,
++    purchasePrice: row.purchasePrice,
++    rentalPrice: row.rentalPrice,
++    salePrice: row.salePrice,
++    condition: row.condition,
++    status: row.status,
++    description: row.description,
++    category: summary(row.category),
++    brand: summary(row.brand),
++    color: row.color
++      ? { ...summary(row.color), hexCode: row.color.hexCode }
++      : null,
++    size: summary(row.size),
++    barcodes: row.barcodes.map((x) => ({
++      id: x.id,
++      value: x.barcode.code,
++      isPrimary: x.isPrimary,
++    })),
++    media: row.media.map((x) => ({
++      id: x.id,
++      mediaFileId: x.mediaFileId,
++      purpose: x.purpose,
++      isPrimary: x.isPrimary,
++      displayOrder: x.displayOrder,
++      mediaFile: {
++        id: x.mediaFile.id,
++        originalFilename: x.mediaFile.originalFilename,
++        mimeType: x.mediaFile.mimeType,
++        relativePath: x.mediaFile.relativePath,
++      },
++    })),
++    createdAt: row.createdAt,
++    updatedAt: row.updatedAt,
++    deletedAt: row.deletedAt,
++  };
++}
++function summary(x: { id: string; name: string } | null) {
++  return x ? { id: x.id, name: x.name } : null;
++}
+diff --git a/backend-node/src/inventory/items/items.repository.ts b/backend-node/src/inventory/items/items.repository.ts
+new file mode 100644
+index 0000000..b00908b
+--- /dev/null
++++ b/backend-node/src/inventory/items/items.repository.ts
+@@ -0,0 +1,114 @@
++import { Injectable } from '@nestjs/common';
++import type { Prisma } from '@prisma/client';
++import { PrismaService } from '../../database/prisma.service';
++import type { TaxonomyKind } from '../inventory.types';
++import {
++  softDeleteData,
++  restoreSoftDeleteData,
++} from '../../shared/soft-delete/soft-delete';
++export const itemInclude = {
++  category: true,
++  brand: true,
++  color: true,
++  size: true,
++  barcodes: { where: { deletedAt: null }, include: { barcode: true } },
++  media: {
++    where: { deletedAt: null },
++    include: { mediaFile: true },
++    orderBy: [{ displayOrder: 'asc' }, { createdAt: 'asc' }],
++  },
++} satisfies Prisma.ItemInclude;
++@Injectable()
++export class ItemsRepository {
++  constructor(private readonly prisma: PrismaService) {}
++  create(data: Prisma.ItemUncheckedCreateInput) {
++    return this.prisma.item.create({ data, include: itemInclude });
++  }
++  update(id: string, data: Prisma.ItemUncheckedUpdateInput) {
++    return this.prisma.item.update({ where: { id }, data, include: itemInclude });
++  }
++  findById(id: string, deleted = false) {
++    return this.prisma.item.findFirst({
++      where: { id, deletedAt: deleted ? { not: null } : null },
++      include: itemInclude,
++    });
++  }
++  findByCode(internalCode: string) {
++    return this.prisma.item.findFirst({
++      where: { internalCode, deletedAt: null },
++      include: itemInclude,
++    });
++  }
++  findAnyCode(internalCode: string) {
++    return this.prisma.item.findUnique({ where: { internalCode } });
++  }
++  async list(input: {
++    where: Prisma.ItemWhereInput;
++    orderBy: Prisma.ItemOrderByWithRelationInput;
++    offset: number;
++    limit: number;
++  }) {
++    const [rows, total] = await Promise.all([
++      this.prisma.item.findMany({
++        where: input.where,
++        orderBy: input.orderBy,
++        skip: input.offset,
++        take: input.limit,
++        include: itemInclude,
++      }),
++      this.prisma.item.count({ where: input.where }),
++    ]);
++    return { rows, total };
++  }
++  async nextSequence(prefix: string) {
++    return this.prisma.$transaction(async (tx) => {
++      const e = await tx.sequenceCounter.findUnique({ where: { prefix } });
++      if (!e) {
++        await tx.sequenceCounter.create({ data: { prefix, lastValue: 1 } });
++        return 1;
++      }
++      return (
++        await tx.sequenceCounter.update({
++          where: { prefix },
++          data: { lastValue: e.lastValue + 1 },
++        })
++      ).lastValue;
++    });
++  }
++  softDelete(id: string, userId?: string) {
++    return this.update(id, {
++      ...softDeleteData(),
++      deletedBy: userId ?? null,
++      status: 'inactive',
++    });
++  }
++  restore(id: string, userId?: string) {
++    return this.update(id, {
++      ...restoreSoftDeleteData(),
++      deletedBy: null,
++      updatedBy: userId ?? null,
++    });
++  }
++  findTaxonomy(kind: TaxonomyKind, id: string) {
++    const where = { id, deletedAt: null };
++    switch (kind) {
++      case 'category': return this.prisma.category.findFirst({ where });
++      case 'brand': return this.prisma.brand.findFirst({ where });
++      case 'color': return this.prisma.color.findFirst({ where });
++      case 'size': return this.prisma.size.findFirst({ where });
++    }
++  }
++  createBarcode(
++    itemId: string,
++    barcodeId: string,
++    isPrimary: boolean,
++    userId?: string,
++  ) {
++    return this.prisma.itemBarcode.create({
++      data: { itemId, barcodeId, isPrimary, createdBy: userId ?? null },
++    });
++  }
++  createMedia(data: Prisma.ItemMediaUncheckedCreateInput) {
++    return this.prisma.itemMedia.create({ data, include: { mediaFile: true } });
++  }
++}
+diff --git a/backend-node/src/inventory/items/items.service.ts b/backend-node/src/inventory/items/items.service.ts
+new file mode 100644
+index 0000000..7d864e3
+--- /dev/null
++++ b/backend-node/src/inventory/items/items.service.ts
+@@ -0,0 +1,330 @@
++import { Injectable } from '@nestjs/common';
++import type { Prisma } from '@prisma/client';
++import { AuditService } from '../../audit/audit.service';
++import { BarcodeService } from '../../barcode/barcode.service';
++import { MediaService } from '../../media/media.service';
++import { SettingsService } from '../../settings/settings.service';
++import { AUDIT_ACTION } from '../../shared/constants/business.constants';
++import { BusinessException } from '../../shared/errors/business.exception';
++import { assertFils, assertNonNegativeFils } from '../../shared/money/money';
++import {
++  normalizePagination,
++  paginated,
++} from '../../shared/pagination/pagination';
++import { normalizeSearchQuery } from '../../shared/search/search';
++import { normalizeSort } from '../../shared/sorting/sorting';
++import { parseOptionalBoolean } from '../../shared/validation/parse-boolean';
++import type { AuthPrincipal } from '../../shared/types';
++import {
++  INVENTORY_ITEM_SETTING,
++  ITEM_CONDITION,
++  ITEM_DEFAULT_PADDING,
++  ITEM_DEFAULT_PREFIX,
++  ITEM_DEFAULT_SEPARATOR,
++  ITEM_ENTITY,
++  ITEM_SORT_FIELDS,
++  ITEM_STATUS,
++  INVENTORY_MODULE,
++} from '../inventory.constants';
++import type {
++  AttachItemMediaPayload,
++  ItemPayload,
++  ItemWithRelations,
++  ListItemsQuery,
++  TaxonomyKind,
++} from '../inventory.types';
++import { toItemPublic } from './items.mapper';
++import { ItemsRepository } from './items.repository';
++@Injectable()
++export class ItemsService {
++  constructor(
++    private readonly repo: ItemsRepository,
++    private readonly settings: SettingsService,
++    private readonly audit: AuditService,
++    private readonly barcode: BarcodeService,
++    private readonly media: MediaService,
++  ) {}
++  async create(dto: ItemPayload, actor?: AuthPrincipal) {
++    const item = await this.repo.create(
++      (await this.data(dto, actor, true)) as Prisma.ItemUncheckedCreateInput,
++    );
++    try {
++      if (dto.barcode?.trim() || dto.generateBarcode) {
++        const b = dto.barcode?.trim()
++          ? await this.barcode.reserve(
++              { value: dto.barcode, createdBy: actor?.userId },
++              actor,
++            )
++          : await this.barcode.generate({ createdBy: actor?.userId }, actor);
++        await this.barcode.activate(b.id, ITEM_ENTITY, item.id, actor);
++        await this.repo.createBarcode(item.id, b.id, true, actor?.userId);
++      }
++      const row = await this.getById(item.id);
++      await this.audit.recordCreate(
++        INVENTORY_MODULE,
++        ITEM_ENTITY,
++        row.id,
++        this.snapshot(row),
++        { userId: actor?.userId, username: actor?.username },
++      );
++      return toItemPublic(row);
++    } catch (e) {
++      await this.repo.softDelete(item.id, actor?.userId);
++      throw e;
++    }
++  }
++  async update(id: string, dto: ItemPayload, actor?: AuthPrincipal) {
++    const old = await this.live(id);
++    const row = await this.repo.update(
++      id,
++      (await this.data(dto, actor, false)) as Prisma.ItemUncheckedUpdateInput,
++    );
++    await this.audit.recordUpdate(
++      INVENTORY_MODULE,
++      ITEM_ENTITY,
++      id,
++      this.snapshot(old),
++      this.snapshot(row),
++      { userId: actor?.userId, username: actor?.username },
++    );
++    return toItemPublic(row);
++  }
++  async softDelete(id: string, actor?: AuthPrincipal) {
++    const old = await this.live(id);
++    const row = await this.repo.softDelete(id, actor?.userId);
++    await this.audit.recordSoftDelete(
++      INVENTORY_MODULE,
++      ITEM_ENTITY,
++      id,
++      this.snapshot(old),
++      { userId: actor?.userId, username: actor?.username },
++    );
++    return toItemPublic(row);
++  }
++  async restore(id: string, actor?: AuthPrincipal) {
++    const old = await this.repo.findById(id, true);
++    if (!old) throw BusinessException.notFound('Item not found');
++    if (!old.deletedAt) throw BusinessException.conflict('Item is not deleted');
++    const row = await this.repo.restore(id, actor?.userId);
++    await this.audit.record({
++      module: INVENTORY_MODULE,
++      entityType: ITEM_ENTITY,
++      entityId: id,
++      action: AUDIT_ACTION.RESTORE,
++      oldValues: this.snapshot(old),
++      newValues: this.snapshot(row),
++      actor: { userId: actor?.userId, username: actor?.username },
++    });
++    return toItemPublic(row);
++  }
++  async getById(id: string) {
++    return this.live(id);
++  }
++  async getPublicById(id: string) {
++    return toItemPublic(await this.live(id));
++  }
++  async getByInternalCode(code: string) {
++    const r = await this.repo.findByCode(code.trim().toUpperCase());
++    if (!r) throw BusinessException.notFound('Item not found');
++    return toItemPublic(r);
++  }
++  async list(query: ListItemsQuery) {
++    const page = normalizePagination(query);
++    const sort = normalizeSort(
++      query.sortBy,
++      query.sortDir,
++      new Set(ITEM_SORT_FIELDS),
++      { field: 'createdAt', direction: 'desc' },
++    );
++    const { rows, total } = await this.repo.list({
++      where: this.where(query),
++      orderBy: { [sort.field]: sort.direction },
++      offset: page.offset,
++      limit: page.limit,
++    });
++    return paginated(rows.map(toItemPublic), total, page);
++  }
++  async search(q: ListItemsQuery) {
++    if (!normalizeSearchQuery(q.q))
++      throw BusinessException.validation('Search query q is required');
++    return this.list(q);
++  }
++  async attachMedia(id: string, dto: AttachItemMediaPayload, actor?: AuthPrincipal) {
++    await this.live(id);
++    await this.media.find(dto.mediaFileId);
++    await this.media.attach({
++      mediaFileId: dto.mediaFileId,
++      moduleName: INVENTORY_MODULE,
++      entityType: ITEM_ENTITY,
++      entityId: id,
++      purpose: dto.purpose ?? 'gallery',
++      displayOrder: dto.displayOrder ?? 0,
++      isPrimary: dto.isPrimary ?? false,
++      createdBy: actor?.userId,
++    });
++    return this.repo.createMedia({
++      itemId: id,
++      mediaFileId: dto.mediaFileId,
++      purpose: dto.purpose ?? 'gallery',
++      displayOrder: dto.displayOrder ?? 0,
++      isPrimary: dto.isPrimary ?? false,
++      createdBy: actor?.userId ?? null,
++    });
++  }
++  private where(q: ListItemsQuery): Prisma.ItemWhereInput {
++    const w: Prisma.ItemWhereInput = {
++      deletedAt:
++        parseOptionalBoolean(q.deleted) === true ? { not: null } : null,
++    };
++    if (q.categoryId) w.categoryId = q.categoryId;
++    if (q.brandId) w.brandId = q.brandId;
++    if (q.colorId) w.colorId = q.colorId;
++    if (q.sizeId) w.sizeId = q.sizeId;
++    if (q.status) w.status = this.status(q.status);
++    const text = normalizeSearchQuery(q.q);
++    if (text)
++      w.OR = [
++        { displayName: { contains: text } },
++        { internalCode: { contains: text.toUpperCase() } },
++        {
++          barcodes: {
++            some: { deletedAt: null, barcode: { code: { contains: text } } },
++          },
++        },
++      ];
++    if (q.displayName) w.displayName = { contains: q.displayName.trim() };
++    if (q.internalCode)
++      w.internalCode = { contains: q.internalCode.trim().toUpperCase() };
++    if (q.barcode)
++      w.barcodes = {
++        some: {
++          deletedAt: null,
++          barcode: { code: { contains: q.barcode.trim() } },
++        },
++      };
++    return w;
++  }
++  private async data(
++    d: ItemPayload,
++    a: AuthPrincipal | undefined,
++    create: boolean,
++  ): Promise<Prisma.ItemUncheckedCreateInput | Prisma.ItemUncheckedUpdateInput> {
++    const x: Prisma.ItemUncheckedCreateInput | Prisma.ItemUncheckedUpdateInput = {
++      updatedBy: a?.userId ?? null,
++    };
++    if (create) {
++      x.internalCode = await this.code();
++      x.displayName = this.name(d.displayName);
++      x.purchasePrice = this.money(d.purchasePrice ?? 0, 'purchasePrice');
++      x.rentalPrice = this.money(d.rentalPrice ?? 0, 'rentalPrice');
++      x.salePrice = this.money(d.salePrice ?? 0, 'salePrice');
++      x.status = this.status(d.status ?? ITEM_STATUS.DRAFT);
++      if (d.condition !== undefined) {
++        x.condition = this.condition(d.condition);
++      }
++      x.createdBy = a?.userId ?? null;
++    } else {
++      if (d.displayName !== undefined) x.displayName = this.name(d.displayName);
++      if (d.description !== undefined) x.description = d.description.trim() || null;
++      if (d.purchasePrice !== undefined)
++        x.purchasePrice = this.money(d.purchasePrice, 'purchasePrice');
++      if (d.rentalPrice !== undefined)
++        x.rentalPrice = this.money(d.rentalPrice, 'rentalPrice');
++      if (d.salePrice !== undefined) x.salePrice = this.money(d.salePrice, 'salePrice');
++      if (d.status !== undefined) x.status = this.status(d.status);
++      if (d.condition !== undefined) x.condition = this.condition(d.condition);
++    }
++    const taxonomies = {
++      categoryId: 'category',
++      brandId: 'brand',
++      colorId: 'color',
++      sizeId: 'size',
++    } as const;
++    for (const [field, kind] of Object.entries(taxonomies) as [keyof typeof taxonomies, TaxonomyKind][]) {
++      const value = d[field];
++      if (value !== undefined) {
++        Object.assign(x, { [field]: value || null });
++        if (value && !(await this.repo.findTaxonomy(kind, value)))
++          throw BusinessException.validation(
++            `${field} must reference a live taxonomy`,
++          );
++      }
++    }
++    return x;
++  }
++  private name(v: unknown) {
++    const s = String(v ?? '').trim();
++    if (!s) throw BusinessException.validation('displayName is required');
++    return s;
++  }
++  private money(v: unknown, f: string) {
++    return assertNonNegativeFils(assertFils(v, f), f);
++  }
++  private status(v: string) {
++    const x = v.toLowerCase();
++    if (!Object.values(ITEM_STATUS).includes(x as never))
++      throw BusinessException.validation('Invalid item status');
++    return x;
++  }
++  private condition(v: unknown) {
++    if (v == null || v === '') return null;
++    const x = String(v).toLowerCase();
++    if (!Object.values(ITEM_CONDITION).includes(x as never))
++      throw BusinessException.validation('Invalid item condition');
++    return x;
++  }
++  private async code() {
++    const prefix = (
++      await this.settings.getString(
++        INVENTORY_ITEM_SETTING.PREFIX,
++        ITEM_DEFAULT_PREFIX,
++      )
++    )
++      .trim()
++      .toUpperCase();
++    const separator = await this.settings.getString(
++      INVENTORY_ITEM_SETTING.SEPARATOR,
++      ITEM_DEFAULT_SEPARATOR,
++    );
++    const padding = await this.settings.getInt(
++      INVENTORY_ITEM_SETTING.PADDING,
++      ITEM_DEFAULT_PADDING,
++    );
++
++    if (
++      !/^[A-Z0-9]+$/.test(prefix) ||
++      !Number.isInteger(padding) ||
++      padding < 1 ||
++      padding > 16
++    ) {
++      throw BusinessException.validation(
++        'Invalid inventory item code settings',
++      );
++    }
++
++    for (let i = 0; i < 25; i += 1) {
++      const sequence = await this.repo.nextSequence(`item:${prefix}`);
++      const code = `${prefix}${separator}${String(sequence).padStart(padding, '0')}`;
++      if (!(await this.repo.findAnyCode(code))) {
++        return code;
++      }
++    }
++
++    throw BusinessException.invariant('Unable to allocate item code');
++  }
++  private async live(id: string) {
++    const r = await this.repo.findById(id);
++    if (!r) throw BusinessException.notFound('Item not found');
++    return r;
++  }
++  private snapshot(r: ItemWithRelations) {
++    return {
++      id: r.id,
++      internalCode: r.internalCode,
++      displayName: r.displayName,
++      status: r.status,
++      condition: r.condition,
++      deletedAt: r.deletedAt,
++    };
++  }
++}
+diff --git a/backend-node/src/inventory/sizes/dto/size.dto.ts b/backend-node/src/inventory/sizes/dto/size.dto.ts
+new file mode 100644
+index 0000000..1c8cec6
+--- /dev/null
++++ b/backend-node/src/inventory/sizes/dto/size.dto.ts
+@@ -0,0 +1,58 @@
++import {
++  IsBoolean,
++  IsInt,
++  IsOptional,
++  IsString,
++  MaxLength,
++  Matches,
++} from 'class-validator';
++
++export class SizeDto {
++  @IsOptional()
++  @IsString()
++  @MaxLength(200)
++  name?: string;
++
++  @IsOptional()
++  @IsString()
++  @MaxLength(1000)
++  description?: string;
++
++  @IsOptional()
++  @IsBoolean()
++  isActive?: boolean;
++
++  @IsOptional()
++  @IsInt()
++  sortOrder?: number;
++
++  @IsOptional()
++  @IsString()
++  parentId?: string;
++
++  @IsOptional()
++  @IsString()
++  nameEn?: string;
++
++  @IsOptional()
++  @Matches(/^#[0-9A-Fa-f]{6}$/)
++  hexCode?: string;
++}
++
++export class ListSizesDto {
++  @IsOptional()
++  @IsString()
++  q?: string;
++
++  @IsOptional()
++  @IsString()
++  deleted?: string;
++
++  @IsOptional()
++  @IsInt()
++  offset?: number;
++
++  @IsOptional()
++  @IsInt()
++  limit?: number;
++}
+diff --git a/backend-node/src/inventory/sizes/sizes.controller.ts b/backend-node/src/inventory/sizes/sizes.controller.ts
+new file mode 100644
+index 0000000..0bbbcbe
+--- /dev/null
++++ b/backend-node/src/inventory/sizes/sizes.controller.ts
+@@ -0,0 +1,69 @@
++import {
++  Body,
++  Controller,
++  Delete,
++  Get,
++  HttpCode,
++  Param,
++  ParseUUIDPipe,
++  Patch,
++  Post,
++  Query,
++} from '@nestjs/common';
++import { CurrentUser } from '../../auth/decorators/current-user.decorator';
++import { RequirePermissions } from '../../auth/decorators/require-permissions.decorator';
++import type { AuthPrincipal } from '../../shared/types';
++import { INVENTORY_PERMISSION } from '../inventory.constants';
++import { SizesService } from './sizes.service';
++import { ListSizesDto, SizeDto } from './dto/size.dto';
++
++@Controller('sizes')
++export class SizesController {
++  constructor(private readonly service: SizesService) {}
++
++  @Get()
++  @RequirePermissions(INVENTORY_PERMISSION.VIEW)
++  list(@Query() q: ListSizesDto) {
++    return this.service.list(q);
++  }
++
++  @Get(':id')
++  @RequirePermissions(INVENTORY_PERMISSION.VIEW)
++  get(@Param('id', ParseUUIDPipe) id: string) {
++    return this.service.getById(id);
++  }
++
++  @Post()
++  @RequirePermissions(INVENTORY_PERMISSION.CREATE)
++  create(@Body() d: SizeDto, @CurrentUser() u: AuthPrincipal) {
++    return this.service.create(d, u);
++  }
++
++  @Patch(':id')
++  @RequirePermissions(INVENTORY_PERMISSION.UPDATE)
++  update(
++    @Param('id', ParseUUIDPipe) id: string,
++    @Body() d: SizeDto,
++    @CurrentUser() u: AuthPrincipal,
++  ) {
++    return this.service.update(id, d, u);
++  }
++  @Delete(':id')
++  @HttpCode(200)
++  @RequirePermissions(INVENTORY_PERMISSION.DELETE)
++  delete(
++    @Param('id', ParseUUIDPipe) id: string,
++    @CurrentUser() u: AuthPrincipal,
++  ) {
++    return this.service.softDelete(id, u);
++  }
++  @Post(':id/restore')
++  @HttpCode(200)
++  @RequirePermissions(INVENTORY_PERMISSION.RESTORE)
++  restore(
++    @Param('id', ParseUUIDPipe) id: string,
++    @CurrentUser() u: AuthPrincipal,
++  ) {
++    return this.service.restore(id, u);
++  }
++}
+diff --git a/backend-node/src/inventory/sizes/sizes.repository.ts b/backend-node/src/inventory/sizes/sizes.repository.ts
+new file mode 100644
+index 0000000..d43fde5
+--- /dev/null
++++ b/backend-node/src/inventory/sizes/sizes.repository.ts
+@@ -0,0 +1,9 @@
++import { Injectable } from '@nestjs/common';
++import { PrismaService } from '../../database/prisma.service';
++import { TaxonomyRepository } from '../taxonomy';
++@Injectable()
++export class SizesRepository extends TaxonomyRepository {
++  constructor(prisma: PrismaService) {
++    super(prisma, 'size');
++  }
++}
+diff --git a/backend-node/src/inventory/sizes/sizes.service.ts b/backend-node/src/inventory/sizes/sizes.service.ts
+new file mode 100644
+index 0000000..9c0d6f1
+--- /dev/null
++++ b/backend-node/src/inventory/sizes/sizes.service.ts
+@@ -0,0 +1,10 @@
++import { Injectable } from '@nestjs/common';
++import { AuditService } from '../../audit/audit.service';
++import { TaxonomyService } from '../taxonomy';
++import { SizesRepository } from './sizes.repository';
++@Injectable()
++export class SizesService extends TaxonomyService {
++  constructor(repo: SizesRepository, audit: AuditService) {
++    super(repo, audit, 'size');
++  }
++}
+diff --git a/backend-node/src/inventory/taxonomy.ts b/backend-node/src/inventory/taxonomy.ts
+new file mode 100644
+index 0000000..12d58ca
+--- /dev/null
++++ b/backend-node/src/inventory/taxonomy.ts
+@@ -0,0 +1,246 @@
++import { Injectable } from '@nestjs/common';
++import type { Prisma } from '@prisma/client';
++import { AuditService } from '../audit/audit.service';
++import { PrismaService } from '../database/prisma.service';
++import { AUDIT_ACTION } from '../shared/constants/business.constants';
++import { BusinessException } from '../shared/errors/business.exception';
++import { normalizePagination, paginated } from '../shared/pagination/pagination';
++import type { AuthPrincipal } from '../shared/types';
++import type {
++  ListTaxonomyQuery,
++  TaxonomyKind,
++  TaxonomyPayload,
++  TaxonomyRow,
++} from './inventory.types';
++
++type TaxonomyMutationInput = TaxonomyPayload & {
++  updatedBy?: string | null;
++  deletedAt?: Date | null;
++  deletedBy?: string | null;
++};
++type TaxonomyWhereInput = {
++  deletedAt: Date | null | { not: null };
++  name?: Prisma.StringFilter;
++  parentId?: string | null;
++};
++
++@Injectable()
++export class TaxonomyRepository {
++  constructor(
++    protected readonly prisma: PrismaService,
++    protected readonly kind: TaxonomyKind,
++  ) {}
++  create(data: TaxonomyMutationInput) {
++    switch (this.kind) {
++      case 'category':
++        return this.prisma.category.create({ data: data as Prisma.CategoryUncheckedCreateInput });
++      case 'brand':
++        return this.prisma.brand.create({ data: data as Prisma.BrandUncheckedCreateInput });
++      case 'color':
++        return this.prisma.color.create({ data: data as Prisma.ColorUncheckedCreateInput });
++      case 'size':
++        return this.prisma.size.create({ data: data as Prisma.SizeUncheckedCreateInput });
++    }
++  }
++  update(id: string, data: TaxonomyMutationInput) {
++    switch (this.kind) {
++      case 'category':
++        return this.prisma.category.update({ where: { id }, data: data as Prisma.CategoryUncheckedUpdateInput });
++      case 'brand':
++        return this.prisma.brand.update({ where: { id }, data: data as Prisma.BrandUncheckedUpdateInput });
++      case 'color':
++        return this.prisma.color.update({ where: { id }, data: data as Prisma.ColorUncheckedUpdateInput });
++      case 'size':
++        return this.prisma.size.update({ where: { id }, data: data as Prisma.SizeUncheckedUpdateInput });
++    }
++  }
++  find(id: string, deleted = false) {
++    const where = { id, deletedAt: deleted ? { not: null } : null };
++    switch (this.kind) {
++      case 'category': return this.prisma.category.findFirst({ where });
++      case 'brand': return this.prisma.brand.findFirst({ where });
++      case 'color': return this.prisma.color.findFirst({ where });
++      case 'size': return this.prisma.size.findFirst({ where });
++    }
++  }
++  async findAnyName(name: string, excludeId?: string) {
++    const where = { deletedAt: null, ...(excludeId ? { id: { not: excludeId } } : {}) };
++    const select = { id: true, name: true };
++    const rows = await (this.kind === 'category'
++      ? this.prisma.category.findMany({ where, select })
++      : this.kind === 'brand'
++        ? this.prisma.brand.findMany({ where, select })
++        : this.kind === 'color'
++          ? this.prisma.color.findMany({ where, select })
++          : this.prisma.size.findMany({ where, select }));
++    return (
++      rows.find(
++        (r) =>
++          r.name.trim().toLocaleLowerCase() === name.trim().toLocaleLowerCase(),
++      ) ?? null
++    );
++  }
++  async list(where: TaxonomyWhereInput, skip: number, take: number) {
++    switch (this.kind) {
++      case 'category': {
++        const typedWhere = where as Prisma.CategoryWhereInput;
++        const [rows, total] = await Promise.all([this.prisma.category.findMany({ where: typedWhere, skip, take, orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }] }), this.prisma.category.count({ where: typedWhere })]);
++        return { rows, total };
++      }
++      case 'brand': {
++        const typedWhere = where as Prisma.BrandWhereInput;
++        const [rows, total] = await Promise.all([this.prisma.brand.findMany({ where: typedWhere, skip, take, orderBy: [{ name: 'asc' }] }), this.prisma.brand.count({ where: typedWhere })]);
++        return { rows, total };
++      }
++      case 'color': {
++        const typedWhere = where as Prisma.ColorWhereInput;
++        const [rows, total] = await Promise.all([this.prisma.color.findMany({ where: typedWhere, skip, take, orderBy: [{ name: 'asc' }] }), this.prisma.color.count({ where: typedWhere })]);
++        return { rows, total };
++      }
++      case 'size': {
++        const typedWhere = where as Prisma.SizeWhereInput;
++        const [rows, total] = await Promise.all([this.prisma.size.findMany({ where: typedWhere, skip, take, orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }] }), this.prisma.size.count({ where: typedWhere })]);
++        return { rows, total };
++      }
++    }
++  }
++  softDelete(id: string, userId?: string) {
++    return this.update(id, {
++      deletedAt: new Date(),
++      deletedBy: userId ?? null,
++      isActive: false,
++    });
++  }
++  restore(id: string, userId?: string) {
++    return this.update(id, {
++      deletedAt: null,
++      deletedBy: null,
++      isActive: true,
++      updatedBy: userId ?? null,
++    });
++  }
++}
++@Injectable()
++export class TaxonomyService {
++  constructor(
++    protected readonly repo: TaxonomyRepository,
++    protected readonly audit: AuditService,
++    protected readonly kind: TaxonomyKind,
++  ) {}
++  async create(dto: TaxonomyPayload, actor?: AuthPrincipal) {
++    const data = this.data(dto, actor);
++    if (!data.name) throw BusinessException.validation('name is required');
++    await this.unique(data.name);
++    if (this.kind === 'category' && data.parentId)
++      await this.live(data.parentId);
++    const row = await this.repo.create(data);
++    await this.audit.recordCreate('inventory', this.kind, row.id, row, {
++      userId: actor?.userId,
++      username: actor?.username,
++    });
++    return row;
++  }
++  async update(id: string, dto: TaxonomyPayload, actor?: AuthPrincipal) {
++    const old = await this.live(id);
++    const data = this.data(dto, actor);
++    if (data.name !== undefined) await this.unique(data.name, id);
++    if (this.kind === 'category' && data.parentId) {
++      if (data.parentId === id)
++        throw BusinessException.validation('Category cannot be its own parent');
++      await this.live(data.parentId);
++    }
++    const row = await this.repo.update(id, data);
++    await this.audit.recordUpdate('inventory', this.kind, id, old, row, {
++      userId: actor?.userId,
++      username: actor?.username,
++    });
++    return row;
++  }
++  async list(q: ListTaxonomyQuery) {
++    const deleted = q.deleted === 'true' || q.deleted === true;
++    const where: TaxonomyWhereInput = { deletedAt: deleted ? { not: null } : null };
++    if (q.q?.trim()) where.name = { contains: q.q.trim() };
++    if (q.parentId !== undefined && this.kind === 'category') {
++      where.parentId = q.parentId || null;
++    }
++
++    const page = normalizePagination(q);
++    const { rows, total } = await this.repo.list(
++      where,
++      page.offset,
++      page.limit,
++    );
++    return paginated<TaxonomyRow>(rows, total, page);
++  }
++  async getById(id: string) {
++    return this.live(id);
++  }
++  async softDelete(id: string, actor?: AuthPrincipal) {
++    const old = await this.live(id);
++    const row = await this.repo.softDelete(id, actor?.userId);
++    await this.audit.recordSoftDelete('inventory', this.kind, id, old, {
++      userId: actor?.userId,
++      username: actor?.username,
++    });
++    return row;
++  }
++  async restore(id: string, actor?: AuthPrincipal) {
++    const old = await this.repo.find(id, true);
++    if (!old) throw BusinessException.notFound(`${this.kind} not found`);
++    if (!old.deletedAt)
++      throw BusinessException.conflict(`${this.kind} is not deleted`);
++    await this.unique(old.name, id);
++    const row = await this.repo.restore(id, actor?.userId);
++    await this.audit.record({
++      module: 'inventory',
++      entityType: this.kind,
++      entityId: id,
++      action: AUDIT_ACTION.RESTORE,
++      oldValues: old,
++      newValues: row,
++      actor: { userId: actor?.userId, username: actor?.username },
++    });
++    return row;
++  }
++  protected async live(id: string) {
++    const r = await this.repo.find(id);
++    if (!r) throw BusinessException.notFound(`${this.kind} not found`);
++    return r;
++  }
++  protected async unique(name: string, excludeId?: string) {
++    if (await this.repo.findAnyName(name, excludeId))
++      throw BusinessException.conflict(
++        `A live ${this.kind} with this name already exists`,
++      );
++  }
++  protected data(dto: TaxonomyPayload, actor?: AuthPrincipal): TaxonomyMutationInput {
++    const name = dto.name === undefined ? undefined : dto.name.trim();
++    if (name !== undefined) {
++      if (!name) throw BusinessException.validation('name is required');
++    }
++    const base = {
++      ...(name !== undefined ? { name } : {}),
++      ...(dto.description !== undefined ? { description: dto.description?.trim() || null } : {}),
++      ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
++      updatedBy: actor?.userId ?? null,
++    };
++    if (this.kind === 'category') {
++      return {
++        ...base,
++        ...(dto.sortOrder !== undefined ? { sortOrder: dto.sortOrder } : {}),
++        ...(dto.parentId !== undefined ? { parentId: dto.parentId || null } : {}),
++        ...(dto.nameEn !== undefined ? { nameEn: dto.nameEn?.trim() || null } : {}),
++      };
++    }
++    if (this.kind === 'size') {
++      return { ...base, ...(dto.sortOrder !== undefined ? { sortOrder: dto.sortOrder } : {}) };
++    }
++    if (this.kind === 'color' && dto.hexCode !== undefined) {
++      const hex = (dto.hexCode ?? '').trim().toUpperCase();
++      if (hex && !/^#[0-9A-F]{6}$/.test(hex))
++        throw BusinessException.validation('hexCode must be #RRGGBB');
++      return { ...base, hexCode: hex || null };
++    }
++    return base;
++  }
++}
+diff --git a/backend-node/src/permissions/permission.seeds.ts b/backend-node/src/permissions/permission.seeds.ts
+index ee0d37f..2ebacb9 100644
+--- a/backend-node/src/permissions/permission.seeds.ts
++++ b/backend-node/src/permissions/permission.seeds.ts
+@@ -51,10 +51,12 @@ export const DEFAULT_PERMISSIONS: readonly PermissionSeed[] = [
+   perm('categories.create', 'إنشاء تصنيف', 'إنشاء تصنيف جديد'),
+   perm('categories.update', 'تعديل تصنيف', 'تعديل تصنيف'),
+   perm('categories.delete', 'حذف تصنيف', 'حذف تصنيف'),
++  perm('categories.restore', 'Restore categories', 'Restore deleted catalog categories'),
+   perm('inventory.view', 'عرض المخزون', 'عرض عناصر المخزون والفساتين'),
+   perm('inventory.create', 'إضافة مخزون', 'إضافة فستان أو عنصر مخزون'),
+   perm('inventory.update', 'تعديل المخزون', 'تعديل بيانات المخزون'),
+   perm('inventory.delete', 'حذف المخزون', 'حذف عنصر من المخزون'),
++  perm('inventory.restore', 'Restore inventory', 'Restore deleted inventory items'),
+   perm('customer.view', 'عرض العملاء', 'عرض قائمة العملاء'),
+   perm('customer.create', 'إنشاء عميل', 'إنشاء عميل جديد'),
+   perm('customer.update', 'تعديل عميل', 'تعديل بيانات العميل'),
+@@ -142,10 +144,12 @@ export const INVENTORY_PERMISSIONS: readonly string[] = [
+   'categories.create',
+   'categories.update',
+   'categories.delete',
++  'categories.restore',
+   'inventory.view',
+   'inventory.create',
+   'inventory.update',
+   'inventory.delete',
++  'inventory.restore',
+   'inspection.view',
+   'inspection.create',
+   'inspection.update',
+diff --git a/backend-node/src/settings/settings.seeds.ts b/backend-node/src/settings/settings.seeds.ts
+index d548414..87f881c 100644
+--- a/backend-node/src/settings/settings.seeds.ts
++++ b/backend-node/src/settings/settings.seeds.ts
+@@ -18,6 +18,10 @@ export interface SettingSeed {
+ }
+ 
+ export const DEFAULT_APP_SETTINGS: readonly SettingSeed[] = [
++  { key: 'inventory.item.prefix', value: 'ITM', valueType: SETTING_VALUE_TYPE.STRING, category: 'catalog', description: 'Inventory item internal-code prefix', isEditable: true },
++  { key: 'inventory.item.separator', value: '-', valueType: SETTING_VALUE_TYPE.STRING, category: 'catalog', description: 'Inventory item internal-code separator', isEditable: true },
++  { key: 'inventory.item.padding', value: '8', valueType: SETTING_VALUE_TYPE.INTEGER, category: 'catalog', description: 'Inventory item internal-code zero-pad width', isEditable: true },
++
+   {
+     key: 'company.name',
+     value: 'جمان',
+diff --git a/backend-node/test/inventory-controllers.spec.ts b/backend-node/test/inventory-controllers.spec.ts
+new file mode 100644
+index 0000000..8ba75e3
+--- /dev/null
++++ b/backend-node/test/inventory-controllers.spec.ts
+@@ -0,0 +1,61 @@
++import { describe, expect, it, vi } from 'vitest';
++import { ItemsController } from '../src/inventory/items/items.controller';
++import { CategoriesController } from '../src/inventory/categories/categories.controller';
++import { BrandsController } from '../src/inventory/brands/brands.controller';
++import { ColorsController } from '../src/inventory/colors/colors.controller';
++import { SizesController } from '../src/inventory/sizes/sizes.controller';
++
++describe('Inventory controllers', () => {
++  const user = { userId: 'u1', username: 'admin' } as never;
++
++  it('delegates items HTTP surface', async () => {
++    const items = {
++      list: vi.fn(),
++      search: vi.fn(),
++      getByInternalCode: vi.fn(),
++      getPublicById: vi.fn(),
++      create: vi.fn(),
++      update: vi.fn(),
++      softDelete: vi.fn(),
++      restore: vi.fn(),
++      attachMedia: vi.fn(),
++    };
++    const c = new ItemsController(items as never);
++    await c.list({} as never);
++    await c.search({ q: 'x' } as never);
++    await c.code('ITM-1');
++    await c.get('id');
++    await c.create({ displayName: 'x' } as never, user);
++    await c.update('id', { displayName: 'y' } as never, user);
++    await c.delete('id', user);
++    await c.restore('id', user);
++    await c.media('id', { mediaFileId: 'm' } as never, user);
++    expect(items.attachMedia).toHaveBeenCalled();
++  });
++
++  it('delegates taxonomy HTTP surfaces', async () => {
++    const service = {
++      list: vi.fn(),
++      getById: vi.fn(),
++      create: vi.fn(),
++      update: vi.fn(),
++      softDelete: vi.fn(),
++      restore: vi.fn(),
++    };
++    for (const Ctor of [
++      CategoriesController,
++      BrandsController,
++      ColorsController,
++      SizesController,
++    ]) {
++      const c = new Ctor(service as never);
++      await c.list({});
++      await c.get('id');
++      await c.create({ name: 'x' } as never, user);
++      await c.update('id', { name: 'y' } as never, user);
++      await c.delete('id', user);
++      await c.restore('id', user);
++    }
++    expect(service.restore).toHaveBeenCalled();
++  });
++});
+diff --git a/backend-node/test/inventory-integration.spec.ts b/backend-node/test/inventory-integration.spec.ts
+new file mode 100644
+index 0000000..cae9229
+--- /dev/null
++++ b/backend-node/test/inventory-integration.spec.ts
+@@ -0,0 +1,206 @@
++import 'reflect-metadata';
++import { rmSync } from 'node:fs';
++import { afterAll, beforeAll, describe, expect, it } from 'vitest';
++import { INestApplication } from '@nestjs/common';
++import { Test } from '@nestjs/testing';
++import request from 'supertest';
++import { AppModule } from '../src/app.module';
++import { createGlobalValidationPipe } from '../src/validation/create-validation-pipe';
++import { prepareTestDatabase } from './helpers/test-db';
++
++describe('Inventory integration', () => {
++  let app: INestApplication;
++  let dir = '';
++  let token = '';
++  let categoryId = '';
++  let brandId = '';
++  let colorId = '';
++  let sizeId = '';
++  let itemId = '';
++  let internalCode = '';
++  let barcodeValue = '';
++
++  beforeAll(async () => {
++    const p = prepareTestDatabase('juman-inventory-');
++    dir = p.dataDir;
++    process.env.IDENTITY_BOOTSTRAP_USERNAME = 'admin';
++    process.env.IDENTITY_BOOTSTRAP_PASSWORD = 'Juman!Bootstrap1';
++    const m = await Test.createTestingModule({ imports: [AppModule] }).compile();
++    app = m.createNestApplication();
++    app.useGlobalPipes(createGlobalValidationPipe());
++    await app.init();
++
++    let r = await request(app.getHttpServer())
++      .post('/auth/login')
++      .send({ username: 'admin', password: 'Juman!Bootstrap1' });
++    token = r.body.accessToken;
++    await request(app.getHttpServer())
++      .post('/auth/change-password')
++      .set('Authorization', `Bearer ${token}`)
++      .send({ currentPassword: 'Juman!Bootstrap1', newPassword: 'NewStrong!Pass1' });
++    r = await request(app.getHttpServer())
++      .post('/auth/login')
++      .send({ username: 'admin', password: 'NewStrong!Pass1' });
++    token = r.body.accessToken;
++  }, 180_000);
++
++  afterAll(async () => {
++    if (app) await app.close();
++    try {
++      rmSync(dir, { recursive: true, force: true });
++    } catch {
++      /* ignore */
++    }
++  });
++
++  it('requires auth', async () => {
++    await request(app.getHttpServer()).get('/items').expect(401);
++  });
++
++  it('creates taxonomy item filters search and restore', async () => {
++    const category = await request(app.getHttpServer())
++      .post('/categories')
++      .set('Authorization', `Bearer ${token}`)
++      .send({ name: 'Evening', nameEn: 'Evening' })
++      .expect(201);
++    categoryId = category.body.id;
++
++    const brand = await request(app.getHttpServer())
++      .post('/brands')
++      .set('Authorization', `Bearer ${token}`)
++      .send({ name: 'Atelier' })
++      .expect(201);
++    brandId = brand.body.id;
++
++    const color = await request(app.getHttpServer())
++      .post('/colors')
++      .set('Authorization', `Bearer ${token}`)
++      .send({ name: 'Navy', hexCode: '#001F3F' })
++      .expect(201);
++    colorId = color.body.id;
++
++    const size = await request(app.getHttpServer())
++      .post('/sizes')
++      .set('Authorization', `Bearer ${token}`)
++      .send({ name: 'M', sortOrder: 3 })
++      .expect(201);
++    sizeId = size.body.id;
++
++    await request(app.getHttpServer())
++      .get('/brands')
++      .set('Authorization', `Bearer ${token}`)
++      .expect(200);
++    await request(app.getHttpServer())
++      .get(`/colors/${colorId}`)
++      .set('Authorization', `Bearer ${token}`)
++      .expect(200);
++    await request(app.getHttpServer())
++      .patch(`/sizes/${sizeId}`)
++      .set('Authorization', `Bearer ${token}`)
++      .send({ name: 'M' })
++      .expect(200);
++
++    const item = await request(app.getHttpServer())
++      .post('/items')
++      .set('Authorization', `Bearer ${token}`)
++      .send({
++        displayName: 'Blue catalog item',
++        categoryId,
++        brandId,
++        colorId,
++        sizeId,
++        purchasePrice: 1000,
++        rentalPrice: 2000,
++        salePrice: 5000,
++        condition: 'good',
++        generateBarcode: true,
++      })
++      .expect(201);
++    itemId = item.body.id;
++    internalCode = item.body.internalCode;
++    expect(internalCode).toMatch(/^ITM-\d{8}$/);
++    expect(item.body.barcodes).toHaveLength(1);
++    barcodeValue = item.body.barcodes[0].value;
++
++    await request(app.getHttpServer())
++      .get(`/items/${itemId}`)
++      .set('Authorization', `Bearer ${token}`)
++      .expect(200);
++    await request(app.getHttpServer())
++      .get(`/items/code/${internalCode}`)
++      .set('Authorization', `Bearer ${token}`)
++      .expect(200);
++
++    const list = await request(app.getHttpServer())
++      .get('/items')
++      .query({ categoryId, brandId, status: 'draft', barcode: barcodeValue.slice(0, 3) })
++      .set('Authorization', `Bearer ${token}`)
++      .expect(200);
++    const items = list.body.items as Array<{ id: string }>;
++    expect(items.some((x) => x.id === itemId)).toBe(true);
++
++    await request(app.getHttpServer())
++      .get('/items/search')
++      .query({ q: 'Blue' })
++      .set('Authorization', `Bearer ${token}`)
++      .expect(200);
++
++    await request(app.getHttpServer())
++      .patch(`/items/${itemId}`)
++      .set('Authorization', `Bearer ${token}`)
++      .send({ status: 'active', displayName: 'Blue catalog item updated' })
++      .expect(200);
++
++    await request(app.getHttpServer())
++      .post('/items')
++      .set('Authorization', `Bearer ${token}`)
++      .send({ displayName: 'bad', salePrice: -1 })
++      .expect(400);
++
++    await request(app.getHttpServer())
++      .delete(`/items/${itemId}`)
++      .set('Authorization', `Bearer ${token}`)
++      .expect(200);
++    await request(app.getHttpServer())
++      .get(`/items/${itemId}`)
++      .set('Authorization', `Bearer ${token}`)
++      .expect(404);
++    await request(app.getHttpServer())
++      .post(`/items/${itemId}/restore`)
++      .set('Authorization', `Bearer ${token}`)
++      .expect(200);
++
++    await request(app.getHttpServer())
++      .delete(`/brands/${brandId}`)
++      .set('Authorization', `Bearer ${token}`)
++      .expect(200);
++    await request(app.getHttpServer())
++      .post(`/brands/${brandId}/restore`)
++      .set('Authorization', `Bearer ${token}`)
++      .expect(200);
++    await request(app.getHttpServer())
++      .delete(`/colors/${colorId}`)
++      .set('Authorization', `Bearer ${token}`)
++      .expect(200);
++    await request(app.getHttpServer())
++      .post(`/colors/${colorId}/restore`)
++      .set('Authorization', `Bearer ${token}`)
++      .expect(200);
++    await request(app.getHttpServer())
++      .delete(`/sizes/${sizeId}`)
++      .set('Authorization', `Bearer ${token}`)
++      .expect(200);
++    await request(app.getHttpServer())
++      .post(`/sizes/${sizeId}/restore`)
++      .set('Authorization', `Bearer ${token}`)
++      .expect(200);
++    await request(app.getHttpServer())
++      .delete(`/categories/${categoryId}`)
++      .set('Authorization', `Bearer ${token}`)
++      .expect(200);
++    await request(app.getHttpServer())
++      .post(`/categories/${categoryId}/restore`)
++      .set('Authorization', `Bearer ${token}`)
++      .expect(200);
++  });
++});
+diff --git a/backend-node/test/inventory-items-service.spec.ts b/backend-node/test/inventory-items-service.spec.ts
+new file mode 100644
+index 0000000..699d2d6
+--- /dev/null
++++ b/backend-node/test/inventory-items-service.spec.ts
+@@ -0,0 +1,206 @@
++import 'reflect-metadata';
++import { beforeEach, describe, expect, it, vi } from 'vitest';
++import { ItemsService } from '../src/inventory/items/items.service';
++import { BusinessException } from '../src/shared/errors/business.exception';
++import { toItemPublic } from '../src/inventory/items/items.mapper';
++
++const baseRow = {
++  id: 'i1',
++  internalCode: 'ITM-00000001',
++  displayName: 'Item',
++  purchasePrice: 0,
++  rentalPrice: 0,
++  salePrice: 0,
++  condition: null,
++  status: 'draft',
++  description: null,
++  deletedAt: null,
++  createdAt: new Date(),
++  updatedAt: new Date(),
++  category: { id: 'c1', name: 'Cat' },
++  brand: { id: 'b1', name: 'Brand' },
++  color: { id: 'col1', name: 'Red', hexCode: '#FF0000' },
++  size: { id: 's1', name: 'M' },
++  barcodes: [
++    {
++      id: 'ib1',
++      isPrimary: true,
++      barcode: { code: 'DR-00000001' },
++    },
++  ],
++  media: [
++    {
++      id: 'im1',
++      mediaFileId: 'm1',
++      purpose: 'gallery',
++      isPrimary: true,
++      displayOrder: 0,
++      mediaFile: {
++        id: 'm1',
++        originalFilename: 'a.jpg',
++        mimeType: 'image/jpeg',
++        relativePath: 'images/a.jpg',
++      },
++    },
++  ],
++};
++
++describe('ItemsService', () => {
++  const repo = {
++    create: vi.fn(),
++    update: vi.fn(),
++    findById: vi.fn(),
++    findByCode: vi.fn(),
++    findAnyCode: vi.fn(),
++    nextSequence: vi.fn(),
++    findTaxonomy: vi.fn(),
++    createBarcode: vi.fn(),
++    softDelete: vi.fn(),
++    restore: vi.fn(),
++    list: vi.fn(),
++    createMedia: vi.fn(),
++  };
++  const settings = {
++    getString: vi.fn(async (_: string, f: string) => f),
++    getInt: vi.fn(async (_: string, f: number) => f),
++  };
++  const audit = {
++    recordCreate: vi.fn(),
++    recordUpdate: vi.fn(),
++    recordSoftDelete: vi.fn(),
++    record: vi.fn(),
++  };
++  const barcode = {
++    generate: vi.fn(),
++    reserve: vi.fn(),
++    activate: vi.fn(),
++  };
++  const media = { find: vi.fn(), attach: vi.fn() };
++  let service: ItemsService;
++
++  beforeEach(() => {
++    vi.clearAllMocks();
++    service = new ItemsService(
++      repo as never,
++      settings as never,
++      audit as never,
++      barcode as never,
++      media as never,
++    );
++    repo.nextSequence.mockResolvedValue(1);
++    repo.findAnyCode.mockResolvedValue(null);
++    repo.findTaxonomy.mockResolvedValue({ id: 't' });
++    repo.create.mockResolvedValue(baseRow);
++    repo.findById.mockResolvedValue(baseRow);
++    repo.update.mockResolvedValue(baseRow);
++    repo.softDelete.mockResolvedValue({ ...baseRow, status: 'inactive' });
++    repo.restore.mockResolvedValue(baseRow);
++    repo.list.mockResolvedValue({ rows: [baseRow], total: 1 });
++    repo.createMedia.mockResolvedValue({ id: 'im1' });
++  });
++
++  it('maps public item shape', () => {
++    const pub = toItemPublic(baseRow);
++    expect(pub.barcodes[0].value).toBe('DR-00000001');
++    expect(pub.color?.hexCode).toBe('#FF0000');
++    expect(toItemPublic({ ...baseRow, category: null, brand: null, color: null, size: null, barcodes: [], media: [] }).category).toBeNull();
++  });
++
++  it('creates with generateBarcode and reserve barcode', async () => {
++    barcode.generate.mockResolvedValue({ id: 'b1' });
++    await service.create(
++      { displayName: ' Catalog item ', purchasePrice: 1000, generateBarcode: true, condition: 'new' },
++      { userId: 'u' } as never,
++    );
++    expect(barcode.activate).toHaveBeenCalledWith('b1', 'item', 'i1', expect.anything());
++
++    barcode.reserve.mockResolvedValue({ id: 'b2' });
++    await service.create({ displayName: 'Manual', barcode: 'DR-99' }, { userId: 'u' } as never);
++    expect(barcode.reserve).toHaveBeenCalled();
++  });
++
++  it('rolls back item when barcode binding fails', async () => {
++    barcode.generate.mockRejectedValue(new Error('barcode fail'));
++    await expect(
++      service.create({ displayName: 'X', generateBarcode: true }),
++    ).rejects.toThrow('barcode fail');
++    expect(repo.softDelete).toHaveBeenCalledWith('i1', undefined);
++  });
++
++  it('rejects invalid money status condition and missing taxonomy', async () => {
++    await expect(service.create({ displayName: 'x', salePrice: -1 })).rejects.toBeInstanceOf(
++      BusinessException,
++    );
++    await expect(service.create({ displayName: 'x', status: 'invalid' })).rejects.toBeInstanceOf(
++      BusinessException,
++    );
++    await expect(
++      service.create({ displayName: 'x', condition: 'broken' }),
++    ).rejects.toBeInstanceOf(BusinessException);
++    repo.findTaxonomy.mockResolvedValue(null);
++    await expect(
++      service.create({ displayName: 'x', categoryId: 'missing' }),
++    ).rejects.toBeInstanceOf(BusinessException);
++  });
++
++  it('updates soft-deletes restores and looks up by code', async () => {
++    await service.update('i1', { displayName: 'Updated', description: '  ', status: 'active', condition: '', salePrice: 5 }, {
++      userId: 'u',
++    } as never);
++    expect(audit.recordUpdate).toHaveBeenCalled();
++
++    await service.softDelete('i1', { userId: 'u' } as never);
++    await service.getPublicById('i1');
++
++    repo.findByCode.mockResolvedValue(baseRow);
++    expect((await service.getByInternalCode('itm-00000001')).internalCode).toBe('ITM-00000001');
++    repo.findByCode.mockResolvedValue(null);
++    await expect(service.getByInternalCode('missing')).rejects.toBeInstanceOf(BusinessException);
++
++    repo.findById.mockResolvedValue({ ...baseRow, deletedAt: new Date() });
++    await service.restore('i1', { userId: 'u' } as never);
++
++    repo.findById.mockResolvedValue(null);
++    await expect(service.restore('missing')).rejects.toBeInstanceOf(BusinessException);
++    repo.findById.mockResolvedValue({ ...baseRow, deletedAt: null });
++    await expect(service.restore('i1')).rejects.toBeInstanceOf(BusinessException);
++  });
++
++  it('filters searches and attaches media', async () => {
++    await service.list({
++      q: 'Item',
++      barcode: 'CODE',
++      categoryId: 'c',
++      brandId: 'b',
++      status: 'active',
++      displayName: 'Item',
++      internalCode: 'ITM',
++      deleted: 'true',
++      sortBy: 'displayName',
++      sortDir: 'asc',
++    });
++    expect(repo.list).toHaveBeenCalled();
++    await expect(service.search({})).rejects.toBeInstanceOf(BusinessException);
++    await service.search({ q: 'Blue' });
++
++    repo.findById.mockResolvedValue(baseRow);
++    await service.attachMedia('i1', { mediaFileId: 'm1' }, { userId: 'u' } as never);
++    expect(media.attach).toHaveBeenCalledWith(expect.objectContaining({ entityType: 'item' }));
++  });
++
++  it('handles code allocation collisions and bad settings', async () => {
++    repo.findAnyCode.mockResolvedValueOnce({ id: 'taken' }).mockResolvedValueOnce(null);
++    repo.nextSequence.mockResolvedValueOnce(1).mockResolvedValueOnce(2);
++    await service.create({ displayName: 'Retry' });
++
++    settings.getString.mockImplementation(async (key: string, fallback: string) => {
++      if (key === 'inventory.item.prefix') return 'bad-prefix';
++      return fallback;
++    });
++    await expect(service.create({ displayName: 'X' })).rejects.toBeInstanceOf(BusinessException);
++
++    settings.getString.mockImplementation(async (_k: string, f: string) => f);
++    repo.findAnyCode.mockResolvedValue({ id: 'taken' });
++    await expect(service.create({ displayName: 'X' })).rejects.toBeInstanceOf(BusinessException);
++  });
++});
+diff --git a/backend-node/test/inventory-repository.spec.ts b/backend-node/test/inventory-repository.spec.ts
+new file mode 100644
+index 0000000..2c1d693
+--- /dev/null
++++ b/backend-node/test/inventory-repository.spec.ts
+@@ -0,0 +1,76 @@
++import 'reflect-metadata';
++import { describe, expect, it, vi } from 'vitest';
++import { ItemsRepository } from '../src/inventory/items/items.repository';
++
++type SequenceTransaction = {
++  sequenceCounter: {
++    findUnique: ReturnType<typeof vi.fn>;
++    create: ReturnType<typeof vi.fn>;
++    update: ReturnType<typeof vi.fn>;
++  };
++};
++type SequenceCallback = (tx: SequenceTransaction) => Promise<number>;
++
++describe('ItemsRepository', () => {
++  it('covers sequence create list taxonomy and relation helpers', async () => {
++    const prisma = {
++      item: {
++        create: vi.fn().mockResolvedValue({ id: 'i1' }),
++        update: vi.fn().mockResolvedValue({ id: 'i1' }),
++        findFirst: vi.fn().mockResolvedValue({ id: 'i1' }),
++        findUnique: vi.fn().mockResolvedValue(null),
++        findMany: vi.fn().mockResolvedValue([]),
++        count: vi.fn().mockResolvedValue(0),
++      },
++      itemBarcode: {
++        create: vi.fn().mockResolvedValue({ id: 'ib1' }),
++      },
++      itemMedia: {
++        create: vi.fn().mockResolvedValue({ id: 'im1' }),
++      },
++      category: { findFirst: vi.fn().mockResolvedValue({ id: 'c1' }) },
++      brand: { findFirst: vi.fn().mockResolvedValue(null) },
++      color: { findFirst: vi.fn().mockResolvedValue({ id: 'col' }) },
++      size: { findFirst: vi.fn().mockResolvedValue({ id: 's' }) },
++      $transaction: vi.fn(async (fn: SequenceCallback) =>
++        fn({
++          sequenceCounter: {
++            findUnique: vi.fn().mockResolvedValue(null),
++            create: vi.fn().mockResolvedValue({ lastValue: 1 }),
++            update: vi.fn().mockResolvedValue({ lastValue: 2 }),
++          },
++        }),
++      ),
++    };
++    const repo = new ItemsRepository(prisma as never);
++    await repo.create({ displayName: 'x', internalCode: 'ITM-1' });
++    await repo.update('i1', { displayName: 'y' });
++    await repo.findById('i1');
++    await repo.findById('i1', true);
++    await repo.findByCode('ITM-1');
++    await repo.findAnyCode('ITM-1');
++    await repo.list({
++      where: { deletedAt: null },
++      orderBy: { createdAt: 'desc' },
++      offset: 0,
++      limit: 10,
++    });
++    expect(await repo.nextSequence('item:ITM')).toBe(1);
++    prisma.$transaction.mockImplementation(async (fn: SequenceCallback) =>
++      fn({
++        sequenceCounter: {
++          findUnique: vi.fn().mockResolvedValue({ lastValue: 3 }),
++          create: vi.fn(),
++          update: vi.fn().mockResolvedValue({ lastValue: 4 }),
++        },
++      }),
++    );
++    expect(await repo.nextSequence('item:ITM')).toBe(4);
++    await repo.softDelete('i1', 'u');
++    await repo.restore('i1', 'u');
++    await repo.findTaxonomy('category', 'c1');
++    await repo.findTaxonomy('brand', 'b1');
++    await repo.createBarcode('i1', 'b1', true, 'u');
++    await repo.createMedia({ itemId: 'i1', mediaFileId: 'm1' });
++  });
++});
+diff --git a/backend-node/test/inventory-taxonomy-service.spec.ts b/backend-node/test/inventory-taxonomy-service.spec.ts
+new file mode 100644
+index 0000000..e9476a4
+--- /dev/null
++++ b/backend-node/test/inventory-taxonomy-service.spec.ts
+@@ -0,0 +1,147 @@
++import 'reflect-metadata';
++import { beforeEach, describe, expect, it, vi } from 'vitest';
++import { TaxonomyRepository, TaxonomyService } from '../src/inventory/taxonomy';
++import { BusinessException } from '../src/shared/errors/business.exception';
++import { CategoriesService } from '../src/inventory/categories/categories.service';
++import { BrandsService } from '../src/inventory/brands/brands.service';
++import { ColorsService } from '../src/inventory/colors/colors.service';
++import { SizesService } from '../src/inventory/sizes/sizes.service';
++import { CategoriesRepository } from '../src/inventory/categories/categories.repository';
++import { BrandsRepository } from '../src/inventory/brands/brands.repository';
++import { ColorsRepository } from '../src/inventory/colors/colors.repository';
++import { SizesRepository } from '../src/inventory/sizes/sizes.repository';
++
++describe('TaxonomyService', () => {
++  const repo = {
++    find: vi.fn(),
++    findAnyName: vi.fn(),
++    create: vi.fn(),
++    update: vi.fn(),
++    list: vi.fn(),
++    softDelete: vi.fn(),
++    restore: vi.fn(),
++  };
++  const audit = {
++    recordCreate: vi.fn(),
++    recordUpdate: vi.fn(),
++    recordSoftDelete: vi.fn(),
++    record: vi.fn(),
++  };
++  let colorService: TaxonomyService;
++  let categoryService: TaxonomyService;
++
++  beforeEach(() => {
++    vi.clearAllMocks();
++    colorService = new TaxonomyService(repo as never, audit as never, 'color');
++    categoryService = new TaxonomyService(repo as never, audit as never, 'category');
++    repo.findAnyName.mockResolvedValue(null);
++    repo.create.mockImplementation(async (d: Record<string, unknown>) => ({
++      id: 'c1',
++      ...d,
++      deletedAt: null,
++    }));
++    repo.find.mockResolvedValue({ id: 'c1', name: 'Red', deletedAt: null });
++    repo.update.mockImplementation(async (id: string, d: Record<string, unknown>) => ({
++      id,
++      name: 'Red',
++      ...d,
++    }));
++    repo.list.mockResolvedValue({ rows: [{ id: 'c1', name: 'Red' }], total: 1 });
++    repo.softDelete.mockResolvedValue({ id: 'c1', deletedAt: new Date() });
++    repo.restore.mockResolvedValue({ id: 'c1', deletedAt: null });
++  });
++
++  it('creates updates lists soft-deletes and restores', async () => {
++    const created = await colorService.create({
++      name: ' Red ',
++      hexCode: '#ff0000',
++      description: '  ',
++      isActive: true,
++    });
++    expect(created.hexCode).toBe('#FF0000');
++    await expect(
++      colorService.create({ name: 'Blue', hexCode: '#fff' }),
++    ).rejects.toBeInstanceOf(BusinessException);
++    await expect(colorService.create({ name: '  ' })).rejects.toBeInstanceOf(BusinessException);
++
++    await colorService.update('c1', { name: 'Crimson', hexCode: '' }, { userId: 'u' } as never);
++    await colorService.getById('c1');
++    await colorService.softDelete('c1', { userId: 'u' } as never);
++
++    const page = await colorService.list({ q: 're', deleted: true, offset: 0, limit: 10 });
++    expect(page.items).toHaveLength(1);
++    expect(page.meta.total).toBe(1);
++
++    repo.find.mockResolvedValue({ id: 'c1', name: 'Red', deletedAt: new Date() });
++    await colorService.restore('c1');
++    expect(audit.record).toHaveBeenCalled();
++
++    repo.find.mockResolvedValue(null);
++    await expect(colorService.restore('x')).rejects.toBeInstanceOf(BusinessException);
++    repo.find.mockResolvedValue({ id: 'c1', name: 'Red', deletedAt: null });
++    await expect(colorService.restore('c1')).rejects.toBeInstanceOf(BusinessException);
++  });
++
++  it('enforces category parent rules and duplicate names', async () => {
++    repo.find.mockResolvedValue({ id: 'parent', name: 'Parent', deletedAt: null });
++    await categoryService.create({ name: 'Child', parentId: 'parent', nameEn: 'Child', sortOrder: 2 });
++
++    repo.find.mockResolvedValue({ id: 'c1', name: 'Cat', deletedAt: null });
++    await expect(
++      categoryService.update('c1', { parentId: 'c1' }),
++    ).rejects.toBeInstanceOf(BusinessException);
++
++    await categoryService.list({ parentId: '', q: 'x' });
++    repo.findAnyName.mockResolvedValue({ id: 'other' });
++    await expect(categoryService.create({ name: 'dup' })).rejects.toBeInstanceOf(BusinessException);
++  });
++});
++
++describe('TaxonomyRepository', () => {
++  it('covers model operations for category and brand orderings', async () => {
++    const findMany = vi.fn().mockResolvedValue([{ id: '1', name: 'A' }]);
++    const count = vi.fn().mockResolvedValue(1);
++    const prisma = {
++      category: {
++        create: vi.fn().mockResolvedValue({ id: '1' }),
++        update: vi.fn().mockResolvedValue({ id: '1' }),
++        findFirst: vi.fn().mockResolvedValue({ id: '1', name: 'A' }),
++        findMany,
++        count,
++      },
++      brand: {
++        create: vi.fn(),
++        update: vi.fn(),
++        findFirst: vi.fn(),
++        findMany: vi.fn().mockResolvedValue([{ id: '1', name: ' Brand ' }]),
++        count: vi.fn().mockResolvedValue(1),
++      },
++    };
++    const cats = new TaxonomyRepository(prisma as never, 'category');
++    await cats.create({ name: 'A' });
++    await cats.update('1', { name: 'B' });
++    await cats.find('1');
++    await cats.find('1', true);
++    await cats.findAnyName('a');
++    await cats.list({ deletedAt: null }, 0, 10);
++    await cats.softDelete('1', 'u');
++    await cats.restore('1', 'u');
++
++    const brands = new TaxonomyRepository(prisma as never, 'brand');
++    expect(await brands.findAnyName('brand')).toEqual({ id: '1', name: ' Brand ' });
++    await brands.list({}, 0, 5);
++  });
++});
++
++describe('taxonomy subclass constructors', () => {
++  it('wires kind-specific services', () => {
++    const prisma = {} as never;
++    const audit = {} as never;
++    expect(new CategoriesService(new CategoriesRepository(prisma), audit)).toBeInstanceOf(
++      TaxonomyService,
++    );
++    expect(new BrandsService(new BrandsRepository(prisma), audit)).toBeInstanceOf(TaxonomyService);
++    expect(new ColorsService(new ColorsRepository(prisma), audit)).toBeInstanceOf(TaxonomyService);
++    expect(new SizesService(new SizesRepository(prisma), audit)).toBeInstanceOf(TaxonomyService);
++  });
++});
+diff --git a/backend-node/vitest.inventory.config.ts b/backend-node/vitest.inventory.config.ts
+new file mode 100644
+index 0000000..90fe7e8
+--- /dev/null
++++ b/backend-node/vitest.inventory.config.ts
+@@ -0,0 +1 @@
++import swc from 'unplugin-swc'; import { defineConfig } from 'vitest/config'; export default defineConfig({plugins:[swc.vite({jsc:{target:'es2022',parser:{syntax:'typescript',decorators:true},transform:{legacyDecorator:true,decoratorMetadata:true}},module:{type:'es6'}})],test:{include:['test/inventory-*.spec.ts'],environment:'node',setupFiles:['test/setup.ts'],coverage:{provider:'v8',reportsDirectory:'./coverage-inventory',reporter:['text','text-summary','json-summary'],include:['src/inventory/**/*.ts'],exclude:['**/*.module.ts','**/dto/**'],thresholds:{lines:95,functions:95,branches:80,statements:95}}}});
+diff --git a/docs/JUMAN_MASTER_ROADMAP.md b/docs/JUMAN_MASTER_ROADMAP.md
+index 1d45662..34715a0 100644
+--- a/docs/JUMAN_MASTER_ROADMAP.md
++++ b/docs/JUMAN_MASTER_ROADMAP.md
+@@ -2,7 +2,7 @@
+ 
+ **Product:** جمان (Juman) — Arabic RTL dress rental & sales desktop system  
+ **Version:** Roadmap doc `1.0.0` · Backend `1.0.0` · Frontend workspace `@juman/frontend@1.0.0`  
+-**Last updated:** 2026-07-30  
++**Last updated:** 2026-08-02
+ **Overall progress:** **~98%** (v1.0.0 release prep docs + Setup artifact built; store ship blocked on operator RC VM/hardware matrix)  
+ **Current phase:** Frontend — residual / deferred  
+ **Current step:** Notifications (deferred; backend absent)  
+@@ -295,6 +295,21 @@ Backend APIs largely ready; ship module-by-module on IPC + DS:
+ 
+ ## Completed this phase (append-only log)
+ 
++### 2026-08-02 ? Backend v2 Phase 4.1 Inventory Catalog Engine
++
++**Completed work**
++
++- Added generic inventory catalog taxonomy (categories, brands, colors, sizes) and item CRUD, soft-delete/restore, search/filtering, integer-fils prices, internal-code allocation, barcode binding, and media references.
++- Wired RBAC/seed settings, Prisma catalog migration constraints, inventory module, and inventory Vitest configuration.
++- Verified `pnpm prisma generate`, `pnpm build`, and 9 focused unit/integration tests.
++
++**Position**
++
++- Backend v2 Phase 4.1 implementation and focused tests are present, but its configured coverage gate is not yet satisfied. Rentals, reservations, availability, laundry, inspections, and sales remain explicitly out of scope.
++
++---
++
++
+ ### 2026-07-30 — Phase 10 Production Release Preparation
+ 
+ **Completed work**
+diff --git a/docs/backend-v2/Architecture.md b/docs/backend-v2/Architecture.md
+index 683fc90..b8b5a23 100644
+--- a/docs/backend-v2/Architecture.md
++++ b/docs/backend-v2/Architecture.md
+@@ -1,6 +1,6 @@
+ # Backend V2 Architecture
+ 
+-**Status:** Phase 3.5 Barcode Platform  
++**Status:** Phase 4.1 Inventory Catalog Engine  
+ **Branch:** `backend-v2`  
+ **Spec source:** `backend-python/` (read-only Python FastAPI stack)
+ 
+@@ -70,6 +70,7 @@ src/
+   media/          MediaFile + HTTP /media
+   barcode/        reusable platform + HTTP /barcodes
+   customers/      Customer domain
++  inventory/      Catalog engine (Item + taxonomy)
+ ```
+ 
+ ## Auth / RBAC
+@@ -84,7 +85,8 @@ src/
+ ## What is not in V2 (yet)
+ 
+ - Users/roles admin HTTP CRUD (beyond unlock)
+-- Inventory / rentals / sales / reports workflows
++- Reservations / rentals / availability calendar / penalties
++- Laundry / inspection / sales workflows
+ - Barcode hardware adapters / label printing
+ - Electron process management / installer Nest packaging
+ 
+@@ -113,3 +115,7 @@ Reusable `MediaModule` is the only blob store. Domain modules attach via `MediaR
+ ## Barcode platform (Phase 3.5)
+ 
+ Reusable `BarcodeModule` is the only barcode authority. Domains bind via `activate(entityType, entityId)`; HTTP is generic registry only (`/barcodes`). Status: reserved → activated → reserved (release) or retired. Values are globally unique for life. Hardware ports are design-only. Docs: `BarcodePlatform.md`.
++
++## Inventory catalog (Phase 4.1)
++
++Generic Item Catalog in `src/inventory` — not a dress-specific engine. Taxonomy: Category (tree-ready), Brand, Color, Size. Items bind barcodes/media via platforms + `ItemBarcode`/`ItemMedia`. Catalog statuses only (draft/active/inactive/archived/retired). Docs: `InventoryDesign.md`.
+diff --git a/docs/backend-v2/DecisionLog.md b/docs/backend-v2/DecisionLog.md
+index c618e03..71ccb7f 100644
+--- a/docs/backend-v2/DecisionLog.md
++++ b/docs/backend-v2/DecisionLog.md
+@@ -116,3 +116,11 @@
+ - **Context:** Inventory and other modules will need barcodes; embedding generation in inventory would fork symbology, uniqueness, and hardware concerns.
+ - **Decision:** Extend Phase 3.1 `Barcode` into a dedicated platform: configurable types (Code-128 default, Code-39, EAN-13/8, UPC-A, QR-ready), lifetime-unique `code`, statuses reserved/activated/retired, service API (generate/reserve/activate/release/retire/validate/find/exists/normalize), generic HTTP `/barcodes`, RBAC `barcode.*`, audit events, hardware port interfaces only. No inventory workflows.
+ - **Consequences:** Domains call `activate` to bind entities. Never recycle retired values. Coverage gate `pnpm test:cov:barcode` ≥95%. Label printers/scanners remain future adapters.
++
++## ADR-V2-016 - Inventory catalog engine (Phase 4.1)
++
++- **Date:** 2026-08-02
++- **Status:** Accepted
++- **Context:** Need inventory foundation without freezing a dress-only model or embedding rental availability.
++- **Decision:** Implement a reusable Item Catalog (Category/Brand/Color/Size/Item) with catalog-only statuses, soft delete/restore, `ItemMedia`/`ItemBarcode` joins that reference Media/Barcode platforms (no local generation or blobs). Frontend may keep “Dress” terminology; backend entity type remains `item`.
++- **Consequences:** Reservations/rentals/calendar remain blocked. Coverage gate `pnpm test:cov:inventory` ≥95%. Future item types extend taxonomy without redesigning Item.
+diff --git a/docs/backend-v2/DevelopmentRoadmap.md b/docs/backend-v2/DevelopmentRoadmap.md
+index 6fd3402..f16132b 100644
+--- a/docs/backend-v2/DevelopmentRoadmap.md
++++ b/docs/backend-v2/DevelopmentRoadmap.md
+@@ -6,7 +6,7 @@
+ | 1 | Foundation | Nest + Prisma + SQLite + `/health` |
+ | 2 | Identity & Security | Auth + audit remediation |
+ | 3 | Core Business | **3.1–3.5 DONE** (shared → customers → media → cert → barcode) |
+-| 4 | Inventory Engine | Dresses / inventory |
++| 4 | Inventory Engine | **4.1 Catalog DONE** — availability/rentals later |
+ | 5 | Rental Engine | Reservations → returns |
+ | 6 | Financial Engine | Sales, settlements, payments |
+ | 7 | Reports & Analytics | Operational + financial |
+@@ -16,10 +16,10 @@
+ 
+ ## Current milestone
+ 
+-**Phase 3.5 Barcode Platform complete.**  
+-Doc: `BarcodePlatform.md`. Prior: Phase 3.4 cert (85 PASS WITH WARNINGS).
++**Phase 4.1 Inventory Catalog Engine complete.**  
++Doc: `InventoryDesign.md`.
+ 
+-**Next (requires approval):** Inventory Engine (Phase 4) — still no rentals/sales/label printing/scanners.
++**Next (requires approval):** inventory availability / rental workflows — still no reservations, calendar, laundry, inspection, or sales.
+ 
+ ## Completion rule
+ 
+diff --git a/docs/backend-v2/FolderStructure.md b/docs/backend-v2/FolderStructure.md
+index 2f43158..252fffc 100644
+--- a/docs/backend-v2/FolderStructure.md
++++ b/docs/backend-v2/FolderStructure.md
+@@ -42,6 +42,7 @@ backend-node/
+     barcode/            # Phase 3.5 platform (+ hardware ports design-only)
+     customers/          # Phase 3.2
+     media/              # Phase 3.3 (providers, validation, HTTP)
++    inventory/          # Phase 4.1 catalog (items + taxonomy)
+   test/
+   package.json
+ ```
+diff --git a/docs/backend-v2/InventoryDesign.md b/docs/backend-v2/InventoryDesign.md
+new file mode 100644
+index 0000000..e7123a5
+--- /dev/null
++++ b/docs/backend-v2/InventoryDesign.md
+@@ -0,0 +1,57 @@
++# Backend V2 Inventory Design (Phase 4.1 — Catalog Engine)
++
++**Branch:** `backend-v2`  
++**Module:** `backend-node/src/inventory`  
++**Role:** Generic Item Catalog. Frontend may still say “Dress”; backend does not hardcode dress workflows.
++
++## Scope
++
++In scope: Category, Brand, Color, Size, Item CRUD; soft delete/restore; search/filter; ItemMedia + ItemBarcode relations; reuse of Media + Barcode platforms.
++
++**Out of scope:** reservations, rentals, availability calendar, penalties, laundry, inspection, sales.
++
++## Architecture
++
++```
++Item ──► Category (optional parentId — tree-ready)
++     ──► Brand
++     ──► Color (optional #RRGGBB)
++     ──► Size
++     ──► ItemMedia ──► MediaFile   (no blobs in inventory)
++     ──► ItemBarcode ──► Barcode   (no generation logic in inventory)
++```
++
++Entity type for platform binds: `item`. Module name: `inventory`.
++
++## Catalog status (not rental availability)
++
++`draft` · `active` · `inactive` · `archived` · `retired`
++
++Optional condition: `new` · `good` · `fair` · `poor` · `unknown`
++
++## Item fields
++
++internalCode (auto `ITM-########`), displayName, taxonomy FKs, purchase/rental/sale prices (integer fils), condition, status, description, actors, soft-delete timestamps.
++
++## HTTP
++
++| Area | Paths | Permissions |
++|------|-------|-------------|
++| Categories | `/categories` | `categories.*` (+ restore) |
++| Brands | `/brands` | `inventory.*` |
++| Colors | `/colors` | `inventory.*` |
++| Sizes | `/sizes` | `inventory.*` |
++| Items | `/items` | `inventory.view/create/update/delete/restore` |
++
++Item extras: `GET /items/search`, `GET /items/code/:internalCode`, `POST /items/:id/media`, create with `generateBarcode` or `barcode`.
++
++## Platforms
++
++- Barcodes: `BarcodeService.generate|reserve` → `activate(..., 'item', itemId)` → `ItemBarcode`
++- Media: upload via `/media`; attach via `MediaService.attach` + `ItemMedia`
++
++## Coverage
++
++```bash
++pnpm test:cov:inventory
++```
+diff --git a/docs/backend-v2/PROGRESS.md b/docs/backend-v2/PROGRESS.md
+index 4c63e88..398d27f 100644
+--- a/docs/backend-v2/PROGRESS.md
++++ b/docs/backend-v2/PROGRESS.md
+@@ -1,7 +1,7 @@
+ # Backend V2 Progress Canvas
+ 
+ **Live canvas:** `juman-backend-v2-roadmap.canvas.tsx`  
+-**Branch:** `backend-v2` — **Updated:** 2026-08-02 — **Overall ~50%**
++**Branch:** `backend-v2` — **Updated:** 2026-08-02 — **Overall ~55%**
+ 
+ ```
+ Phase 0  Architecture                    DONE
+@@ -9,12 +9,11 @@ Phase 1  Foundation                      DONE
+ Phase 2  Identity & Security
+          2.1–2.4                         DONE (re-audit PASS 77/100)
+ Phase 3  Core Business
+-         3.1 Shared business foundation  DONE
+-         3.2 Customers                   DONE
+-         3.3 Media & attachments         DONE
+-         3.4 Engineering certification   DONE (PASS WITH WARNINGS — 85/100)
+-         3.5 Barcode platform            DONE
+-Phase 4+ Inventory / Rentals / Sales     WAITING APPROVAL
++         3.1–3.5                         DONE (barcode platform)
++Phase 4  Inventory Engine
++         4.1 Catalog engine              DONE
++         4.2+ availability / rentals     WAITING APPROVAL
++Phase 5+ Rentals / Sales / Reports       BLOCKED until approved
+ ```
+ 
+-**YOU ARE HERE:** After Phase 3.5 barcode platform. Do not implement inventory, rentals, sales, label printing, or scanner hardware until explicit approval.
++**YOU ARE HERE:** After Phase 4.1 catalog engine. Do not implement reservations, rentals, calendar, availability, laundry, inspection, or sales until explicit approval.
+-- 
+2.55.0.windows.2
+

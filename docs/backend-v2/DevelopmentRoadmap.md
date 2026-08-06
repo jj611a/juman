@@ -11,16 +11,15 @@
 | 6 | Financial Engine | **6.1–6.7.1 DONE** — Sales engine + integrity certification |
 | 7 | Reports & Analytics | **7.0 DONE** — reporting engine (read-only) |
 | 8 | Desktop Integration | **8.0–8.1 DONE** — compat façade + E2E cert (packaging later) |
-| 9 | Testing & Hardening | Parity suites |
+| 9 | Frontend Rebuild (Phase 9.x) | **9.1 DONE** — shell; Nest frozen |
 | 10 | Production & Installer | Cutover |
 
 ## Current milestone
 
-**Phase 6.7.1 Sales integrity hardening certified (PASS, overall 93/100).**  
-Coverage ≥95% on `src/sales/**`; rollback / concurrency / Walk-in / RBAC / soft-delete certified.  
-Reports: `PHASE_6_7_1_SALES_CERTIFICATION.md`, `cert_sales_671.json`.  
+**Phase 9.1 Frontend shell complete — awaiting approval for 9.2.**  
+Backend Nest remains frozen. Reports: `docs/frontend/PHASE_9_1_SHELL_REPORT.md`.  
 
-**STOP:** Do **not** build POS UI, receipts, returns, refund UI, sales reports, or change Settlement formulas until explicitly approved.
+**STOP:** Do **not** start Phase 9.2 or change Nest contracts until explicitly approved.
 
 ## Completion rule
 

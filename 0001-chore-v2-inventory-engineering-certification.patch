@@ -1,0 +1,920 @@
+From ffabbd8b11efd433a9c07887ade6deb712e241a2 Mon Sep 17 00:00:00 2001
+From: jj611a <jj611a@gmail.com>
+Date: Sun, 2 Aug 2026 11:35:01 +0300
+Subject: [PATCH] chore(v2): inventory engineering certification
+
+Phase 4.3 verification gate: catalog/lifecycle certified PASS WITH WARNINGS (78); rentals blocked until Must-Fix integrity items.
+
+Co-authored-by: Cursor <cursoragent@cursor.com>
+---
+ backend-node/scripts/cert-phase43.cjs         | 331 ++++++++++++++++++
+ docs/backend-v2/Architecture.md               |   6 +-
+ docs/backend-v2/DecisionLog.md                |   8 +
+ docs/backend-v2/DevelopmentRoadmap.md         |  10 +-
+ .../PHASE_4_ENGINEERING_CERTIFICATION.md      | 323 +++++++++++++++++
+ docs/backend-v2/PROGRESS.md                   |   9 +-
+ docs/backend-v2/cert_p43_harness.json         | 132 +++++++
+ 7 files changed, 809 insertions(+), 10 deletions(-)
+ create mode 100644 backend-node/scripts/cert-phase43.cjs
+ create mode 100644 docs/backend-v2/PHASE_4_ENGINEERING_CERTIFICATION.md
+ create mode 100644 docs/backend-v2/cert_p43_harness.json
+
+diff --git a/backend-node/scripts/cert-phase43.cjs b/backend-node/scripts/cert-phase43.cjs
+new file mode 100644
+index 0000000..1406889
+--- /dev/null
++++ b/backend-node/scripts/cert-phase43.cjs
+@@ -0,0 +1,331 @@
++/**
++ * Phase 4.3 inventory engineering certification harness.
++ * Verification only — no feature work.
++ */
++const { performance } = require('node:perf_hooks');
++const { mkdtempSync, rmSync, writeFileSync } = require('node:fs');
++const { tmpdir } = require('node:os');
++const path = require('node:path');
++const { join } = path;
++const { execSync } = require('node:child_process');
++
++async function main() {
++  const report = {
++    generatedAt: new Date().toISOString(),
++    migrateMs: null,
++    startupMs: null,
++    memRssMbAfterBoot: null,
++    timings: {},
++    security: [],
++    api: [],
++    database: {},
++    errors: [],
++  };
++
++  const dataDir = mkdtempSync(join(tmpdir(), 'juman-cert43-'));
++  process.env.VITEST = 'true';
++  process.env.APP_ENV = 'test';
++  process.env.JUMAN_DATA_DIR = dataDir;
++  process.env.JWT_SECRET = 'juman-cert-jwt-secret-with-enough-length!!';
++  process.env.HOST = '127.0.0.1';
++  process.env.IDENTITY_BOOTSTRAP_USERNAME = 'admin';
++  process.env.IDENTITY_BOOTSTRAP_PASSWORD = 'Juman!Bootstrap1';
++
++  const { buildRuntimePaths } = require(path.join(__dirname, '../dist/src/config/paths'));
++  const { ensureRuntimeDirectories } = require(path.join(__dirname, '../dist/src/storage/ensure-dirs'));
++  const paths = buildRuntimePaths(dataDir);
++  ensureRuntimeDirectories(paths);
++  process.env.DATABASE_URL = `file:${paths.sqlitePath.replaceAll('\\', '/')}`;
++
++  const tMigrate0 = performance.now();
++  execSync('pnpm exec prisma migrate deploy', {
++    cwd: process.cwd(),
++    env: process.env,
++    stdio: 'pipe',
++  });
++  report.migrateMs = Math.round(performance.now() - tMigrate0);
++
++  require('reflect-metadata');
++  const { Test } = require('@nestjs/testing');
++  const request = require('supertest');
++  const { AppModule } = require(path.join(__dirname, '../dist/src/app.module'));
++  const { createGlobalValidationPipe } = require(
++    path.join(__dirname, '../dist/src/validation/create-validation-pipe'),
++  );
++  const { PrismaService } = require(path.join(__dirname, '../dist/src/database/prisma.service'));
++  const { LifecycleService } = require(
++    path.join(__dirname, '../dist/src/inventory/lifecycle/lifecycle.service'),
++  );
++
++  const tBoot0 = performance.now();
++  const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
++  const app = moduleRef.createNestApplication();
++  app.useGlobalPipes(createGlobalValidationPipe());
++  await app.init();
++  report.startupMs = Math.round(performance.now() - tBoot0);
++  report.memRssMbAfterBoot = Math.round(process.memoryUsage().rss / (1024 * 1024));
++
++  const server = app.getHttpServer();
++  const timed = async (name, fn) => {
++    const t0 = performance.now();
++    const result = await fn();
++    report.timings[name] = Math.round(performance.now() - t0);
++    return result;
++  };
++  const sec = (name, ok, detail) => report.security.push({ name, ok, detail });
++  const api = (name, ok, detail) => report.api.push({ name, ok, detail });
++
++  try {
++    await timed('health', async () => {
++      const res = await request(server).get('/health').expect(200);
++      api('GET /health', !!res.body.status, res.body.status);
++    });
++
++    {
++      const res = await request(server).get('/items');
++      sec('unauthenticated /items → 401', res.status === 401, `status=${res.status}`);
++    }
++    {
++      const res = await request(server)
++        .post('/items/00000000-0000-4000-8000-000000000001/transition')
++        .send({ newState: 'reserved' });
++      sec('unauthenticated transition → 401', res.status === 401, `status=${res.status}`);
++    }
++
++    let token = '';
++    await timed('login_bootstrap', async () => {
++      const login = await request(server)
++        .post('/auth/login')
++        .send({ username: 'admin', password: 'Juman!Bootstrap1' })
++        .expect(200);
++      token = login.body.accessToken;
++      await request(server)
++        .post('/auth/change-password')
++        .set('Authorization', `Bearer ${token}`)
++        .send({
++          currentPassword: 'Juman!Bootstrap1',
++          newPassword: 'NewStrong!Pass1',
++        })
++        .expect(200);
++      const again = await request(server)
++        .post('/auth/login')
++        .send({ username: 'admin', password: 'NewStrong!Pass1' })
++        .expect(200);
++      token = again.body.accessToken;
++      api('auth bootstrap', !!token, 'password changed + re-login');
++    });
++
++    const auth = { Authorization: `Bearer ${token}` };
++
++    let categoryId = '';
++    let brandId = '';
++    let colorId = '';
++    let sizeId = '';
++    let itemId = '';
++
++    await timed('taxonomy_create', async () => {
++      categoryId = (
++        await request(server).post('/categories').set(auth).send({ name: 'CertCat' }).expect(201)
++      ).body.id;
++      brandId = (
++        await request(server).post('/brands').set(auth).send({ name: 'CertBrand' }).expect(201)
++      ).body.id;
++      colorId = (
++        await request(server)
++          .post('/colors')
++          .set(auth)
++          .send({ name: 'CertColor', hexCode: '#112233' })
++          .expect(201)
++      ).body.id;
++      sizeId = (
++        await request(server).post('/sizes').set(auth).send({ name: 'L', sortOrder: 1 }).expect(201)
++      ).body.id;
++      api('taxonomy CRUD create', !!(categoryId && brandId && colorId && sizeId), 'ok');
++    });
++
++    await timed('item_create_barcode', async () => {
++      const item = await request(server)
++        .post('/items')
++        .set(auth)
++        .send({
++          displayName: 'Cert Item',
++          categoryId,
++          brandId,
++          colorId,
++          sizeId,
++          status: 'active',
++          purchasePrice: 1000,
++          generateBarcode: true,
++        })
++        .expect(201);
++      itemId = item.body.id;
++      api(
++        'item create + barcode',
++        item.body.lifecycleState === 'available' && item.body.barcodes?.length === 1,
++        `code=${item.body.internalCode} barcodes=${item.body.barcodes?.length}`,
++      );
++    });
++
++    await timed('catalog_search', async () => {
++      const list = await request(server)
++        .get('/items')
++        .query({ q: 'Cert', categoryId, status: 'active' })
++        .set(auth)
++        .expect(200);
++      api('catalog search/filter', list.body.meta.total >= 1, `total=${list.body.meta.total}`);
++    });
++
++    await timed('barcode_lookup', async () => {
++      const byCode = await request(server)
++        .get(`/items/code/${(await request(server).get(`/items/${itemId}`).set(auth)).body.internalCode}`)
++        .set(auth)
++        .expect(200);
++      api('barcode/internal code lookup', byCode.body.id === itemId, byCode.body.internalCode);
++    });
++
++    await timed('lifecycle_transition', async () => {
++      const bad = await request(server)
++        .post(`/items/${itemId}/transition`)
++        .set(auth)
++        .send({ newState: 'rented' });
++      sec('state skip rejected', bad.status === 409, `status=${bad.status}`);
++
++      const ok = await request(server)
++        .post(`/items/${itemId}/transition`)
++        .set(auth)
++        .send({ newState: 'reserved', reason: 'cert', expectedState: 'available' })
++        .expect(200);
++      api('valid transition', ok.body.lifecycleState === 'reserved', ok.body.lifecycleState);
++
++      const edit = await request(server)
++        .patch(`/items/${itemId}`)
++        .set(auth)
++        .send({ displayName: 'blocked' });
++      sec('edit while reserved blocked', edit.status === 409, `status=${edit.status}`);
++    });
++
++    await timed('history_retrieval', async () => {
++      const hist = await request(server)
++        .get(`/items/${itemId}/history`)
++        .set(auth)
++        .expect(200);
++      api('history retrieval', hist.body.meta.total >= 2, `total=${hist.body.meta.total}`);
++    });
++
++    await timed('concurrent_transitions', async () => {
++      const lifecycle = app.get(LifecycleService);
++      // move back to available first
++      await lifecycle.transition(itemId, { newState: 'available', expectedState: 'reserved' });
++      const results = await Promise.allSettled([
++        lifecycle.transition(itemId, { newState: 'reserved', expectedState: 'available' }),
++        lifecycle.transition(itemId, { newState: 'for_sale', expectedState: 'available' }),
++      ]);
++      const ok = results.filter((r) => r.status === 'fulfilled').length;
++      const fail = results.filter((r) => r.status === 'rejected').length;
++      sec('concurrent CAS one-wins', ok === 1 && fail === 1, `ok=${ok} fail=${fail}`);
++    });
++
++    {
++      const deleted = await request(server).delete(`/items/${itemId}`).set(auth).expect(200);
++      api('soft delete', deleted.body.deletedAt != null || deleted.status === 200, 'deleted');
++      const gone = await request(server).get(`/items/${itemId}`).set(auth);
++      sec('deleted item get → 404', gone.status === 404, `status=${gone.status}`);
++      const transitionDeleted = await request(server)
++        .post(`/items/${itemId}/transition`)
++        .set(auth)
++        .send({ newState: 'available' });
++      sec(
++        'deleted item transition rejected',
++        transitionDeleted.status === 404 || transitionDeleted.status === 409,
++        `status=${transitionDeleted.status}`,
++      );
++      await request(server).post(`/items/${itemId}/restore`).set(auth).expect(200);
++      api('restore', true, 'restored');
++    }
++
++    {
++      const invalid = await request(server)
++        .post('/items')
++        .set(auth)
++        .send({ displayName: 'x', salePrice: -1 });
++      sec('invalid payload → 400', invalid.status === 400, `status=${invalid.status}`);
++    }
++
++    const prisma = app.get(PrismaService);
++    const tables = await prisma.$queryRawUnsafe(
++      `SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name`,
++    );
++    const indexes = await prisma.$queryRawUnsafe(
++      `SELECT name FROM sqlite_master WHERE type='index' AND name NOT LIKE 'sqlite_%'`,
++    );
++    const fk = await prisma.$queryRawUnsafe('PRAGMA foreign_keys');
++    report.database = {
++      tableCount: tables.length,
++      indexCount: indexes.length,
++      foreignKeys: fk[0]?.foreign_keys === 1 || fk[0]?.foreign_keys === true,
++      hasItem: tables.some((t) => t.name === 'Item'),
++      hasItemStateHistory: tables.some((t) => t.name === 'ItemStateHistory'),
++      hasItemMedia: tables.some((t) => t.name === 'ItemMedia'),
++      hasItemBarcode: tables.some((t) => t.name === 'ItemBarcode'),
++    };
++    api(
++      'schema inventory tables',
++      report.database.hasItem &&
++        report.database.hasItemStateHistory &&
++        report.database.hasItemMedia &&
++        report.database.hasItemBarcode,
++      JSON.stringify(report.database),
++    );
++
++    // Probe known debt: soft-delete while reserved is currently allowed
++    {
++      const debtItem = await request(server)
++        .post('/items')
++        .set(auth)
++        .send({ displayName: 'Debt Probe', status: 'active', generateBarcode: true })
++        .expect(201);
++      await request(server)
++        .post(`/items/${debtItem.body.id}/transition`)
++        .set(auth)
++        .send({ newState: 'reserved' })
++        .expect(200);
++      const del = await request(server).delete(`/items/${debtItem.body.id}`).set(auth);
++      report.security.push({
++        name: 'DEBT soft-delete while reserved currently allowed',
++        ok: true,
++        detail: `observed_status=${del.status} (expected until Must-Fix; documents debt)`,
++        debt: true,
++      });
++    }
++  } catch (err) {
++    report.errors.push(String(err && err.stack ? err.stack : err));
++  } finally {
++    await app.close();
++    try {
++      rmSync(dataDir, { recursive: true, force: true });
++    } catch {
++      /* ignore */
++    }
++  }
++
++  const outJson = join(process.cwd(), '..', 'docs', 'backend-v2', 'cert_p43_harness.json');
++  writeFileSync(outJson, JSON.stringify(report, null, 2), 'utf8');
++  console.log(JSON.stringify({ written: outJson, summary: {
++    migrateMs: report.migrateMs,
++    startupMs: report.startupMs,
++    timings: report.timings,
++    securityPass: report.security.filter((s) => s.ok && !s.debt).length,
++    securityTotal: report.security.filter((s) => !s.debt).length,
++    apiPass: report.api.filter((a) => a.ok).length,
++    apiTotal: report.api.length,
++    errors: report.errors.length,
++    database: report.database,
++  } }, null, 2));
++
++  if (report.errors.length) process.exitCode = 1;
++}
++
++main().catch((e) => {
++  console.error(e);
++  process.exit(1);
++});
+diff --git a/docs/backend-v2/Architecture.md b/docs/backend-v2/Architecture.md
+index 03adac6..e5d22b8 100644
+--- a/docs/backend-v2/Architecture.md
++++ b/docs/backend-v2/Architecture.md
+@@ -1,6 +1,6 @@
+ # Backend V2 Architecture
+ 
+-**Status:** Phase 4.2 Inventory Lifecycle Foundation  
++**Status:** Phase 4.3 Inventory Engineering Certification  
+ **Branch:** `backend-v2`  
+ **Spec source:** `backend-python/` (read-only Python FastAPI stack)
+ 
+@@ -123,3 +123,7 @@ Generic Item Catalog in `src/inventory` — not a dress-specific engine. Taxonom
+ ## Inventory lifecycle (Phase 4.2)
+ 
+ Authoritative operational `lifecycleState` on `Item` with `ItemStateHistory` and `LifecycleService.transition` (CAS + audit). Availability predicates (`isRentable` / `isSellable` / …) only — no reservations or calendar. Docs: `InventoryDesign.md`.
++
++## Inventory certification (Phase 4.3)
++
++Non-feature gate: `PHASE_4_ENGINEERING_CERTIFICATION.md` — overall **78 PASS WITH WARNINGS**. **Rental Engine blocked** until Must-Fix soft-delete/barcode/media integrity items are remediated.
+diff --git a/docs/backend-v2/DecisionLog.md b/docs/backend-v2/DecisionLog.md
+index 4c12477..22f794c 100644
+--- a/docs/backend-v2/DecisionLog.md
++++ b/docs/backend-v2/DecisionLog.md
+@@ -132,3 +132,11 @@
+ - **Context:** Rentals/sales will mutate item availability; embedding ad-hoc status flags in those modules would fork state machines.
+ - **Decision:** Add operational `lifecycleState` (separate from catalog `status`) with a closed transition graph, append-only `ItemStateHistory`, CAS transitions, `inventory.transition` RBAC, and availability predicates (`isOperational`/`isRentable`/`isSellable`/`isEditable`). No reservations/calendar/payments.
+ - **Consequences:** All future domains must call `LifecycleService`. Invalid/concurrent transitions → 409. Lost/damaged supported without schema redesign.
++
++## ADR-V2-018 - Phase 4 inventory engineering certification
++
++- **Date:** 2026-08-02
++- **Status:** Accepted
++- **Context:** Catalog + lifecycle shipped; entering rentals without a gate would freeze integrity defects.
++- **Decision:** Run logical/functional/API/DB/perf/security/architecture/TS/coverage review; publish `PHASE_4_ENGINEERING_CERTIFICATION.md` with score **78 PASS WITH WARNINGS**. No rentals/reservations/calendar/sales in this commit. Harness: `scripts/cert-phase43.cjs` → `cert_p43_harness.json`.
++- **Consequences:** Rental Engine blocked until Must-Fix items (soft-delete mid-lifecycle, barcode release, transactional bind, restore status, draft transitions, media dual-write) are remediated and re-probed.
+diff --git a/docs/backend-v2/DevelopmentRoadmap.md b/docs/backend-v2/DevelopmentRoadmap.md
+index f0ccff8..3d9a8c6 100644
+--- a/docs/backend-v2/DevelopmentRoadmap.md
++++ b/docs/backend-v2/DevelopmentRoadmap.md
+@@ -6,8 +6,8 @@
+ | 1 | Foundation | Nest + Prisma + SQLite + `/health` |
+ | 2 | Identity & Security | Auth + audit remediation |
+ | 3 | Core Business | **3.1–3.5 DONE** |
+-| 4 | Inventory Engine | **4.1 Catalog + 4.2 Lifecycle DONE** |
+-| 5 | Rental Engine | Reservations → returns |
++| 4 | Inventory Engine | **4.1–4.3 DONE** (catalog → lifecycle → certification) |
++| 5 | Rental Engine | Reservations → returns (**blocked** until inventory Must-Fix) |
+ | 6 | Financial Engine | Sales, settlements, payments |
+ | 7 | Reports & Analytics | Operational + financial |
+ | 8 | Desktop Integration | Electron + Nest sidecar |
+@@ -16,10 +16,10 @@
+ 
+ ## Current milestone
+ 
+-**Phase 4.2 Inventory Lifecycle Foundation complete.**  
+-Doc: `InventoryDesign.md` (includes lifecycle diagram).
++**Phase 4.3 Inventory Engineering Certification complete (78 PASS WITH WARNINGS).**  
++Doc: `PHASE_4_ENGINEERING_CERTIFICATION.md`.
+ 
+-**Next (requires approval):** reservations / rental workflows — still no calendar booking, laundry, inspection logic, or payments.
++**Next:** Inventory Must-Fix remediation (requires approval) — still **no** reservations/rentals/calendar/payments until Must-Fix cleared.
+ 
+ ## Completion rule
+ 
+diff --git a/docs/backend-v2/PHASE_4_ENGINEERING_CERTIFICATION.md b/docs/backend-v2/PHASE_4_ENGINEERING_CERTIFICATION.md
+new file mode 100644
+index 0000000..727b334
+--- /dev/null
++++ b/docs/backend-v2/PHASE_4_ENGINEERING_CERTIFICATION.md
+@@ -0,0 +1,323 @@
++# Backend V2 — Phase 4 Engineering Certification (Inventory)
++
++**Date:** 2026-08-02  
++**Branch:** `backend-v2`  
++**Mode:** Verification only — no feature implementation  
++**Scope:** Inventory Catalog (4.1) + Lifecycle Foundation (4.2) + Media/Barcode integration  
++**Stance:** Critical. Scores are evidence-based. Warnings and Must-Fix items are not ignored.
++
++---
++
++## Executive Summary
++
++Phase 4.1–4.2 inventory deliverables were subjected to logical review, full automated suites, a live Nest certification harness (`scripts/cert-phase43.cjs`), schema inspection, TypeScript/architecture review, and documentation cross-check.
++
++| Gate | Result |
++|------|--------|
++| `pnpm lint` | **PASS** |
++| `pnpm build` | **PASS** |
++| `pnpm test` | **PASS** (49 files / **161** tests) |
++| `pnpm test:cov` | **PASS** (global thresholds met; see coverage) |
++| `pnpm test:cov:inventory` | **PASS** (statements **95.71%** / lines **97.17%** / functions **100%**) |
++| Live harness (`scripts/cert-phase43.cjs`) | **PASS** (8/8 security · 11/11 API · 0 errors) |
++
++**Overall certification:** **PASS WITH WARNINGS**  
++**Ready for Rental Engine?** **NO** — Must-Fix integrity items below block reservations/rentals.
++
++Evidence artifact: `docs/backend-v2/cert_p43_harness.json`.
++
++---
++
++## Scorecard
++
++| Area | Score | Verdict |
++|------|------:|---------|
++| Architecture | **78** | PASS WITH WARNINGS |
++| Security | **80** | PASS WITH WARNINGS |
++| Performance | **88** | PASS |
++| Database | **74** | PASS WITH WARNINGS |
++| API | **79** | PASS WITH WARNINGS |
++| Testing | **86** | PASS |
++| Documentation | **84** | PASS |
++| Maintainability | **72** | PASS WITH WARNINGS |
++| **Overall** | **78** | **PASS WITH WARNINGS** |
++
++Scoring rubric: 90–100 strong; 80–89 production-capable with tracked debt; 70–79 conditional; <70 fail gate.
++
++Inventory is **conditionally certified as a catalog + lifecycle foundation**. It is **not** certified as rental-ready.
++
++---
++
++## 1. Logical Review
++
++| Area | Verdict | Notes |
++|------|---------|-------|
++| Catalog Item + taxonomy | **PASS** | Generic Item (not dress-hardcoded); Category tree-ready; Brand/Color/Size CRUD |
++| Media integration | **WARNING** | Uses `MediaService.attach` **and** `ItemMedia` dual write — drift risk under partial failure |
++| Barcode integration | **WARNING** | Generate/reserve/activate via platform — good; soft-delete does **not** release barcodes |
++| Single lifecycle engine | **PASS** | Closed `ITEM_LIFECYCLE_TRANSITIONS`; domains must call `LifecycleService` |
++| Transition rules | **PASS** | Happy path + sale/maintenance/lost/damaged; invalid edges → 409 |
++| Dead transitions | **WARNING** | `cleaning` cannot go to lost/damaged/retired; `sold` only → retired (no cancel) — ops traps, not cycles |
++| Circular transitions | **PASS** | No infinite loops; returns to `available` are intentional |
++| History | **WARNING** | Birth row `available→available` pollutes “transition = change” semantics |
++| Availability helpers | **WARNING** | `isRentable`/`isSellable` correct; `isOperational` includes **draft** — dangerous if misused |
++| Impossible states | **FAIL→Must Fix** | Soft-delete allowed while `reserved`/`rented`; catalog `retired` + lifecycle `available` creatable |
++| Duplicated state logic | **PASS** | No second state machine found outside lifecycle module |
++| Architecture leaks | **WARNING** | Parallel `ItemMedia` vs MediaReference; taxonomy RBAC split (`categories.*` vs `inventory.*`) |
++| Naming collision | **WARNING** | Catalog `status=retired` vs lifecycle `retired` — same token, two axes |
++
++Harness documented debt probe: soft-delete while reserved currently returns **200**.
++
++---
++
++## 2. Functional Testing
++
++| Capability | Evidence | Verdict |
++|------------|----------|---------|
++| Taxonomy CRUD + restore | Integration + harness | **PASS** |
++| Item CRUD / search / filter | Integration + harness | **PASS** |
++| Soft delete / restore | Integration + harness | **PASS** (restore status debt — see #6) |
++| Barcode on create | Integration + harness | **PASS** |
++| Media attach HTTP | Integration / unit | **PASS** (service path) |
++| Transition valid / invalid | Integration + harness | **PASS** |
++| Concurrent CAS transitions | Unit + harness (1 win / 1 lose) | **PASS** |
++| 409 conflicts | Skip reserved→rented; edit while reserved | **PASS** |
++| Permissions (auth required) | Harness 401 | **PASS** |
++| History | Harness + integration | **PASS** |
++
++---
++
++## 3. Database Review
++
++| Check | Result | Verdict |
++|-------|--------|---------|
++| Tables | 25 (incl. Item, taxonomy, ItemMedia, ItemBarcode, ItemStateHistory) | **PASS** |
++| Indexes | 103 | **PASS** |
++| Item FKs to taxonomy | Present; `ON DELETE SET NULL` | **PASS** |
++| History → Item | `ON DELETE CASCADE` (hard delete) | **PASS** |
++| Soft-delete behavior | App-level `deletedAt`; live queries filter null | **PASS** |
++| Partial unique live taxonomy names | Raw SQL in migration (`lower(name)` WHERE deletedAt IS NULL) | **WARNING** — not modeled in Prisma schema (introspection drift risk) |
++| `ItemMedia` unique | `(itemId, mediaFileId, purpose)` ignores soft-delete | **WARNING** — re-attach after soft-delete media row fails |
++| Migrations | Catalog + lifecycle applied on boot/harness | **PASS** |
++| Integrity / free-text enums | `status` / `lifecycleState` are TEXT — app-enforced only | **WARNING** |
++| Harness `PRAGMA foreign_keys` | Reported false in probe | **WARNING** — verify Prisma connection still enables FK (boot path); migrations define FKs |
++
++---
++
++## 4. Performance (live harness)
++
++| Metric | Value |
++|--------|------:|
++| Migrate deploy | **3027 ms** |
++| Nest test-module boot | **830 ms** |
++| RSS after boot | **121 MB** |
++| Taxonomy create (4 entities) | **80 ms** |
++| Item create + barcode | **65 ms** |
++| Catalog search/filter | **26 ms** |
++| Internal-code lookup | **33 ms** |
++| Lifecycle transition | **51 ms** |
++| History retrieval | **13 ms** |
++| Concurrent transitions | **22 ms** |
++
++**Verdict:** **PASS** for desktop-first SQLite. Acceptable local latency. Revisit taxonomy `findAnyName` full-table scan before multi-writer LAN.
++
++---
++
++## 5. Security
++
++| Attack / control | Verdict | Evidence |
++|------------------|---------|----------|
++| Unauthenticated `/items` | **PASS** | Harness 401 |
++| Unauthenticated transition | **PASS** | Harness 401 |
++| State skipping | **PASS** | 409 |
++| Catalog edit mid-lifecycle | **PASS** | 409 while reserved |
++| Deleted item get/transition | **PASS** | 404 |
++| Invalid payloads | **PASS** | 400 |
++| Concurrent transition race | **PASS** | CAS |
++| Soft-delete mid-rental lifecycle | **FAIL (debt)** | Currently allowed — Must Fix |
++| Draft lifecycle transitions | **WARNING** | Transition does not block `draft` catalog status |
++| Permission model inconsistency | **WARNING** | Categories use `categories.*`; brands/colors/sizes use `inventory.*` |
++| Custom role can bind barcodes via `inventory.create` without `barcode.*` HTTP | **WARNING** | Document / decide policy |
++| Horizontal row ACL | **WARNING** | Desktop role-based model (same as Phase 3) |
++
++---
++
++## 6. API Review
++
++| Surface | Verdict |
++|---------|---------|
++| `/categories` CRUD + restore | **PASS** |
++| `/brands` `/colors` `/sizes` CRUD + restore | **PASS** |
++| `/items` CRUD + search + code + media | **PASS** |
++| `/items/:id/state` `/history` `/transition` | **PASS** |
++| DTO validation on transition `newState` | **PASS** (`@IsIn`) |
++| List `lifecycleState` filter | **WARNING** — plain string; typos → empty result, not 400 |
++| Create `description` | **WARNING** — accepted by DTO, **not persisted** on create |
++| Update DTO still lists `barcode` / `generateBarcode` | **WARNING** — ignored on PATCH (lying surface) |
++| Error consistency (400/401/404/409) | **PASS** for exercised paths |
++| Serialization includes `lifecycleState` | **PASS** |
++
++---
++
++## 7. Architecture Review
++
++| Principle | Verdict |
++|-----------|---------|
++| Single lifecycle engine | **PASS** |
++| No duplicated transition graphs | **PASS** |
++| Media platform reused | **PASS** with dual-join warning |
++| Barcode platform reused | **PASS** with incomplete release coupling |
++| Audit reused (`TRANSITION`) | **PASS** |
++| Repository private; services exported | **PASS** |
++| Module coupling | **PASS** — inventory does not import rentals/sales (none exist) |
++| Compensating transactions on create+barcode | **FAIL→Must Fix** |
++| Soft-delete lifecycle gates | **FAIL→Must Fix** |
++
++---
++
++## 8. TypeScript Review
++
++| Check | Verdict |
++|-------|---------|
++| `strict: true` | **PASS** |
++| `any` / `@ts-ignore` / `@ts-nocheck` in `src/inventory` | **PASS** (none) |
++| Lint clean | **PASS** |
++
++---
++
++## 9. Test Coverage
++
++### Inventory gate (`pnpm test:cov:inventory`)
++
++| Metric | Value |
++|--------|------:|
++| Statements | **95.71%** (402/420) |
++| Branches | **90.4%** (292/323) |
++| Functions | **100%** (151/151) |
++| Lines | **97.17%** (379/390) |
++
++| Subtree | Lines | Notes |
++|---------|------:|-------|
++| `lifecycle/` | **100%** | Transition engine well covered |
++| `items/` | **~97.6%** | Strong |
++| `taxonomy.ts` | **~92.9%** | Some update/parent edges thinner |
++
++### Global (`pnpm test:cov`)
++
++Thresholds green (suite 161 tests). Weak non-inventory areas remain (migrate-on-boot, users admin edges) — unchanged from Phase 3.4.
++
++**Verdict:** **PASS** for inventory coverage gate.
++
++---
++
++## 10. Documentation Review
++
++| Doc | Matches code? |
++|-----|---------------|
++| `InventoryDesign.md` | **PASS** (catalog + lifecycle diagram) |
++| `Architecture.md` | **PASS** (4.1 + 4.2 sections) |
++| ADR-V2-016 / 017 | **PASS** |
++| Roadmap / PROGRESS | **Updated** this certification |
++| Canvas | **Updated** to Phase 4.3 YOU ARE HERE |
++| Gaps | Soft-delete/barcode release contract **under-documented** — Must Fix docs alongside code |
++
++---
++
++## 11. Technical Debt
++
++### Critical
++1. **Soft-delete allowed while item is reserved/rented/return_pending** — destroys ops integrity for future rentals.  
++2. **Soft-delete does not release barcodes / soft-delete `ItemBarcode`** — scanners remain bound to deleted entities.  
++3. **Create+barcode path is not transactional** — activate-then-fail soft-deletes item but leaves barcode activated.
++
++### High
++4. **Restore leaves `status=inactive`** — restored items stay non-operational until manual PATCH.  
++5. **`isOperational` includes draft; transitions allow draft** — incomplete catalog stock can enter reserved/rented.  
++6. **Dual `ItemMedia` + `MediaReference` without shared transaction** — drift under partial failure; unique ignores soft-delete.  
++7. **Catalog `retired` vs lifecycle `retired` naming collision**.  
++8. **Taxonomy RBAC inconsistency** (`categories.*` vs `inventory.*` for peer entities).  
++9. **Taxonomy uniqueness TOCTOU** (app scan + partial SQL index; P2002 may surface as 500).
++
++### Medium
++10. Create `description` dropped; Update DTO advertises unused barcode fields.  
++11. `lifecycleState` list filter not enum-validated.  
++12. Inactive taxonomy (`isActive=false`) still linkable.  
++13. Category parent cycles (A→B→A) not detected.  
++14. Birth history `available→available`.  
++15. Ops dead-ends (`cleaning` lacks lost/damaged; `sold` no cancel).  
++16. Partial unique indexes only in raw SQL (Prisma schema drift).
++
++### Low
++17. Redundant internalCode index.  
++18. `ITEM_SORT_FIELDS` omits `lifecycleState`.  
++19. Shared taxonomy DTOs carry unused fields per kind.  
++20. Two `@Controller('items')` classes — fragile for future routes.
++
++---
++
++## 12. Must Fix (before Rental Engine)
++
++| # | Item | Blocking rentals? |
++|---|------|-------------------|
++| 1 | Reject soft-delete (and catalog retire) when lifecycle ∉ safe set | **YES** |
++| 2 | On item soft-delete: release barcodes + soft-delete joins | **YES** |
++| 3 | Transactional create / compensating barcode release | **YES** |
++| 4 | Restore prior catalog status (or explicit restore policy) | **YES** |
++| 5 | Block lifecycle transitions unless catalog `active` (draft ≠ operational) | **YES** |
++| 6 | Single attachment model **or** transactional dual-write + detach on delete | **YES** |
++| 7 | Document barcode/media lifecycle contracts in InventoryDesign | Docs |
++
++**No Rental Engine / Reservations / Calendar work until these land and are re-probed.**
++
++---
++
++## 13. Recommended Improvements
++
++1. Rename axes: `catalogStatus` vs `lifecycleState` tokens (avoid dual `retired`).  
++2. Unify taxonomy permissions (`taxonomy.*` or per-entity keys).  
++3. Map Prisma P2002 → 409 for taxonomy/item unique races.  
++4. Validate list `lifecycleState` with `@IsIn`.  
++5. Persist create `description`; remove unused update barcode fields or implement.  
++6. Soft-delete-aware unique for `ItemMedia`.  
++7. Extend transition graph for laundry loss (`cleaning` → lost/damaged).  
++8. Keep `scripts/cert-phase43.cjs` as CI smoke for inventory.
++
++---
++
++## 14. Ready for Rental Engine?
++
++**NO.**
++
++Automated quality gates pass and the **single lifecycle engine** is the correct architectural bet. However Critical/High integrity holes (soft-delete mid-flow, barcode orphans, non-transactional bind, restore status, draft transitions, media dual-write) will poison reservations and rentals if ignored.
++
++**Next allowed work (after approval):** Must-Fix remediation commit(s) — still **no** rentals/reservations/calendar/payments until a remediation re-cert note.
++
++---
++
++## Appendix A — Harness summary
++
++- Generated: `2026-08-02T08:32:58.879Z`  
++- Security probes (non-debt): **8/8** passed  
++- API probes: **11/11** passed  
++- Errors: **0**  
++- Full JSON: `cert_p43_harness.json`
++
++## Appendix B — Commands
++
++```bash
++pnpm lint
++pnpm build
++pnpm test
++pnpm test:cov
++pnpm test:cov:inventory
++node scripts/cert-phase43.cjs
++```
++
++## Appendix C — HTTP inventory surface (certified)
++
++| Area | Paths |
++|------|-------|
++| Categories | `/categories` |
++| Brands / Colors / Sizes | `/brands` `/colors` `/sizes` |
++| Items | `/items` `/items/search` `/items/code/:code` `/items/:id` `/items/:id/media` |
++| Lifecycle | `/items/:id/state` `/items/:id/history` `/items/:id/transition` |
+diff --git a/docs/backend-v2/PROGRESS.md b/docs/backend-v2/PROGRESS.md
+index 65317fe..65a2c5d 100644
+--- a/docs/backend-v2/PROGRESS.md
++++ b/docs/backend-v2/PROGRESS.md
+@@ -1,7 +1,7 @@
+ # Backend V2 Progress Canvas
+ 
+ **Live canvas:** `juman-backend-v2-roadmap.canvas.tsx`  
+-**Branch:** `backend-v2` — **Updated:** 2026-08-02 — **Overall ~58%**
++**Branch:** `backend-v2` — **Updated:** 2026-08-02 — **Overall ~60%**
+ 
+ ```
+ Phase 0  Architecture                    DONE
+@@ -11,8 +11,9 @@ Phase 3  Core Business                   DONE
+ Phase 4  Inventory Engine
+          4.1 Catalog engine              DONE
+          4.2 Lifecycle foundation        DONE
+-         4.3+ reservations / rentals     WAITING APPROVAL
+-Phase 5+ Rentals / Sales / Reports       BLOCKED until approved
++         4.3 Engineering certification   DONE (PASS WITH WARNINGS — 78/100)
++Phase 5  Rental Engine                   BLOCKED (Must-Fix first)
++Phase 6+ Sales / Reports / Desktop       WAITING
+ ```
+ 
+-**YOU ARE HERE:** After Phase 4.2 lifecycle foundation. Do not implement reservations, rentals, calendar, laundry/inspection workflows, or payments until explicit approval.
++**YOU ARE HERE:** After Phase 4.3 inventory certification. Do **not** implement reservations, rentals, calendar, or payments until Must-Fix items are remediated and approved.
+diff --git a/docs/backend-v2/cert_p43_harness.json b/docs/backend-v2/cert_p43_harness.json
+new file mode 100644
+index 0000000..c9ed60a
+--- /dev/null
++++ b/docs/backend-v2/cert_p43_harness.json
+@@ -0,0 +1,132 @@
++{
++  "generatedAt": "2026-08-02T08:32:58.879Z",
++  "migrateMs": 3027,
++  "startupMs": 830,
++  "memRssMbAfterBoot": 121,
++  "timings": {
++    "health": 21,
++    "login_bootstrap": 1105,
++    "taxonomy_create": 80,
++    "item_create_barcode": 65,
++    "catalog_search": 26,
++    "barcode_lookup": 33,
++    "lifecycle_transition": 51,
++    "history_retrieval": 13,
++    "concurrent_transitions": 22
++  },
++  "security": [
++    {
++      "name": "unauthenticated /items → 401",
++      "ok": true,
++      "detail": "status=401"
++    },
++    {
++      "name": "unauthenticated transition → 401",
++      "ok": true,
++      "detail": "status=401"
++    },
++    {
++      "name": "state skip rejected",
++      "ok": true,
++      "detail": "status=409"
++    },
++    {
++      "name": "edit while reserved blocked",
++      "ok": true,
++      "detail": "status=409"
++    },
++    {
++      "name": "concurrent CAS one-wins",
++      "ok": true,
++      "detail": "ok=1 fail=1"
++    },
++    {
++      "name": "deleted item get → 404",
++      "ok": true,
++      "detail": "status=404"
++    },
++    {
++      "name": "deleted item transition rejected",
++      "ok": true,
++      "detail": "status=404"
++    },
++    {
++      "name": "invalid payload → 400",
++      "ok": true,
++      "detail": "status=400"
++    },
++    {
++      "name": "DEBT soft-delete while reserved currently allowed",
++      "ok": true,
++      "detail": "observed_status=200 (expected until Must-Fix; documents debt)",
++      "debt": true
++    }
++  ],
++  "api": [
++    {
++      "name": "GET /health",
++      "ok": true,
++      "detail": "ok"
++    },
++    {
++      "name": "auth bootstrap",
++      "ok": true,
++      "detail": "password changed + re-login"
++    },
++    {
++      "name": "taxonomy CRUD create",
++      "ok": true,
++      "detail": "ok"
++    },
++    {
++      "name": "item create + barcode",
++      "ok": true,
++      "detail": "code=ITM-00000001 barcodes=1"
++    },
++    {
++      "name": "catalog search/filter",
++      "ok": true,
++      "detail": "total=1"
++    },
++    {
++      "name": "barcode/internal code lookup",
++      "ok": true,
++      "detail": "ITM-00000001"
++    },
++    {
++      "name": "valid transition",
++      "ok": true,
++      "detail": "reserved"
++    },
++    {
++      "name": "history retrieval",
++      "ok": true,
++      "detail": "total=2"
++    },
++    {
++      "name": "soft delete",
++      "ok": true,
++      "detail": "deleted"
++    },
++    {
++      "name": "restore",
++      "ok": true,
++      "detail": "restored"
++    },
++    {
++      "name": "schema inventory tables",
++      "ok": true,
++      "detail": "{\"tableCount\":25,\"indexCount\":103,\"foreignKeys\":false,\"hasItem\":true,\"hasItemStateHistory\":true,\"hasItemMedia\":true,\"hasItemBarcode\":true}"
++    }
++  ],
++  "database": {
++    "tableCount": 25,
++    "indexCount": 103,
++    "foreignKeys": false,
++    "hasItem": true,
++    "hasItemStateHistory": true,
++    "hasItemMedia": true,
++    "hasItemBarcode": true
++  },
++  "errors": []
++}
+\ No newline at end of file
+-- 
+2.55.0.windows.2
+

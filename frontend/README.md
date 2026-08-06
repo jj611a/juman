@@ -1,28 +1,17 @@
-# Juman Frontend (Electron)
+# @juman/frontend (V2 rewrite)
 
-Desktop client foundation for **جمان** — Electron + React + TypeScript.
+Backend V2–native Electron + React client.
 
-## Requirements
+- **Contract:** NestJS camelCase DTOs only — no `legacyBridge`, no snake_case adapters.
+- **Security:** Electron Main owns JWT / refresh; renderer never stores tokens.
+- **UI:** daisyUI 5 + theme `juman` (gold `#c6a75e` on black).
+- **Phase 1:** architecture, design system, application shell — feature modules require approval.
 
-- Node.js 20+
-- pnpm 10+
-- Backend running at `http://127.0.0.1:8787` (Nest Backend V2; required for login/health)
-
-## Commands
-
-From repo root:
+Legacy UI is frozen at `../frontend-legacy/` (read-only).
 
 ```bash
 pnpm install
-pnpm --filter @juman/frontend dev
-pnpm --filter @juman/frontend test
-pnpm --filter @juman/frontend build
+pnpm dev
 ```
 
-## Architecture (short)
-
-- Renderer never imports Axios and never sees JWT strings.
-- Electron Main owns HTTP (`JUMAN_API_BASE_URL`), access token (memory), refresh token (Electron `safeStorage`).
-- Preload exposes `window.juman` only.
-
-See `docs/frontend/` for full documentation.
+Docs: `../docs/frontend/`

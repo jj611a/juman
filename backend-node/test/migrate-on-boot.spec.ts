@@ -1,8 +1,11 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { runPendingMigrations } from '../src/database/migrate-on-boot';
+import {
+  resolveBackendRoot,
+  runPendingMigrations,
+} from '../src/database/migrate-on-boot';
 import { buildRuntimePaths } from '../src/config/paths';
 import { ensureRuntimeDirectories } from '../src/storage/ensure-dirs';
 
@@ -27,5 +30,19 @@ describe('migrate-on-boot', () => {
 
   it('rejects non-sqlite database urls', () => {
     expect(() => runPendingMigrations('postgresql://localhost/db')).toThrow(/SQLite/);
+  });
+
+  it('resolves backend root from dist/src and src layouts', () => {
+    const fromSrc = resolveBackendRoot(join(__dirname, '../src/database'));
+    expect(existsSync(join(fromSrc, 'prisma', 'schema.prisma'))).toBe(true);
+
+    const fromDistSrc = resolveBackendRoot(
+      join(__dirname, '../dist/src/database'),
+    );
+    expect(fromDistSrc).toBe(fromSrc);
+
+    expect(() =>
+      resolveBackendRoot(join(tmpdir(), 'juman-no-prisma-root')),
+    ).toThrow(/could not locate prisma/);
   });
 });

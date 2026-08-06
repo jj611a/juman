@@ -1,0 +1,22 @@
+﻿
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=function, 
+asyncio_default_test_loop_scope=function
+tests\modules\identity\test_auth_api.py ........                         [  7%]
+tests\modules\identity\test_authentication_service.py .........          [ 15%]
+tests\modules\identity\test_login_history_api.py ....                    [ 19%]
+tests\modules\identity\test_login_history_service.py ......              [ 24%]
+tests\modules\identity\test_password_api.py ....                         [ 28%]
+tests\modules\identity\test_password_service.py ......                   [ 33%]
+tests\modules\identity\test_session_api.py ....                          [ 37%]
+tests\modules\identity\test_session_service.py .......                   [ 43%]
+tests\modules\identity\test_token_service.py ..........                  [ 52%]
+tests\modules\identity\test_user_api.py ....                             [ 56%]
+tests\modules\identity\test_user_service.py ......                       [ 61%]
+tests\modules\identity\test_user_validators.py ....                      [ 65%]
+tests\modules\rbac\test_api.py .........                                 [ 73%]
+tests\modules\rbac\test_defaults.py .....                                [ 78%]
+tests\modules\rbac\test_service.py ...........                           [ 88%]
+tests\modules\rbac\test_validation.py .............                      [100%]
+================= 110 passed, 1 warning in 102.02s (0:01:42) ==================
+
+

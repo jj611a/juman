@@ -8,7 +8,6 @@
     "skipLibCheck": true,
     "noEmit": true,
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
-    "downlevelIteration": true,
     "types": ["vite/client"],
     "baseUrl": ".",
     "paths": {
@@ -19,8 +18,5 @@
     "resolveJsonModule": true,
     "allowSyntheticDefaultImports": true
   },
-  "include": [
-    "src/**/*",
-    "electron/shared/**/*"
-  ]
+  "include": ["src/**/*", "electron/shared/**/*"]
 }

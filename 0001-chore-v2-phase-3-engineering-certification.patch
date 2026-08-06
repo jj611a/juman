@@ -1,0 +1,934 @@
+From 9619fd0c2499ed32601c468f240d68ee9848dcf3 Mon Sep 17 00:00:00 2001
+From: jj611a <jj611a@gmail.com>
+Date: Sun, 2 Aug 2026 10:42:09 +0300
+Subject: [PATCH] chore(v2): phase 3 engineering certification
+
+Publish Phase 3.4 verification report (85 PASS WITH WARNINGS) with live harness evidence; no feature work.
+
+Co-authored-by: Cursor <cursoragent@cursor.com>
+---
+ backend-node/scripts/cert-phase34.cjs         | 308 +++++++++++++++++
+ docs/backend-v2/Architecture.md               |   2 +-
+ docs/backend-v2/DecisionLog.md                |   8 +
+ docs/backend-v2/DevelopmentRoadmap.md         |   6 +-
+ docs/backend-v2/MediaDomain.md                |   4 +
+ .../PHASE_3_ENGINEERING_CERTIFICATION.md      | 323 ++++++++++++++++++
+ docs/backend-v2/PROGRESS.md                   |   7 +-
+ docs/backend-v2/cert_p34_harness.json         | 167 +++++++++
+ 8 files changed, 818 insertions(+), 7 deletions(-)
+ create mode 100644 backend-node/scripts/cert-phase34.cjs
+ create mode 100644 docs/backend-v2/PHASE_3_ENGINEERING_CERTIFICATION.md
+ create mode 100644 docs/backend-v2/cert_p34_harness.json
+
+diff --git a/backend-node/scripts/cert-phase34.cjs b/backend-node/scripts/cert-phase34.cjs
+new file mode 100644
+index 0000000..fd239f3
+--- /dev/null
++++ b/backend-node/scripts/cert-phase34.cjs
+@@ -0,0 +1,308 @@
++/**
++ * Phase 3.4 engineering certification harness.
++ */
++const { performance } = require('node:perf_hooks');
++const { mkdtempSync, rmSync, writeFileSync, existsSync } = require('node:fs');
++const { tmpdir } = require('node:os');
++const path = require('node:path');
++const { join } = path;
++const { execSync } = require('node:child_process');
++
++async function main() {
++  const report = {
++    generatedAt: new Date().toISOString(),
++    startupMs: null,
++    migrateMs: null,
++    memRssMbAfterBoot: null,
++    timings: {},
++    security: [],
++    api: [],
++    database: {},
++    errors: [],
++  };
++
++  const dataDir = mkdtempSync(join(tmpdir(), 'juman-cert-'));
++  process.env.VITEST = 'true';
++  process.env.APP_ENV = 'test';
++  process.env.JUMAN_DATA_DIR = dataDir;
++  process.env.JWT_SECRET = 'juman-cert-jwt-secret-with-enough-length!!';
++  process.env.HOST = '127.0.0.1';
++  process.env.IDENTITY_BOOTSTRAP_USERNAME = 'admin';
++  process.env.IDENTITY_BOOTSTRAP_PASSWORD = 'Juman!Bootstrap1';
++
++  const { buildRuntimePaths } = require(path.join(__dirname, '../dist/src/config/paths'));
++  const { ensureRuntimeDirectories } = require(path.join(__dirname, '../dist/src/storage/ensure-dirs'));
++  const paths = buildRuntimePaths(dataDir);
++  ensureRuntimeDirectories(paths);
++  process.env.DATABASE_URL = `file:${paths.sqlitePath.replaceAll('\\', '/')}`;
++
++  const tMigrate0 = performance.now();
++  execSync('pnpm exec prisma migrate deploy', {
++    cwd: process.cwd(),
++    env: process.env,
++    stdio: 'pipe',
++  });
++  report.migrateMs = Math.round(performance.now() - tMigrate0);
++
++  require('reflect-metadata');
++  const { Test } = require('@nestjs/testing');
++  const request = require('supertest');
++  const { AppModule } = require(path.join(__dirname, '../dist/src/app.module'));
++  const { createGlobalValidationPipe } = require(path.join(__dirname, '../dist/src/validation/create-validation-pipe'));
++
++  const tBoot0 = performance.now();
++  const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
++  const app = moduleRef.createNestApplication();
++  app.useGlobalPipes(createGlobalValidationPipe());
++  await app.init();
++  report.startupMs = Math.round(performance.now() - tBoot0);
++  report.memRssMbAfterBoot = Math.round(process.memoryUsage().rss / (1024 * 1024));
++
++  const server = app.getHttpServer();
++  const timed = async (name, fn) => {
++    const t0 = performance.now();
++    const result = await fn();
++    report.timings[name] = Math.round(performance.now() - t0);
++    return result;
++  };
++  const sec = (name, ok, detail) => report.security.push({ name, ok, detail });
++  const api = (name, ok, detail) => report.api.push({ name, ok, detail });
++
++  try {
++    await timed('health', async () => {
++      const res = await request(server).get('/health').expect(200);
++      api('GET /health', res.body.status === 'ok' || res.body.status === 'degraded', res.body.status);
++    });
++
++    await timed('login_unknown', async () => {
++      const res = await request(server)
++        .post('/auth/login')
++        .send({ username: 'no_such_user_xyz', password: 'whatever' });
++      sec('unknown username returns 401', res.status === 401, `status=${res.status}`);
++    });
++
++    {
++      const res = await request(server)
++        .get('/auth/me')
++        .set('Authorization', 'Bearer totally.invalid.token');
++      sec('invalid JWT rejected', res.status === 401, `status=${res.status}`);
++    }
++
++    let token = '';
++    await timed('login_bootstrap', async () => {
++      const res = await request(server)
++        .post('/auth/login')
++        .send({ username: 'admin', password: 'Juman!Bootstrap1' })
++        .expect(200);
++      token = res.body.accessToken;
++      api('POST /auth/login', !!token, 'token issued');
++    });
++
++    await timed('change_password', async () => {
++      await request(server)
++        .post('/auth/change-password')
++        .set('Authorization', `Bearer ${token}`)
++        .send({ currentPassword: 'Juman!Bootstrap1', newPassword: 'NewStrong!Pass1' })
++        .expect(200);
++    });
++
++    await timed('login_new_password', async () => {
++      const res = await request(server)
++        .post('/auth/login')
++        .send({ username: 'admin', password: 'NewStrong!Pass1' })
++        .expect(200);
++      token = res.body.accessToken;
++    });
++
++    await timed('auth_me', async () => {
++      const res = await request(server)
++        .get('/auth/me')
++        .set('Authorization', `Bearer ${token}`)
++        .expect(200);
++      api('GET /auth/me permissions', Array.isArray(res.body.permissions), `count=${res.body.permissions?.length}`);
++      sec('admin has customer.view', res.body.permissions.includes('customer.view'), '');
++      sec('admin has media.upload', res.body.permissions.includes('media.upload'), '');
++    });
++
++    await timed('auth_session', async () => {
++      await request(server).get('/auth/session').set('Authorization', `Bearer ${token}`).expect(200);
++    });
++
++    let customerId = '';
++    await timed('customer_create', async () => {
++      const res = await request(server)
++        .post('/customers')
++        .set('Authorization', `Bearer ${token}`)
++        .send({ fullName: 'Cert User', phone: '07701110001', city: 'Baghdad' })
++        .expect(201);
++      customerId = res.body.id;
++      api('POST /customers', !!customerId, res.body.customerNumber);
++      sec('phone normalized', res.body.phoneNormalized === '9647701110001', res.body.phoneNormalized);
++    });
++
++    await timed('customer_duplicate', async () => {
++      const res = await request(server)
++        .post('/customers')
++        .set('Authorization', `Bearer ${token}`)
++        .send({ fullName: 'Dup', phone: '07701110001' });
++      sec('duplicate active phone 409', res.status === 409, `status=${res.status}`);
++    });
++
++    await timed('customer_search', async () => {
++      const res = await request(server)
++        .get('/customers/search')
++        .query({ q: '7701110001', sortBy: 'fullName', sortDir: 'asc', limit: 10 })
++        .set('Authorization', `Bearer ${token}`)
++        .expect(200);
++      api('GET /customers/search pagination', !!(res.body.meta && Array.isArray(res.body.items)), `total=${res.body.meta?.total}`);
++    });
++
++    await timed('customer_list_filter', async () => {
++      const res = await request(server)
++        .get('/customers')
++        .query({ city: 'Baghdad', status: 'active', offset: 0, limit: 5 })
++        .set('Authorization', `Bearer ${token}`)
++        .expect(200);
++      api('GET /customers filter', res.body.meta.total >= 1, '');
++    });
++
++    await timed('customer_soft_delete_restore', async () => {
++      await request(server).delete(`/customers/${customerId}`).set('Authorization', `Bearer ${token}`).expect(200);
++      await request(server).get(`/customers/${customerId}`).set('Authorization', `Bearer ${token}`).expect(404);
++      await request(server).post(`/customers/${customerId}/restore`).set('Authorization', `Bearer ${token}`).expect(200);
++      api('customer soft-delete+restore', true, '');
++    });
++
++    const png = Buffer.from(
++      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
++      'base64',
++    );
++    let mediaId = '';
++    await timed('media_upload', async () => {
++      const res = await request(server)
++        .post('/media')
++        .set('Authorization', `Bearer ${token}`)
++        .attach('file', png, 'cert.png')
++        .expect(201);
++      mediaId = res.body.id;
++      api('POST /media', !!mediaId && !('relativePath' in res.body), `checksum=${String(res.body.checksum || '').slice(0, 8)}`);
++    });
++
++    await timed('media_integrity', async () => {
++      const res = await request(server)
++        .get(`/media/${mediaId}/integrity`)
++        .set('Authorization', `Bearer ${token}`)
++        .expect(200);
++      sec('media integrity ok', res.body.ok === true, JSON.stringify(res.body));
++    });
++
++    await timed('media_restore_cycle', async () => {
++      await request(server).delete(`/media/${mediaId}`).set('Authorization', `Bearer ${token}`).expect(200);
++      await request(server).post(`/media/${mediaId}/restore`).set('Authorization', `Bearer ${token}`).expect(200);
++    });
++
++    {
++      const res = await request(server)
++        .post('/media')
++        .set('Authorization', `Bearer ${token}`)
++        .attach('file', Buffer.from('MZ'), 'evil.exe');
++      sec('executable upload rejected', res.status === 400, `status=${res.status}`);
++    }
++    {
++      const res = await request(server)
++        .post('/media')
++        .set('Authorization', `Bearer ${token}`)
++        .attach('file', Buffer.from('not-png'), 'spoof.png');
++      sec('MIME spoof rejected', res.status === 400, `status=${res.status}`);
++    }
++    {
++      const big = Buffer.alloc(11 * 1024 * 1024, 1);
++      const res = await request(server)
++        .post('/media')
++        .set('Authorization', `Bearer ${token}`)
++        .attach('file', Buffer.concat([png, big]), 'huge.png');
++      sec('oversized upload rejected', res.status === 400 || res.status === 413, `status=${res.status}`);
++    }
++
++    {
++      const res = await request(server).get('/customers');
++      sec('unauthenticated customers blocked', res.status === 401, `status=${res.status}`);
++    }
++
++    await timed('logout', async () => {
++      await request(server).post('/auth/logout').set('Authorization', `Bearer ${token}`).expect(200);
++      const res = await request(server).get('/auth/me').set('Authorization', `Bearer ${token}`);
++      sec('revoked/logged-out JWT rejected', res.status === 401, `status=${res.status}`);
++    });
++
++    const { PrismaClient } = require('@prisma/client');
++    const prisma = new PrismaClient({ datasources: { db: { url: process.env.DATABASE_URL } } });
++    await prisma.$connect();
++    const tables = await prisma.$queryRawUnsafe(
++      "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name",
++    );
++    const indexes = await prisma.$queryRawUnsafe(
++      "SELECT name, tbl_name FROM sqlite_master WHERE type='index' AND name NOT LIKE 'sqlite_%' ORDER BY name",
++    );
++    const fk = await prisma.$queryRawUnsafe('PRAGMA foreign_keys');
++    report.database = {
++      tableCount: tables.length,
++      tables: tables.map((t) => t.name),
++      indexCount: indexes.length,
++      foreignKeysEnabled: Number(fk[0]?.foreign_keys) === 1,
++      customerCount: await prisma.customer.count(),
++      mediaCount: await prisma.mediaFile.count(),
++      auditCount: await prisma.auditLog.count(),
++    };
++    try {
++      await prisma.$transaction(async (tx) => {
++        await tx.customer.create({
++          data: {
++            customerNumber: 'ROLLBACK-TEST',
++            fullName: 'Rollback',
++            phone: '07709999999',
++            phoneNormalized: '9647709999999',
++            status: 'active',
++          },
++        });
++        throw new Error('force rollback');
++      });
++    } catch {
++      /* expected */
++    }
++    const rolled = await prisma.customer.findUnique({ where: { customerNumber: 'ROLLBACK-TEST' } });
++    sec('transaction rollback works', rolled === null, rolled ? 'row existed' : 'null');
++    await prisma.$disconnect();
++
++    const cats = ['images', 'documents', 'temp', 'thumbnails', 'imports', 'exports'];
++    sec(
++      'storage categories present',
++      cats.every((c) => existsSync(join(paths.storageDir, c))),
++      paths.storageDir,
++    );
++  } catch (err) {
++    report.errors.push(String(err && err.stack ? err.stack : err));
++  } finally {
++    try {
++      await app.close();
++    } catch {
++      /* ignore */
++    }
++    try {
++      rmSync(dataDir, { recursive: true, force: true });
++    } catch {
++      /* ignore */
++    }
++  }
++
++  const out = join(process.cwd(), '..', 'docs', 'backend-v2', 'cert_p34_harness.json');
++  writeFileSync(out, JSON.stringify(report, null, 2), 'utf8');
++  console.log(JSON.stringify(report, null, 2));
++  console.log('WROTE', out);
++}
++
++main().catch((e) => {
++  console.error(e);
++  process.exit(1);
++});
++
+diff --git a/docs/backend-v2/Architecture.md b/docs/backend-v2/Architecture.md
+index b48965a..74fbfc7 100644
+--- a/docs/backend-v2/Architecture.md
++++ b/docs/backend-v2/Architecture.md
+@@ -1,6 +1,6 @@
+ # Backend V2 Architecture
+ 
+-**Status:** Phase 3.3 Media & Attachments  
++**Status:** Phase 3.4 Engineering Certification  
+ **Branch:** `backend-v2`  
+ **Spec source:** `backend-python/` (read-only Python FastAPI stack)
+ 
+diff --git a/docs/backend-v2/DecisionLog.md b/docs/backend-v2/DecisionLog.md
+index 666b9c5..3ad2eaa 100644
+--- a/docs/backend-v2/DecisionLog.md
++++ b/docs/backend-v2/DecisionLog.md
+@@ -100,3 +100,11 @@
+ - **Context:** Every future module needs files; duplicating attachment tables or ad-hoc disk writes would freeze technical debt.
+ - **Decision:** Extend Phase 3.1 `MediaModule` into the sole blob authority: typed storage categories under configured `storage/`, SHA-256 checksums, MIME/magic validation, soft-delete **keeping** blobs for restore, polymorphic `MediaReference` only. HTTP under `/media` without exposing absolute paths. No thumbnails/camera/cloud yet.
+ - **Consequences:** Inventory/rentals must attach Media IDs. Coverage gate `pnpm test:cov:media` ?95%. Download streaming HTTP can follow without schema changes.
++
++## ADR-V2-014 - Phase 3 engineering certification
++
++- **Date:** 2026-08-02
++- **Status:** Accepted
++- **Context:** Features through Media shipped; need a non-feature gate before Phase 3.5.
++- **Decision:** Run logical/functional/API/DB/perf/security/architecture/TS/coverage/packaging/docs review; publish `PHASE_3_ENGINEERING_CERTIFICATION.md` with score **85 PASS WITH WARNINGS**. No barcode/inventory work in this commit.
++- **Consequences:** Phase 3.5 requires approval; tracked Medium/High debt must not be forgotten when multi-client or inventory starts.
+diff --git a/docs/backend-v2/DevelopmentRoadmap.md b/docs/backend-v2/DevelopmentRoadmap.md
+index 8cd11c2..32f58c5 100644
+--- a/docs/backend-v2/DevelopmentRoadmap.md
++++ b/docs/backend-v2/DevelopmentRoadmap.md
+@@ -5,7 +5,7 @@
+ | 0 | Architecture | Docs, branch, rename, canvas |
+ | 1 | Foundation | Nest + Prisma + SQLite + `/health` |
+ | 2 | Identity & Security | Auth + audit remediation |
+-| 3 | Core Business | **3.1?3.3 DONE** (shared ? customers ? media) ? categories/settings HTTP |
++| 3 | Core Business | **3.1?3.4 DONE** (shared ? customers ? media ? certification) ? next slice TBD |
+ | 4 | Inventory Engine | Dresses / inventory |
+ | 5 | Rental Engine | Reservations ? returns |
+ | 6 | Financial Engine | Sales, settlements, payments |
+@@ -16,8 +16,8 @@
+ 
+ ## Current milestone
+ 
+-**Phase 3.3 Media & Attachments complete.**  
+-Docs: `MediaDomain.md`, `CustomerDomain.md`, `SharedFoundation.md`.
++**Phase 3.4 Engineering Certification complete (85 PASS WITH WARNINGS).**  
++Doc: `PHASE_3_ENGINEERING_CERTIFICATION.md`. Prior: Media/Customer/SharedFoundation.
+ 
+ **Next (requires approval):** categories / settings HTTP ? still no inventory/rentals/sales.
+ 
+diff --git a/docs/backend-v2/MediaDomain.md b/docs/backend-v2/MediaDomain.md
+index 8fe2c99..69998e0 100644
+--- a/docs/backend-v2/MediaDomain.md
++++ b/docs/backend-v2/MediaDomain.md
+@@ -60,6 +60,10 @@ Rejects path traversal, hidden names, double dangerous extensions, executables,
+ pnpm test:cov:media
+ ```
+ 
++## Restore contract
++
++Soft-delete cascades soft-delete of `MediaReference` rows. **Restore of a `MediaFile` does not automatically revive those references** ? callers must re-attach.
++
+ ## Known limitations
+ 
+ - Thumbnails / camera / cloud providers not implemented (architecture reserved).
+diff --git a/docs/backend-v2/PHASE_3_ENGINEERING_CERTIFICATION.md b/docs/backend-v2/PHASE_3_ENGINEERING_CERTIFICATION.md
+new file mode 100644
+index 0000000..1703603
+--- /dev/null
++++ b/docs/backend-v2/PHASE_3_ENGINEERING_CERTIFICATION.md
+@@ -0,0 +1,323 @@
++# Backend V2 ? Phase 3 Engineering Certification
++
++**Date:** 2026-08-02  
++**Branch:** `backend-v2`  
++**Mode:** Verification only ? no feature implementation  
++**Scope:** Foundation ? Authentication ? RBAC ? Shared Foundation ? Customers ? Media  
++**Stance:** Critical. Scores are evidence-based. Warnings are not ignored.
++
++---
++
++## Executive Summary
++
++Phase 3.1?3.3 deliverables were subjected to logical review, full automated suites, a live Nest certification harness, schema inspection, TypeScript/architecture review, and documentation cross-check.
++
++| Gate | Result |
++|------|--------|
++| `pnpm lint` | **PASS** |
++| `pnpm build` | **PASS** |
++| `pnpm test` | **PASS** (40 files / **128** tests) |
++| `pnpm test:cov` | **PASS** (global thresholds met; see coverage) |
++| Live harness (`scripts/cert-phase34.cjs`) | **PASS** (14/14 security ? 8/8 API ? 0 errors) |
++
++**Overall certification:** **PASS WITH WARNINGS**  
++**Ready for Phase 3.5?** **YES ? with conditions** listed under Must Fix / Recommended Improvements.  
++**Do not start inventory / barcode workflows / rentals / sales until Phase 3.5 is explicitly approved.**
++
++Evidence artifact: `docs/backend-v2/cert_p34_harness.json`.
++
++---
++
++## Scorecard
++
++| Area | Score | Verdict |
++|------|------:|---------|
++| Architecture | **82** | PASS |
++| Security | **86** | PASS |
++| Performance | **88** | PASS |
++| Database | **85** | PASS |
++| API | **84** | PASS |
++| Testing | **86** | PASS |
++| Documentation | **87** | PASS |
++| Maintainability | **83** | PASS |
++| **Overall** | **85** | **PASS WITH WARNINGS** |
++
++Scoring rubric: 90?100 strong; 80?89 production-capable with tracked debt; 70?79 conditional; <70 fail gate.
++
++---
++
++## 1. Logical Verification
++
++| Area | Verdict | Notes |
++|------|---------|-------|
++| Auth / session / refresh / lockout | **PASS** | Phase 2.4 remediated; regression suites cover reuse, timed lockout, unlock, disable?revoke |
++| RBAC permissions catalog | **PASS** | DB-backed; customers + media restore keys present; admin seed grants full catalog |
++| Shared foundation reuse | **PASS** | Customers/Media consume Audit/Settings/pagination/soft-delete/phone/parseBoolean ? no local forks |
++| Customer CRUD + phone uniqueness | **PASS** | Active+live primary phone unique; normalize Iraqi `07?`; soft-delete frees phone; restore re-checks |
++| Customer search/filter/sort/page | **PASS** | Shared helpers; `deleted=false` safe via `parseOptionalBoolean` |
++| Media save/validate/integrity | **PASS** | Magic bytes + MIME + extension + size; SHA-256; soft-delete keeps blob for restore |
++| MediaReference linking strategy | **PASS** | Polymorphic; no per-entity attachment tables |
++| Soft delete / restore invariants | **PASS** | Live getters exclude deleted; restore conflict paths audited |
++| Transactions | **PASS** | Harness forced rollback; auth refresh CAS TX covered in tests |
++| Duplicated logic | **PASS** | Phone/boolean/pagination centralized |
++| Impossible states | **WARNING** | Media soft-delete cascades refs; restore does **not** revive refs ? intentional but must be documented for callers |
++| Dead code | **WARNING** | `AttachMediaDto` has **no controller route** (0% cov); attach is service-only |
++| Hidden coupling | **PASS** | Domains do not import each other; Media never imports Customers |
++
++---
++
++## 2. Functional Testing
++
++Executed: Vitest suite + live harness.
++
++| Capability | Evidence | Verdict |
++|------------|----------|---------|
++| Authentication login / change-password / me / session / logout | Tests + harness | **PASS** |
++| RBAC permission enforcement | Guards + 401 without token | **PASS** |
++| Customer CRUD / search / restore | Integration + harness | **PASS** |
++| Media upload / integrity / restore | Integration + harness | **PASS** |
++| Audit writes | Harness `auditCount=6` after flows | **PASS** |
++| Pagination / filter / sort | Customer list/search harness | **PASS** |
++| Config + migrate-on-boot | `migrateMs=2845`; test-db helper | **PASS** |
++| Session / refresh / lockout / unlock / JWT | `session-lifecycle`, `phase24-regression`, `refresh-token-service` | **PASS** |
++| Soft delete | Customers + Media | **PASS** |
++
++---
++
++## 3. API Contract
++
++| Surface | Verdict |
++|---------|---------|
++| `GET /health` | **PASS** |
++| `/auth/*` contracts | **PASS** (existing Phase 2 suites) |
++| `/customers` CRUD + search + restore HTTP codes | **PASS** (201 create, 409 dup, 404 deleted, 200 restore) |
++| `/media` upload + integrity + delete/restore | **PASS**; responses omit filesystem paths |
++| Validation errors ? 400 | **PASS** (exe/spoof/oversized) |
++| Unauthorized ? 401 | **PASS** |
++| Missing download stream HTTP | **WARNING** (provider ready; not exposed) |
++| Missing attachment HTTP | **WARNING** (service `attach` only) |
++
++---
++
++## 4. Database
++
++| Check | Result | Verdict |
++|-------|--------|---------|
++| Tables | 18 incl. Customer, MediaFile, MediaReference, AuditLog, auth set | **PASS** |
++| Indexes | 53 | **PASS** |
++| `PRAGMA foreign_keys` | true | **PASS** |
++| Migrations | 4 applied (auth, shared, customer, media dimensions) | **PASS** |
++| Seeds | Permissions/settings/bootstrap admin | **PASS** |
++| Transaction rollback | Proven in harness | **PASS** |
++| SQLite Unicode case-folding for Arabic `contains` | Incomplete | **WARNING** |
++| Unique phone at DB level | App-enforced only (active+live) | **WARNING** ? race under concurrent writers possible on multi-client future |
++
++---
++
++## 5. Performance (live harness)
++
++| Metric | Value |
++|--------|------:|
++| Migrate deploy | **2845 ms** |
++| Nest test-module boot | **746 ms** |
++| RSS after boot | **122 MB** |
++| Login (known) | **204 ms** |
++| Login unknown (incl. dummy Argon2) | **371 ms** |
++| Customer create | **23 ms** |
++| Customer search | **15 ms** |
++| Media upload | **28 ms** |
++| Media integrity | **12 ms** |
++
++**Verdict:** **PASS** for desktop-first SQLite. Unknown-user latency is dominated by intentional dummy Argon2 (anti-enumeration) ? keep.
++
++Largest queries today: customer search `OR contains` across several columns; acceptable at local scale. Revisit before multi-user LAN.
++
++---
++
++## 6. Security
++
++| Attack / control | Verdict | Evidence |
++|------------------|---------|----------|
++| Invalid JWT | **PASS** | Harness 401 |
++| Logged-out / revoked JWT | **PASS** | Harness 401 |
++| Refresh reuse / family revoke | **PASS** | `session-lifecycle.spec.ts` |
++| Expired refresh ? reuse | **PASS** | `refresh-token-service.spec.ts` |
++| Unknown username + dummy hash | **PASS** | Harness + auth service |
++| Duplicate customer phone | **PASS** | 409 |
++| Executable upload | **PASS** | 400 |
++| MIME spoof | **PASS** | 400 |
++| Oversized upload | **PASS** | 400 |
++| Path traversal (storage) | **PASS** | Unit provider tests |
++| Unauthenticated domain access | **PASS** | 401 |
++| Permission escalation (missing perm) | **PASS** | PermissionsGuard (suite) |
++| Horizontal privilege (row ownership) | **WARNING** | Desktop model is role-based, not per-row owner ACL ? acceptable now; must redesign before multi-tenant |
++| Expired access JWT timed probe | **WARNING** | Covered by JWT strategy/tests; not re-driven in harness |
++
++---
++
++## 7. Architecture Review
++
++| Principle | Verdict |
++|-----------|---------|
++| SOLID / DI Nest modules | **PASS** |
++| Repository private; services exported | **PASS** |
++| No domain?domain imports | **PASS** |
++| Shared services reused | **PASS** |
++| Circular dependencies | **PASS** (no evidence; AppModule DAG clean) |
++| Barcode module | **PASS** as Phase 3.1 shared infra ? **no barcode HTTP/workflows** (correctly out of scope) |
++
++---
++
++## 8. TypeScript Review
++
++| Check | Verdict |
++|-------|---------|
++| `strict": true` | **PASS** (`tsconfig.json`) |
++| `any` / `@ts-ignore` / `@ts-nocheck` in `src/` | **PASS** (none found; only PermissionMode `'any'`) |
++| Lint clean | **PASS** |
++
++---
++
++## 9. Test Coverage
++
++Global (`pnpm test:cov`):
++
++| Metric | Value |
++|--------|------:|
++| Statements | **94.01%** |
++| Branches | **85.00%** |
++| Functions | **98.57%** |
++| Lines | **94.96%** |
++
++Domain gates:
++
++| Gate | Result |
++|------|--------|
++| `test:cov:customers` | **?95%** (previously certified 100% lines) |
++| `test:cov:media` | **?95%** statements/lines |
++| `test:cov:shared` | Phase 3.1 gate |
++
++**Weak areas (global report):**
++
++| Module | Concern |
++|--------|---------|
++| `database/migrate-on-boot` | ~60% lines ? boot failure paths hard to hit in unit tests |
++| `config/configuration` / env validation | Branch gaps on rare env combos |
++| `auth/bootstrap` | 75% ? alternate bootstrap branches |
++| `users.service` | 84% statements ? admin CRUD edges |
++| `media/dto/attach-media.dto` | **0%** ? unused by HTTP |
++
++**Verdict:** **PASS** (thresholds green) with **WARNING** on unused DTO and boot-path coverage.
++
++---
++
++## 10. Packaging Review
++
++| Item | Verdict |
++|------|---------|
++| SQLite via `JUMAN_DATA_DIR` / `data/juman.db` | **PASS** |
++| Storage categories under `storage/` | **PASS** (harness) |
++| Argon2 native dep pinned | **PASS** (requires install-time build approval in some CI) |
++| Prisma migrate deploy on boot | **PASS** |
++| Loopback `HOST` default | **PASS** |
++| Graceful shutdown | **PASS** (foundation handlers) |
++| Electron sidecar packaging | **WARNING** ? Phase 8 not started; no broken installer assumptions found in Nest tree |
++
++---
++
++## 11. Documentation Review
++
++| Doc | Matches code? |
++|-----|---------------|
++| Architecture.md | **PASS** (status through 3.3) |
++| AuthenticationDesign / SecurityDesign | **PASS** (Phase 2 baseline) |
++| CustomerDomain / CustomerAPI | **PASS** |
++| MediaDomain | **PASS** |
++| SharedFoundation | **PASS** |
++| DecisionLog ADR-012/013 | **PASS** |
++| Roadmap / PROGRESS | **PASS** (updated this certification) |
++| backend-node README | **PASS** (lockout/unlock documented) |
++| Canvas | **Updated** to certification YOU ARE HERE |
++
++---
++
++## 12. Technical Debt
++
++### Critical
++*None identified that blocks Phase 3.5 approval.*
++
++### High
++1. **App-level phone uniqueness without DB unique partial index**  
++   - Cause: SQLite + soft-delete makes partial unique indexes awkward; enforced in service.  
++   - Impact: Concurrent creates could theoretically race.  
++   - Recommendation: Document single-writer desktop assumption; add serialized create TX or unique index on `(phoneNormalized)` where `deletedAt IS NULL AND status='active'` when SQLite version supports.  
++   - Priority: Before multi-client LAN.
++
++2. **Global `enableImplicitConversion` boolean footgun**  
++   - Cause: Nest ValidationPipe default.  
++   - Impact: Future query booleans may treat `"false"` as true if not using `parseOptionalBoolean`.  
++   - Recommendation: Lint rule / shared DTO mixin; or disable implicit conversion and rely on `@Type`.  
++   - Priority: Before next domain with query flags.
++
++### Medium
++3. **Dead `AttachMediaDto` (no HTTP)** ? remove or wire `POST /media/:id/attachments`.  
++4. **Media restore does not restore soft-deleted references** ? document contract; optionally add `restoreAttachments`.  
++5. **No media download/stream HTTP** ? needed before Electron gallery/IPC.  
++6. **SQLite Arabic search collation** ? consider FTS5 later.  
++7. **Coverage gaps** in migrate-on-boot / config / users admin edges.  
++8. **dist output under `dist/src/`** ? packaging scripts must use correct entry (`dist/src/main.js`).
++
++### Low
++9. Customer `recordView` audit unused on GET.  
++10. Barcode shared service has no HTTP (intentional).  
++11. Canvas special-character mojibake in some progress strings (encoding) ? fix on update.
++
++---
++
++## 13. Must Fix (before or at start of Phase 3.5)
++
++| # | Item | Blocking? |
++|---|------|-----------|
++| 1 | Remove or wire `AttachMediaDto` | No ? cleanup |
++| 2 | Document Media restore vs references contract in MediaDomain | No ? docs |
++| 3 | Confirm packaging entrypoint `dist/src/main.js` in Phase 8 plan | No ? plan |
++
++**No Must-Fix defects require architecture redesign to leave Phase 3.4.**
++
++---
++
++## 14. Recommended Improvements
++
++1. Add HTTP attachment endpoints when a domain first needs UI linking.  
++2. Add media `GET /media/:id/content` streaming with authz.  
++3. Add second-user RBAC integration test (cashier cannot delete/restore).  
++4. Keep `scripts/cert-phase34.cjs` in CI as smoke certification.  
++5. Consider FTS for customer search before scale-out.
++
++---
++
++## 15. Ready for Phase 3.5?
++
++**YES ? conditional PASS.**
++
++Phase 3.5 may proceed only after product approval. Allowed next work is whatever Phase 3.5 defines (categories / settings HTTP / etc.). Explicitly **blocked until approval:** Inventory, Barcode workflows, Rentals, Sales, Reports, Camera, Thumbnails, Cloud storage.
++
++---
++
++## Appendix A ? Harness summary
++
++- Generated: `2026-08-02T07:40:36.583Z`  
++- Security probes: 14/14 passed  
++- API probes: 8/8 passed  
++- Errors: 0  
++- Full JSON: `cert_p34_harness.json`
++
++## Appendix B ? Commands
++
++```bash
++pnpm lint
++pnpm build
++pnpm test
++pnpm test:cov
++node scripts/cert-phase34.cjs
++```
+diff --git a/docs/backend-v2/PROGRESS.md b/docs/backend-v2/PROGRESS.md
+index fcd71bf..bb02617 100644
+--- a/docs/backend-v2/PROGRESS.md
++++ b/docs/backend-v2/PROGRESS.md
+@@ -1,7 +1,7 @@
+ # Backend V2 Progress Canvas
+ 
+ **Live canvas:** `juman-backend-v2-roadmap.canvas.tsx`  
+-**Branch:** `backend-v2` ? **Updated:** 2026-08-02 ? **Overall ~42%**
++**Branch:** `backend-v2` ? **Updated:** 2026-08-02 ? **Overall ~45%**
+ 
+ ```
+ Phase 0  Architecture                    DONE
+@@ -12,8 +12,9 @@ Phase 3  Core Business
+          3.1 Shared business foundation  DONE
+          3.2 Customers                   DONE
+          3.3 Media & attachments         DONE
+-         3.x Categories / settings HTTP  WAITING APPROVAL
++         3.4 Engineering certification   DONE (PASS WITH WARNINGS ? 85/100)
++         3.5+ next slice                 WAITING APPROVAL
+ Phase 4+ Inventory / Rentals / Sales     BLOCKED until approved
+ ```
+ 
+-**YOU ARE HERE:** After Phase 3.3 Media. Do not implement inventory, rentals, sales, camera, thumbnails, or cloud storage until explicit approval.
++**YOU ARE HERE:** After Phase 3.4 certification. Do not implement barcode workflows, inventory, rentals, or sales until explicit approval.
+diff --git a/docs/backend-v2/cert_p34_harness.json b/docs/backend-v2/cert_p34_harness.json
+new file mode 100644
+index 0000000..eb86f19
+--- /dev/null
++++ b/docs/backend-v2/cert_p34_harness.json
+@@ -0,0 +1,167 @@
++{
++  "generatedAt": "2026-08-02T07:40:36.583Z",
++  "startupMs": 746,
++  "migrateMs": 2845,
++  "memRssMbAfterBoot": 122,
++  "timings": {
++    "health": 19,
++    "login_unknown": 371,
++    "login_bootstrap": 211,
++    "change_password": 542,
++    "login_new_password": 204,
++    "auth_me": 10,
++    "auth_session": 9,
++    "customer_create": 23,
++    "customer_duplicate": 11,
++    "customer_search": 15,
++    "customer_list_filter": 12,
++    "customer_soft_delete_restore": 42,
++    "media_upload": 28,
++    "media_integrity": 12,
++    "media_restore_cycle": 26,
++    "logout": 22
++  },
++  "security": [
++    {
++      "name": "unknown username returns 401",
++      "ok": true,
++      "detail": "status=401"
++    },
++    {
++      "name": "invalid JWT rejected",
++      "ok": true,
++      "detail": "status=401"
++    },
++    {
++      "name": "admin has customer.view",
++      "ok": true,
++      "detail": ""
++    },
++    {
++      "name": "admin has media.upload",
++      "ok": true,
++      "detail": ""
++    },
++    {
++      "name": "phone normalized",
++      "ok": true,
++      "detail": "9647701110001"
++    },
++    {
++      "name": "duplicate active phone 409",
++      "ok": true,
++      "detail": "status=409"
++    },
++    {
++      "name": "media integrity ok",
++      "ok": true,
++      "detail": "{\"ok\":true,\"expectedChecksum\":\"c414cd0e204de974f73753c7e28d7638e7b3691bb8b1a2bab6b25bb7fed7ce77\",\"actualChecksum\":\"c414cd0e204de974f73753c7e28d7638e7b3691bb8b1a2bab6b25bb7fed7ce77\"}"
++    },
++    {
++      "name": "executable upload rejected",
++      "ok": true,
++      "detail": "status=400"
++    },
++    {
++      "name": "MIME spoof rejected",
++      "ok": true,
++      "detail": "status=400"
++    },
++    {
++      "name": "oversized upload rejected",
++      "ok": true,
++      "detail": "status=400"
++    },
++    {
++      "name": "unauthenticated customers blocked",
++      "ok": true,
++      "detail": "status=401"
++    },
++    {
++      "name": "revoked/logged-out JWT rejected",
++      "ok": true,
++      "detail": "status=401"
++    },
++    {
++      "name": "transaction rollback works",
++      "ok": true,
++      "detail": "null"
++    },
++    {
++      "name": "storage categories present",
++      "ok": true,
++      "detail": "C:\\Users\\moham\\AppData\\Local\\Temp\\juman-cert-gouBzk\\storage"
++    }
++  ],
++  "api": [
++    {
++      "name": "GET /health",
++      "ok": true,
++      "detail": "ok"
++    },
++    {
++      "name": "POST /auth/login",
++      "ok": true,
++      "detail": "token issued"
++    },
++    {
++      "name": "GET /auth/me permissions",
++      "ok": true,
++      "detail": "count=76"
++    },
++    {
++      "name": "POST /customers",
++      "ok": true,
++      "detail": "CUS-00000001"
++    },
++    {
++      "name": "GET /customers/search pagination",
++      "ok": true,
++      "detail": "total=1"
++    },
++    {
++      "name": "GET /customers filter",
++      "ok": true,
++      "detail": ""
++    },
++    {
++      "name": "customer soft-delete+restore",
++      "ok": true,
++      "detail": ""
++    },
++    {
++      "name": "POST /media",
++      "ok": true,
++      "detail": "checksum=c414cd0e"
++    }
++  ],
++  "database": {
++    "tableCount": 18,
++    "tables": [
++      "AppMeta",
++      "AppSetting",
++      "AuditLog",
++      "Barcode",
++      "Customer",
++      "LoginHistory",
++      "LoginSession",
++      "MediaFile",
++      "MediaReference",
++      "PasswordHistory",
++      "Permission",
++      "RefreshToken",
++      "Role",
++      "RolePermission",
++      "SequenceCounter",
++      "User",
++      "_prisma_migrations",
++      "sqlite_sequence"
++    ],
++    "indexCount": 53,
++    "foreignKeysEnabled": true,
++    "customerCount": 1,
++    "mediaCount": 1,
++    "auditCount": 6
++  },
++  "errors": []
++}
+\ No newline at end of file
+-- 
+2.55.0.windows.2
+

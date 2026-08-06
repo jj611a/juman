@@ -34,6 +34,7 @@ import type {
   CreateRentalDto,
   CreateRentalItemDto,
   ListRentalsDto,
+  UpdateRentalDto,
 } from './dto/rental.dto';
 import { toRentalPublic } from './rentals.mapper';
 import {
@@ -153,6 +154,65 @@ export class RentalsService {
 
   async getById(id: string) {
     return toRentalPublic(await this.requireLive(id));
+  }
+
+  async update(id: string, dto: UpdateRentalDto, actor?: AuthPrincipal) {
+    const existing = await this.requireLive(id);
+    if (dto.notes === undefined) {
+      return toRentalPublic(existing);
+    }
+    const notes =
+      dto.notes == null ? null : dto.notes.trim() || null;
+    if (notes !== null && notes.length > 2000) {
+      throw BusinessException.validation('notes must be at most 2000 characters');
+    }
+    const updated = await this.repo.updateNotes(
+      id,
+      notes,
+      actor?.userId ?? null,
+    );
+    await this.audit.recordUpdate(
+      RENTAL_MODULE,
+      RENTAL_ENTITY,
+      id,
+      this.snapshot(existing),
+      this.snapshot(updated),
+      { userId: actor?.userId, username: actor?.username },
+    );
+    return toRentalPublic(updated);
+  }
+
+  async listAudit(
+    id: string,
+    page?: { offset?: number; limit?: number },
+  ) {
+    await this.requireLive(id);
+    const result = await this.audit.list({
+      module: RENTAL_MODULE,
+      entityType: RENTAL_ENTITY,
+      entityId: id,
+      offset: page?.offset,
+      limit: page?.limit ?? 50,
+    });
+    return paginated(
+      result.items.map((row) => ({
+        id: row.id,
+        module: row.module,
+        entityType: row.entityType,
+        entityId: row.entityId,
+        action: row.action,
+        oldValues: this.parseJson(row.oldValues),
+        newValues: this.parseJson(row.newValues),
+        userId: row.userId,
+        username: row.username,
+        ipAddress: row.ipAddress,
+        metadata: this.parseJson(row.metadata),
+        message: row.message,
+        createdAt: row.createdAt,
+      })),
+      result.meta.total,
+      { offset: result.meta.offset, limit: result.meta.limit },
+    );
   }
 
   /**
@@ -350,7 +410,7 @@ export class RentalsService {
           referenceType: FINANCE_REFERENCE_RENTAL,
           referenceId: rental.id,
           settlementId: settlement.id,
-          description: `Rental charge ${rental.rentalNumber}`,
+          description: `رسوم إيجار ${rental.rentalNumber}`,
         },
         actor,
       );
@@ -364,7 +424,7 @@ export class RentalsService {
           referenceType: FINANCE_REFERENCE_RENTAL,
           referenceId: rental.id,
           settlementId: settlement.id,
-          description: `Rental deposit ${rental.rentalNumber}`,
+          description: `دفعة أولية ${rental.rentalNumber}`,
         },
         actor,
       );
@@ -604,13 +664,13 @@ export class RentalsService {
     const rental = await this.requireLive(id);
     if (!canCancel(rental.status)) {
       throw BusinessException.conflict(
-        `Cannot cancel rental in status ${rental.status}`,
+        `لا يمكن إلغاء التأجير في الحالة الحالية (${rental.status})`,
       );
     }
     const from = rental.status as RentalStatus;
     if (!canTransitionRentalStatus(from, RENTAL_STATUS.CANCELLED)) {
       throw BusinessException.conflict(
-        `Invalid rental transition: ${from} → ${RENTAL_STATUS.CANCELLED}`,
+        `انتقال غير صالح: ${from} → ملغى`,
       );
     }
 
@@ -867,8 +927,18 @@ export class RentalsService {
       rentalDate: row.rentalDate,
       expectedReturnDate: row.expectedReturnDate,
       actualReturnDate: row.actualReturnDate,
+      notes: row.notes,
       itemIds: row.items.map((i) => i.itemId),
       deletedAt: row.deletedAt,
     };
+  }
+
+  private parseJson(raw: string | null): unknown {
+    if (raw == null || raw === '') return null;
+    try {
+      return JSON.parse(raw) as unknown;
+    } catch {
+      return raw;
+    }
   }
 }

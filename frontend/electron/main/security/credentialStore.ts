@@ -1,54 +1,30 @@
-import { app, safeStorage } from 'electron'
-import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
+import { safeStorage } from 'electron'
+import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync } from 'node:fs'
 import { join } from 'node:path'
+import { app } from 'electron'
 
-export interface CredentialStore {
-  getRefreshToken(): Promise<string | null>
-  setRefreshToken(token: string): Promise<void>
-  clearRefreshToken(): Promise<void>
-}
+/** Opaque token blob in OS-backed encryption — never exposed to renderer. */
+export class SafeStorageCredentialStore {
+  private readonly dir = join(app.getPath('userData'), 'secure')
+  private readonly file = join(this.dir, 'session.bin')
 
-/**
- * Persist refresh token using Electron safeStorage (OS-backed encryption on Windows).
- * Interface allows a future Keytar / Windows Credential Manager implementation.
- */
-export class SafeStorageCredentialStore implements CredentialStore {
-  private readonly filePath: string
-
-  constructor(serviceName = 'juman-desktop') {
-    const dir = join(app.getPath('userData'), 'credentials')
-    if (!existsSync(dir)) {
-      mkdirSync(dir, { recursive: true })
-    }
-    this.filePath = join(dir, `${serviceName}.refresh.bin`)
-  }
-
-  async getRefreshToken(): Promise<string | null> {
-    if (!existsSync(this.filePath)) {
-      return null
-    }
+  save(payload: string): void {
     if (!safeStorage.isEncryptionAvailable()) {
-      return null
+      throw new Error('safeStorage encryption unavailable')
     }
-    const buf = readFileSync(this.filePath)
-    try {
-      return safeStorage.decryptString(buf)
-    } catch {
-      return null
-    }
+    mkdirSync(this.dir, { recursive: true })
+    const buf = safeStorage.encryptString(payload)
+    writeFileSync(this.file, buf)
   }
 
-  async setRefreshToken(token: string): Promise<void> {
-    if (!safeStorage.isEncryptionAvailable()) {
-      throw new Error('Secure credential storage is unavailable')
-    }
-    const encrypted = safeStorage.encryptString(token)
-    writeFileSync(this.filePath, encrypted)
+  load(): string | null {
+    if (!existsSync(this.file)) return null
+    if (!safeStorage.isEncryptionAvailable()) return null
+    const buf = readFileSync(this.file)
+    return safeStorage.decryptString(buf)
   }
 
-  async clearRefreshToken(): Promise<void> {
-    if (existsSync(this.filePath)) {
-      unlinkSync(this.filePath)
-    }
+  clear(): void {
+    if (existsSync(this.file)) unlinkSync(this.file)
   }
 }

@@ -1,35 +1,48 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react'
-import { Button } from '@/components/ui/button'
 
 interface Props {
   children: ReactNode
+  fallbackTitle?: string
 }
 
 interface State {
-  hasError: boolean
-  message: string
+  error: Error | null
 }
 
 export class ErrorBoundary extends Component<Props, State> {
-  state: State = { hasError: false, message: '' }
+  state: State = { error: null }
 
   static getDerivedStateFromError(error: Error): State {
-    return { hasError: true, message: error.message }
+    return { error }
   }
 
   componentDidCatch(error: Error, info: ErrorInfo): void {
-    console.error('Renderer error boundary', error, info)
+    console.error('UI ErrorBoundary', error, info.componentStack)
   }
 
-  render(): ReactNode {
-    if (this.state.hasError) {
+  render() {
+    if (this.state.error) {
       return (
-        <div className="flex min-h-full flex-col items-center justify-center gap-4 p-8 text-center">
-          <h1 className="text-2xl font-semibold">حدث خطأ غير متوقع</h1>
-          <p className="max-w-lg text-muted-foreground">{this.state.message}</p>
-          <Button type="button" onClick={() => window.location.assign('/')}>
-            العودة للرئيسية
-          </Button>
+        <div className="flex h-full items-center justify-center p-8">
+          <div className="card w-full max-w-lg border border-error/30 bg-base-200">
+            <div className="card-body gap-3">
+              <h2 className="card-title text-error">
+                {this.props.fallbackTitle ?? 'تعذّر عرض هذه الشاشة'}
+              </h2>
+              <p className="text-sm text-base-content/70" dir="ltr">
+                {this.state.error.message}
+              </p>
+              <div className="card-actions justify-end">
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={() => this.setState({ error: null })}
+                >
+                  إعادة المحاولة
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )
     }

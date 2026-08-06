@@ -45,7 +45,7 @@ export function decideRentalCancelFinance(settlement: {
     settlement.status === SETTLEMENT_STATUS.CLOSED
   ) {
     throw BusinessException.conflict(
-      'Cannot cancel rental: settlement is paid — reverse via refund workflow (not available)',
+      'لا يمكن إلغاء التأجير: التسوية مدفوعة — يلزم مسار الاسترداد أولاً',
     );
   }
   if (
@@ -53,13 +53,13 @@ export function decideRentalCancelFinance(settlement: {
     settlement.paidFils > 0
   ) {
     throw BusinessException.conflict(
-      'Cannot cancel rental: settlement is partially paid — refund required before cancel',
+      'لا يمكن إلغاء التأجير: توجد دفعات محصّلة — يلزم استردادها قبل الإلغاء',
     );
   }
   if (settlement.status === SETTLEMENT_STATUS.OPEN) {
     return { kind: 'cancel_open_unpaid', settlementId: settlement.id };
   }
   throw BusinessException.conflict(
-    `Cannot cancel rental: settlement status ${settlement.status} is not cancellable`,
+    `لا يمكن إلغاء التأجير: حالة التسوية «${settlement.status}» غير قابلة للإلغاء`,
   );
 }

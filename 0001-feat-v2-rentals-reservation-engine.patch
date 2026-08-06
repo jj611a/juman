@@ -1,0 +1,3134 @@
+From 65f754b899de62c02bdf6b84972566d557de25b4 Mon Sep 17 00:00:00 2001
+From: jj611a <jj611a@gmail.com>
+Date: Sun, 2 Aug 2026 12:13:19 +0300
+Subject: [PATCH] feat(v2-rentals): reservation engine
+
+Add independent reservations with AvailabilityService conflict detection and transactional checkout that materializes rentals through LifecycleService.
+
+Co-authored-by: Cursor <cursoragent@cursor.com>
+---
+ backend-node/package.json                     |   3 +-
+ .../migration.sql                             |  70 +++
+ backend-node/prisma/schema.prisma             |  76 +++
+ backend-node/src/app.module.ts                |   2 +
+ .../src/permissions/permission.seeds.ts       |  10 +
+ .../src/rentals/rentals.repository.ts         |  94 ++--
+ backend-node/src/rentals/rentals.service.ts   | 113 +++-
+ .../availability/availability.service.ts      | 171 ++++++
+ .../availability/availability.types.ts        |  29 ++
+ .../src/reservations/dto/reservation.dto.ts   | 108 ++++
+ .../reservations/reservations.constants.ts    |  65 +++
+ .../reservations/reservations.controller.ts   |  79 +++
+ .../src/reservations/reservations.mapper.ts   |  60 +++
+ .../src/reservations/reservations.module.ts   |  16 +
+ .../reservations/reservations.repository.ts   | 216 ++++++++
+ .../src/reservations/reservations.rules.ts    |  35 ++
+ .../src/reservations/reservations.service.ts  | 492 ++++++++++++++++++
+ backend-node/src/settings/settings.seeds.ts   |  24 +
+ backend-node/test/availability-rules.spec.ts  |  81 +++
+ .../test/reservations-integration.spec.ts     | 280 ++++++++++
+ .../test/reservations-repository.spec.ts      |  92 ++++
+ .../test/reservations-service.spec.ts         | 476 +++++++++++++++++
+ backend-node/vitest.reservations.config.ts    |  33 ++
+ docs/backend-v2/Architecture.md               |   9 +-
+ docs/backend-v2/DecisionLog.md                |   8 +
+ docs/backend-v2/DevelopmentRoadmap.md         |   8 +-
+ docs/backend-v2/PROGRESS.md                   |   7 +-
+ docs/backend-v2/ReservationDesign.md          |  90 ++++
+ 28 files changed, 2697 insertions(+), 50 deletions(-)
+ create mode 100644 backend-node/prisma/migrations/20260802210000_reservation_engine/migration.sql
+ create mode 100644 backend-node/src/reservations/availability/availability.service.ts
+ create mode 100644 backend-node/src/reservations/availability/availability.types.ts
+ create mode 100644 backend-node/src/reservations/dto/reservation.dto.ts
+ create mode 100644 backend-node/src/reservations/reservations.constants.ts
+ create mode 100644 backend-node/src/reservations/reservations.controller.ts
+ create mode 100644 backend-node/src/reservations/reservations.mapper.ts
+ create mode 100644 backend-node/src/reservations/reservations.module.ts
+ create mode 100644 backend-node/src/reservations/reservations.repository.ts
+ create mode 100644 backend-node/src/reservations/reservations.rules.ts
+ create mode 100644 backend-node/src/reservations/reservations.service.ts
+ create mode 100644 backend-node/test/availability-rules.spec.ts
+ create mode 100644 backend-node/test/reservations-integration.spec.ts
+ create mode 100644 backend-node/test/reservations-repository.spec.ts
+ create mode 100644 backend-node/test/reservations-service.spec.ts
+ create mode 100644 backend-node/vitest.reservations.config.ts
+ create mode 100644 docs/backend-v2/ReservationDesign.md
+
+diff --git a/backend-node/package.json b/backend-node/package.json
+index 00b4633..0defb64 100644
+--- a/backend-node/package.json
++++ b/backend-node/package.json
+@@ -18,7 +18,8 @@
+     "test:cov:media": "vitest run --coverage --config vitest.media.config.ts",
+     "test:cov:barcode": "vitest run --coverage --config vitest.barcode.config.ts",
+     "test:cov:inventory": "vitest run --coverage --config vitest.inventory.config.ts",
+-    "test:cov:rentals": "vitest run --coverage --config vitest.rentals.config.ts"
++    "test:cov:rentals": "vitest run --coverage --config vitest.rentals.config.ts",
++    "test:cov:reservations": "vitest run --coverage --config vitest.reservations.config.ts"
+   },
+   "dependencies": {
+     "@nestjs/common": "11.1.28",
+diff --git a/backend-node/prisma/migrations/20260802210000_reservation_engine/migration.sql b/backend-node/prisma/migrations/20260802210000_reservation_engine/migration.sql
+new file mode 100644
+index 0000000..3948645
+--- /dev/null
++++ b/backend-node/prisma/migrations/20260802210000_reservation_engine/migration.sql
+@@ -0,0 +1,70 @@
++-- Phase 5.2: reservation engine
++
++ALTER TABLE "Rental" ADD COLUMN "reservationId" TEXT;
++CREATE UNIQUE INDEX "Rental_reservationId_key" ON "Rental"("reservationId");
++CREATE INDEX "Rental_reservationId_idx" ON "Rental"("reservationId");
++
++CREATE TABLE "Reservation" (
++    "id" TEXT NOT NULL PRIMARY KEY,
++    "reservationNumber" TEXT NOT NULL,
++    "customerId" TEXT NOT NULL,
++    "startDate" DATETIME NOT NULL,
++    "expectedCheckoutDate" DATETIME NOT NULL,
++    "expectedReturnDate" DATETIME NOT NULL,
++    "status" TEXT NOT NULL DEFAULT 'draft',
++    "notes" TEXT,
++    "deletedAt" DATETIME,
++    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
++    "updatedAt" DATETIME NOT NULL,
++    "createdBy" TEXT,
++    "updatedBy" TEXT,
++    "deletedBy" TEXT,
++    CONSTRAINT "Reservation_customerId_fkey" FOREIGN KEY ("customerId") REFERENCES "Customer" ("id") ON DELETE RESTRICT ON UPDATE CASCADE
++);
++
++CREATE UNIQUE INDEX "Reservation_reservationNumber_key" ON "Reservation"("reservationNumber");
++CREATE INDEX "Reservation_customerId_idx" ON "Reservation"("customerId");
++CREATE INDEX "Reservation_reservationNumber_idx" ON "Reservation"("reservationNumber");
++CREATE INDEX "Reservation_status_idx" ON "Reservation"("status");
++CREATE INDEX "Reservation_startDate_idx" ON "Reservation"("startDate");
++CREATE INDEX "Reservation_expectedCheckoutDate_idx" ON "Reservation"("expectedCheckoutDate");
++CREATE INDEX "Reservation_expectedReturnDate_idx" ON "Reservation"("expectedReturnDate");
++CREATE INDEX "Reservation_deletedAt_idx" ON "Reservation"("deletedAt");
++CREATE INDEX "Reservation_createdAt_idx" ON "Reservation"("createdAt");
++CREATE INDEX "Reservation_status_deletedAt_idx" ON "Reservation"("status", "deletedAt");
++CREATE INDEX "Reservation_startDate_expectedReturnDate_idx" ON "Reservation"("startDate", "expectedReturnDate");
++
++CREATE TABLE "ReservationItem" (
++    "id" TEXT NOT NULL PRIMARY KEY,
++    "reservationId" TEXT NOT NULL,
++    "itemId" TEXT NOT NULL,
++    "barcodeValue" TEXT,
++    "agreedRentalPrice" INTEGER NOT NULL DEFAULT 0,
++    "notes" TEXT,
++    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
++    "updatedAt" DATETIME NOT NULL,
++    "createdBy" TEXT,
++    CONSTRAINT "ReservationItem_reservationId_fkey" FOREIGN KEY ("reservationId") REFERENCES "Reservation" ("id") ON DELETE RESTRICT ON UPDATE CASCADE,
++    CONSTRAINT "ReservationItem_itemId_fkey" FOREIGN KEY ("itemId") REFERENCES "Item" ("id") ON DELETE RESTRICT ON UPDATE CASCADE
++);
++
++CREATE UNIQUE INDEX "ReservationItem_reservationId_itemId_key" ON "ReservationItem"("reservationId", "itemId");
++CREATE INDEX "ReservationItem_reservationId_idx" ON "ReservationItem"("reservationId");
++CREATE INDEX "ReservationItem_itemId_idx" ON "ReservationItem"("itemId");
++CREATE INDEX "ReservationItem_barcodeValue_idx" ON "ReservationItem"("barcodeValue");
++
++CREATE TABLE "ReservationStatusHistory" (
++    "id" TEXT NOT NULL PRIMARY KEY,
++    "reservationId" TEXT NOT NULL,
++    "oldStatus" TEXT NOT NULL,
++    "newStatus" TEXT NOT NULL,
++    "reason" TEXT,
++    "userId" TEXT,
++    "username" TEXT,
++    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
++    CONSTRAINT "ReservationStatusHistory_reservationId_fkey" FOREIGN KEY ("reservationId") REFERENCES "Reservation" ("id") ON DELETE RESTRICT ON UPDATE CASCADE
++);
++
++CREATE INDEX "ReservationStatusHistory_reservationId_idx" ON "ReservationStatusHistory"("reservationId");
++CREATE INDEX "ReservationStatusHistory_newStatus_idx" ON "ReservationStatusHistory"("newStatus");
++CREATE INDEX "ReservationStatusHistory_createdAt_idx" ON "ReservationStatusHistory"("createdAt");
+diff --git a/backend-node/prisma/schema.prisma b/backend-node/prisma/schema.prisma
+index 0d75dd6..c1d91a6 100644
+--- a/backend-node/prisma/schema.prisma
++++ b/backend-node/prisma/schema.prisma
+@@ -309,6 +309,7 @@ model Customer {
+   deletedBy       String?
+ 
+   rentals Rental[]
++  reservations Reservation[]
+ 
+   @@index([fullName])
+   @@index([phoneNormalized])
+@@ -440,6 +441,7 @@ model Item {
+   barcodes ItemBarcode[]
+   stateHistory ItemStateHistory[]
+   rentalItems RentalItem[]
++  reservationItems ReservationItem[]
+ 
+   @@index([displayName])
+   @@index([internalCode])
+@@ -502,6 +504,7 @@ model Rental {
+   id                  String    @id @default(uuid())
+   rentalNumber        String    @unique
+   customerId          String
++  reservationId       String?   @unique
+   rentalDate          DateTime
+   expectedReturnDate  DateTime
+   actualReturnDate    DateTime?
+@@ -515,10 +518,12 @@ model Rental {
+   deletedBy           String?
+ 
+   customer      Customer               @relation(fields: [customerId], references: [id])
++  reservation   Reservation?           @relation(fields: [reservationId], references: [id])
+   items         RentalItem[]
+   statusHistory RentalStatusHistory[]
+ 
+   @@index([customerId])
++  @@index([reservationId])
+   @@index([rentalNumber])
+   @@index([status])
+   @@index([rentalDate])
+@@ -564,3 +569,74 @@ model RentalStatusHistory {
+   @@index([newStatus])
+   @@index([createdAt])
+ }
++
++/// Reservation document (Phase 5.2) — independent from Rental; checkout materializes a Rental.
++model Reservation {
++  id                   String    @id @default(uuid())
++  reservationNumber    String    @unique
++  customerId           String
++  startDate            DateTime
++  expectedCheckoutDate DateTime
++  expectedReturnDate   DateTime
++  status               String    @default("draft")
++  notes                String?
++  deletedAt            DateTime?
++  createdAt            DateTime  @default(now())
++  updatedAt            DateTime  @updatedAt
++  createdBy            String?
++  updatedBy            String?
++  deletedBy            String?
++
++  customer      Customer                   @relation(fields: [customerId], references: [id])
++  items         ReservationItem[]
++  statusHistory ReservationStatusHistory[]
++  rental        Rental?
++
++  @@index([customerId])
++  @@index([reservationNumber])
++  @@index([status])
++  @@index([startDate])
++  @@index([expectedCheckoutDate])
++  @@index([expectedReturnDate])
++  @@index([deletedAt])
++  @@index([createdAt])
++  @@index([status, deletedAt])
++  @@index([startDate, expectedReturnDate])
++}
++
++model ReservationItem {
++  id                 String   @id @default(uuid())
++  reservationId      String
++  itemId             String
++  barcodeValue       String?
++  agreedRentalPrice  Int      @default(0)
++  notes              String?
++  createdAt          DateTime @default(now())
++  updatedAt          DateTime @updatedAt
++  createdBy          String?
++
++  reservation Reservation @relation(fields: [reservationId], references: [id])
++  item        Item        @relation(fields: [itemId], references: [id])
++
++  @@unique([reservationId, itemId])
++  @@index([reservationId])
++  @@index([itemId])
++  @@index([barcodeValue])
++}
++
++model ReservationStatusHistory {
++  id            String   @id @default(uuid())
++  reservationId String
++  oldStatus     String
++  newStatus     String
++  reason        String?
++  userId        String?
++  username      String?
++  createdAt     DateTime @default(now())
++
++  reservation Reservation @relation(fields: [reservationId], references: [id])
++
++  @@index([reservationId])
++  @@index([newStatus])
++  @@index([createdAt])
++}
+diff --git a/backend-node/src/app.module.ts b/backend-node/src/app.module.ts
+index 0db1b10..0898485 100644
+--- a/backend-node/src/app.module.ts
++++ b/backend-node/src/app.module.ts
+@@ -17,6 +17,7 @@ import { LoggerModule } from './logging/logger.module';
+ import { MediaModule } from './media/media.module';
+ import { PermissionsModule } from './permissions/permissions.module';
+ import { RentalsModule } from './rentals/rentals.module';
++import { ReservationsModule } from './reservations/reservations.module';
+ import { RolesModule } from './roles/roles.module';
+ import { SettingsModule } from './settings/settings.module';
+ import { UsersModule } from './users/users.module';
+@@ -42,6 +43,7 @@ import { UsersModule } from './users/users.module';
+     CustomersModule,
+     InventoryModule,
+     RentalsModule,
++    ReservationsModule,
+     HealthModule,
+   ],
+   providers: [
+diff --git a/backend-node/src/permissions/permission.seeds.ts b/backend-node/src/permissions/permission.seeds.ts
+index e4e91fe..d43c111 100644
+--- a/backend-node/src/permissions/permission.seeds.ts
++++ b/backend-node/src/permissions/permission.seeds.ts
+@@ -67,6 +67,11 @@ export const DEFAULT_PERMISSIONS: readonly PermissionSeed[] = [
+   perm('reservation.create', 'إنشاء حجز', 'إنشاء حجز جديد'),
+   perm('reservation.update', 'تعديل حجز', 'تعديل حجز'),
+   perm('reservation.cancel', 'إلغاء حجز', 'إلغاء حجز'),
++  perm('reservations.view', 'View reservations', 'View reservation documents'),
++  perm('reservations.create', 'Create reservations', 'Create and confirm reservations'),
++  perm('reservations.checkout', 'Checkout reservations', 'Convert reservation to rental'),
++  perm('reservations.cancel', 'Cancel reservations', 'Cancel draft or confirmed reservations'),
++  perm('reservations.expire', 'Expire reservations', 'Mark reservations expired'),
+   perm('rental.view', 'عرض الإيجارات', 'عرض عقود الإيجار'),
+   perm('rental.create', 'إنشاء إيجار', 'إنشاء عقد إيجار'),
+   perm('rental.update', 'تعديل إيجار', 'تعديل عقد إيجار'),
+@@ -122,6 +127,11 @@ export const CASHIER_PERMISSIONS: readonly string[] = [
+   'reservation.create',
+   'reservation.update',
+   'reservation.cancel',
++  'reservations.view',
++  'reservations.create',
++  'reservations.checkout',
++  'reservations.cancel',
++  'reservations.expire',
+   'rental.view',
+   'rental.create',
+   'rental.update',
+diff --git a/backend-node/src/rentals/rentals.repository.ts b/backend-node/src/rentals/rentals.repository.ts
+index 3cac77d..a5ef9c7 100644
+--- a/backend-node/src/rentals/rentals.repository.ts
++++ b/backend-node/src/rentals/rentals.repository.ts
+@@ -30,6 +30,14 @@ export type RentalWithRelations = Prisma.RentalGetPayload<{
+   include: typeof rentalInclude;
+ }>;
+ 
++type RentalLineInput = {
++  itemId: string;
++  barcodeValue?: string | null;
++  agreedRentalPrice: number;
++  notes?: string | null;
++  createdBy?: string | null;
++};
++
+ @Injectable()
+ export class RentalsRepository {
+   constructor(private readonly prisma: PrismaService) {}
+@@ -40,43 +48,46 @@ export class RentalsRepository {
+ 
+   create(
+     data: Prisma.RentalUncheckedCreateInput,
+-    items: Array<{
+-      itemId: string;
+-      barcodeValue?: string | null;
+-      agreedRentalPrice: number;
+-      notes?: string | null;
+-      createdBy?: string | null;
+-    }>,
++    items: RentalLineInput[],
+     actor?: { userId?: string | null; username?: string | null },
+   ): Promise<RentalWithRelations> {
+-    return this.prisma.$transaction(async (tx) => {
+-      const rental = await tx.rental.create({
+-        data: {
+-          ...data,
+-          items: {
+-            create: items.map((i) => ({
+-              itemId: i.itemId,
+-              barcodeValue: i.barcodeValue ?? null,
+-              agreedRentalPrice: i.agreedRentalPrice,
+-              notes: i.notes ?? null,
+-              createdBy: i.createdBy ?? null,
+-            })),
+-          },
+-          statusHistory: {
+-            create: {
+-              oldStatus: RENTAL_STATUS.DRAFT,
+-              newStatus: data.status ?? RENTAL_STATUS.DRAFT,
+-              reason: 'created',
+-              userId: actor?.userId ?? null,
+-              username: actor?.username ?? null,
+-            },
++    return this.prisma.$transaction(async (tx) =>
++      this.createInTx(tx, data, items, actor),
++    );
++  }
++
++  async createInTx(
++    tx: Prisma.TransactionClient,
++    data: Prisma.RentalUncheckedCreateInput,
++    items: RentalLineInput[],
++    actor?: { userId?: string | null; username?: string | null },
++  ): Promise<RentalWithRelations> {
++    const rental = await tx.rental.create({
++      data: {
++        ...data,
++        items: {
++          create: items.map((i) => ({
++            itemId: i.itemId,
++            barcodeValue: i.barcodeValue ?? null,
++            agreedRentalPrice: i.agreedRentalPrice,
++            notes: i.notes ?? null,
++            createdBy: i.createdBy ?? null,
++          })),
++        },
++        statusHistory: {
++          create: {
++            oldStatus: RENTAL_STATUS.DRAFT,
++            newStatus: data.status ?? RENTAL_STATUS.DRAFT,
++            reason: 'created',
++            userId: actor?.userId ?? null,
++            username: actor?.username ?? null,
+           },
+         },
+-      });
+-      return tx.rental.findUniqueOrThrow({
+-        where: { id: rental.id },
+-        include: rentalInclude,
+-      });
++      },
++    });
++    return tx.rental.findUniqueOrThrow({
++      where: { id: rental.id },
++      include: rentalInclude,
+     });
+   }
+ 
+@@ -117,20 +128,25 @@ export class RentalsRepository {
+     return { rows, total };
+   }
+ 
+-  async nextSequence(prefix: string): Promise<number> {
+-    return this.prisma.$transaction(async (tx) => {
+-      const e = await tx.sequenceCounter.findUnique({ where: { prefix } });
++  async nextSequence(
++    prefix: string,
++    tx?: Prisma.TransactionClient,
++  ): Promise<number> {
++    const run = async (client: Prisma.TransactionClient) => {
++      const e = await client.sequenceCounter.findUnique({ where: { prefix } });
+       if (!e) {
+-        await tx.sequenceCounter.create({ data: { prefix, lastValue: 1 } });
++        await client.sequenceCounter.create({ data: { prefix, lastValue: 1 } });
+         return 1;
+       }
+       return (
+-        await tx.sequenceCounter.update({
++        await client.sequenceCounter.update({
+           where: { prefix },
+           data: { lastValue: e.lastValue + 1 },
+         })
+       ).lastValue;
+-    });
++    };
++    if (tx) return run(tx);
++    return this.prisma.$transaction(run);
+   }
+ 
+   async transitionStatus(input: {
+diff --git a/backend-node/src/rentals/rentals.service.ts b/backend-node/src/rentals/rentals.service.ts
+index 154fef1..90a3307 100644
+--- a/backend-node/src/rentals/rentals.service.ts
++++ b/backend-node/src/rentals/rentals.service.ts
+@@ -303,6 +303,111 @@ export class RentalsService {
+     return toRentalPublic(updated);
+   }
+ 
++  /**
++   * Materialize an active rental from a confirmed reservation inside an outer TX.
++   * Inventory transitions go through LifecycleService only.
++   */
++  async materializeActiveFromReservation(
++    input: {
++      reservationId: string;
++      customerId: string;
++      rentalDate: Date;
++      expectedReturnDate: Date;
++      notes?: string | null;
++      items: Array<{
++        itemId: string;
++        barcodeValue?: string | null;
++        agreedRentalPrice: number;
++        notes?: string | null;
++      }>;
++      reason?: string | null;
++    },
++    tx: Prisma.TransactionClient,
++    actor?: AuthPrincipal,
++  ): Promise<RentalWithRelations> {
++    const rentalNumber = await this.allocateNumberInTx(tx);
++    const draft = await this.repo.createInTx(
++      tx,
++      {
++        rentalNumber,
++        customerId: input.customerId,
++        reservationId: input.reservationId,
++        rentalDate: input.rentalDate,
++        expectedReturnDate: input.expectedReturnDate,
++        status: RENTAL_STATUS.DRAFT,
++        notes: input.notes ?? null,
++        createdBy: actor?.userId ?? null,
++        updatedBy: actor?.userId ?? null,
++      },
++      input.items.map((i) => ({
++        itemId: i.itemId,
++        barcodeValue: i.barcodeValue ?? null,
++        agreedRentalPrice: i.agreedRentalPrice,
++        notes: i.notes ?? null,
++        createdBy: actor?.userId ?? null,
++      })),
++      { userId: actor?.userId, username: actor?.username },
++    );
++
++    const ref = {
++      referenceType: RENTAL_REFERENCE_TYPE,
++      referenceId: draft.id,
++    };
++    const reason = input.reason?.trim() || 'reservation_checkout';
++
++    for (const line of input.items) {
++      await this.lifecycle.transition(
++        line.itemId,
++        {
++          newState: ITEM_LIFECYCLE.RESERVED,
++          expectedState: ITEM_LIFECYCLE.AVAILABLE,
++          reason,
++          ...ref,
++        },
++        actor,
++        { tx, skipAudit: true },
++      );
++      await this.lifecycle.transition(
++        line.itemId,
++        {
++          newState: ITEM_LIFECYCLE.RENTED,
++          expectedState: ITEM_LIFECYCLE.RESERVED,
++          reason,
++          ...ref,
++        },
++        actor,
++        { tx, skipAudit: true },
++      );
++    }
++
++    const checkedOut = await this.repo.transitionStatus({
++      rentalId: draft.id,
++      from: RENTAL_STATUS.DRAFT,
++      to: RENTAL_STATUS.CHECKED_OUT,
++      reason: 'checkout',
++      userId: actor?.userId ?? null,
++      username: actor?.username ?? null,
++      tx,
++    });
++    if (!checkedOut) {
++      throw BusinessException.conflict('Concurrent rental checkout rejected');
++    }
++
++    const active = await this.repo.transitionStatus({
++      rentalId: draft.id,
++      from: RENTAL_STATUS.CHECKED_OUT,
++      to: RENTAL_STATUS.ACTIVE,
++      reason: 'handover_complete',
++      userId: actor?.userId ?? null,
++      username: actor?.username ?? null,
++      tx,
++    });
++    if (!active) {
++      throw BusinessException.conflict('Concurrent rental activation rejected');
++    }
++    return active;
++  }
++
+   async cancel(id: string, reason?: string, actor?: AuthPrincipal) {
+     const rental = await this.requireLive(id);
+     if (!canCancel(rental.status)) {
+@@ -516,6 +621,12 @@ export class RentalsService {
+   }
+ 
+   private async allocateNumber(): Promise<string> {
++    return this.allocateNumberInTx();
++  }
++
++  private async allocateNumberInTx(
++    tx?: Prisma.TransactionClient,
++  ): Promise<string> {
+     const prefix = (
+       await this.settings.getString(
+         RENTAL_NUMBER_SETTING.PREFIX,
+@@ -541,7 +652,7 @@ export class RentalsService {
+       throw BusinessException.validation('Invalid rental number settings');
+     }
+     for (let i = 0; i < 25; i += 1) {
+-      const seq = await this.repo.nextSequence(`rental:${prefix}`);
++      const seq = await this.repo.nextSequence(`rental:${prefix}`, tx);
+       const number = `${prefix}${separator}${String(seq).padStart(padding, '0')}`;
+       if (!(await this.repo.findAnyNumber(number))) return number;
+     }
+diff --git a/backend-node/src/reservations/availability/availability.service.ts b/backend-node/src/reservations/availability/availability.service.ts
+new file mode 100644
+index 0000000..87abcf4
+--- /dev/null
++++ b/backend-node/src/reservations/availability/availability.service.ts
+@@ -0,0 +1,171 @@
++import { Injectable } from '@nestjs/common';
++import { PrismaService } from '../../database/prisma.service';
++import { BusinessException } from '../../shared/errors/business.exception';
++import { RENTAL_STATUS } from '../../rentals/rentals.constants';
++import { RESERVATION_STATUS } from '../reservations.constants';
++import {
++  rangesOverlap,
++  type AvailabilityConflict,
++  type AvailabilityWindow,
++} from './availability.types';
++
++/** Reservation statuses that still hold a calendar window. */
++const BLOCKING_RESERVATION_STATUSES: readonly string[] = [
++  RESERVATION_STATUS.DRAFT,
++  RESERVATION_STATUS.CONFIRMED,
++];
++
++/** Rental statuses that still occupy an item window. */
++const BLOCKING_RENTAL_STATUSES: readonly string[] = [
++  RENTAL_STATUS.DRAFT,
++  RENTAL_STATUS.CHECKED_OUT,
++  RENTAL_STATUS.ACTIVE,
++  RENTAL_STATUS.RETURN_PENDING,
++  RENTAL_STATUS.OVERDUE,
++];
++
++/**
++ * Reusable availability / conflict detector (calendar-ready).
++ * Cancelled / expired / completed reservations and cancelled / completed rentals are ignored.
++ */
++@Injectable()
++export class AvailabilityService {
++  constructor(private readonly prisma: PrismaService) {}
++
++  async findConflicts(
++    window: AvailabilityWindow,
++  ): Promise<AvailabilityConflict[]> {
++    if (window.end.getTime() <= window.start.getTime()) {
++      return [];
++    }
++
++    const [reservationRows, rentalRows] = await Promise.all([
++      this.prisma.reservationItem.findMany({
++        where: {
++          itemId: window.itemId,
++          reservation: {
++            deletedAt: null,
++            status: { in: [...BLOCKING_RESERVATION_STATUSES] },
++            ...(window.excludeReservationId
++              ? { id: { not: window.excludeReservationId } }
++              : {}),
++          },
++        },
++        include: {
++          reservation: {
++            select: {
++              id: true,
++              reservationNumber: true,
++              startDate: true,
++              expectedReturnDate: true,
++              status: true,
++            },
++          },
++        },
++      }),
++      this.prisma.rentalItem.findMany({
++        where: {
++          itemId: window.itemId,
++          rental: {
++            deletedAt: null,
++            status: { in: [...BLOCKING_RENTAL_STATUSES] },
++            ...(window.excludeRentalId
++              ? { id: { not: window.excludeRentalId } }
++              : {}),
++          },
++        },
++        include: {
++          rental: {
++            select: {
++              id: true,
++              rentalNumber: true,
++              rentalDate: true,
++              expectedReturnDate: true,
++              status: true,
++            },
++          },
++        },
++      }),
++    ]);
++
++    const conflicts: AvailabilityConflict[] = [];
++
++    for (const row of reservationRows) {
++      const r = row.reservation;
++      if (
++        rangesOverlap(
++          window.start,
++          window.end,
++          r.startDate,
++          r.expectedReturnDate,
++        )
++      ) {
++        conflicts.push({
++          kind: 'reservation',
++          id: r.id,
++          number: r.reservationNumber,
++          itemId: window.itemId,
++          start: r.startDate,
++          end: r.expectedReturnDate,
++          status: r.status,
++        });
++      }
++    }
++
++    for (const row of rentalRows) {
++      const r = row.rental;
++      if (
++        rangesOverlap(
++          window.start,
++          window.end,
++          r.rentalDate,
++          r.expectedReturnDate,
++        )
++      ) {
++        conflicts.push({
++          kind: 'rental',
++          id: r.id,
++          number: r.rentalNumber,
++          itemId: window.itemId,
++          start: r.rentalDate,
++          end: r.expectedReturnDate,
++          status: r.status,
++        });
++      }
++    }
++
++    return conflicts;
++  }
++
++  async assertAvailable(window: AvailabilityWindow): Promise<void> {
++    const conflicts = await this.findConflicts(window);
++    if (conflicts.length === 0) return;
++    const first = conflicts[0];
++    throw BusinessException.conflict(
++      `Item has conflicting ${first.kind} ${first.number} (${first.status})`,
++      conflicts.map(
++        (c) => `${c.kind}:${c.number}:${c.status}:${c.start.toISOString()}`,
++      ),
++    );
++  }
++
++  async assertItemsAvailable(
++    itemIds: string[],
++    start: Date,
++    end: Date,
++    opts?: {
++      excludeReservationId?: string | null;
++      excludeRentalId?: string | null;
++    },
++  ): Promise<void> {
++    for (const itemId of itemIds) {
++      await this.assertAvailable({
++        itemId,
++        start,
++        end,
++        excludeReservationId: opts?.excludeReservationId,
++        excludeRentalId: opts?.excludeRentalId,
++      });
++    }
++  }
++}
+diff --git a/backend-node/src/reservations/availability/availability.types.ts b/backend-node/src/reservations/availability/availability.types.ts
+new file mode 100644
+index 0000000..18f5ea2
+--- /dev/null
++++ b/backend-node/src/reservations/availability/availability.types.ts
+@@ -0,0 +1,29 @@
++export type AvailabilityConflictKind = 'reservation' | 'rental';
++
++export interface AvailabilityWindow {
++  readonly itemId: string;
++  readonly start: Date;
++  readonly end: Date;
++  readonly excludeReservationId?: string | null;
++  readonly excludeRentalId?: string | null;
++}
++
++export interface AvailabilityConflict {
++  readonly kind: AvailabilityConflictKind;
++  readonly id: string;
++  readonly number: string;
++  readonly itemId: string;
++  readonly start: Date;
++  readonly end: Date;
++  readonly status: string;
++}
++
++/** Half-open overlap: [start, end) intersects [otherStart, otherEnd). */
++export function rangesOverlap(
++  start: Date,
++  end: Date,
++  otherStart: Date,
++  otherEnd: Date,
++): boolean {
++  return start.getTime() < otherEnd.getTime() && end.getTime() > otherStart.getTime();
++}
+diff --git a/backend-node/src/reservations/dto/reservation.dto.ts b/backend-node/src/reservations/dto/reservation.dto.ts
+new file mode 100644
+index 0000000..61f833b
+--- /dev/null
++++ b/backend-node/src/reservations/dto/reservation.dto.ts
+@@ -0,0 +1,108 @@
++import { Type } from 'class-transformer';
++import {
++  ArrayMinSize,
++  IsArray,
++  IsDateString,
++  IsInt,
++  IsOptional,
++  IsString,
++  IsUUID,
++  MaxLength,
++  Min,
++  ValidateNested,
++} from 'class-validator';
++
++export class CreateReservationItemDto {
++  @IsUUID()
++  itemId!: string;
++
++  @IsOptional()
++  @IsString()
++  @MaxLength(64)
++  barcode?: string;
++
++  @IsOptional()
++  @Type(() => Number)
++  @IsInt()
++  @Min(0)
++  agreedRentalPrice?: number;
++
++  @IsOptional()
++  @IsString()
++  @MaxLength(500)
++  notes?: string;
++}
++
++export class CreateReservationDto {
++  @IsUUID()
++  customerId!: string;
++
++  @IsDateString()
++  startDate!: string;
++
++  @IsDateString()
++  expectedCheckoutDate!: string;
++
++  @IsDateString()
++  expectedReturnDate!: string;
++
++  @IsOptional()
++  @IsString()
++  @MaxLength(2000)
++  notes?: string;
++
++  @IsArray()
++  @ArrayMinSize(1)
++  @ValidateNested({ each: true })
++  @Type(() => CreateReservationItemDto)
++  items!: CreateReservationItemDto[];
++}
++
++export class ListReservationsDto {
++  @IsOptional()
++  @IsString()
++  q?: string;
++
++  @IsOptional()
++  @IsString()
++  status?: string;
++
++  @IsOptional()
++  @IsUUID()
++  customerId?: string;
++
++  @IsOptional()
++  @IsString()
++  reservationNumber?: string;
++
++  @IsOptional()
++  @IsString()
++  deleted?: string;
++
++  @IsOptional()
++  @IsString()
++  sortBy?: string;
++
++  @IsOptional()
++  @IsString()
++  sortDir?: string;
++
++  @IsOptional()
++  @Type(() => Number)
++  @IsInt()
++  @Min(0)
++  offset?: number;
++
++  @IsOptional()
++  @Type(() => Number)
++  @IsInt()
++  @Min(1)
++  limit?: number;
++}
++
++export class ReservationActionDto {
++  @IsOptional()
++  @IsString()
++  @MaxLength(500)
++  reason?: string;
++}
+diff --git a/backend-node/src/reservations/reservations.constants.ts b/backend-node/src/reservations/reservations.constants.ts
+new file mode 100644
+index 0000000..2984fd3
+--- /dev/null
++++ b/backend-node/src/reservations/reservations.constants.ts
+@@ -0,0 +1,65 @@
++export const RESERVATION_MODULE = 'reservations';
++export const RESERVATION_ENTITY = 'reservation';
++
++export const RESERVATION_PERMISSION = {
++  VIEW: 'reservations.view',
++  CREATE: 'reservations.create',
++  CHECKOUT: 'reservations.checkout',
++  CANCEL: 'reservations.cancel',
++  EXPIRE: 'reservations.expire',
++} as const;
++
++export const RESERVATION_STATUS = {
++  DRAFT: 'draft',
++  CONFIRMED: 'confirmed',
++  CHECKED_OUT: 'checked_out',
++  CANCELLED: 'cancelled',
++  EXPIRED: 'expired',
++  COMPLETED: 'completed',
++} as const;
++
++export type ReservationStatus =
++  (typeof RESERVATION_STATUS)[keyof typeof RESERVATION_STATUS];
++
++export const RESERVATION_STATUS_VALUES = Object.values(RESERVATION_STATUS);
++
++export const RESERVATION_STATUS_TRANSITIONS: Readonly<
++  Record<ReservationStatus, readonly ReservationStatus[]>
++> = {
++  [RESERVATION_STATUS.DRAFT]: [
++    RESERVATION_STATUS.CONFIRMED,
++    RESERVATION_STATUS.CANCELLED,
++    RESERVATION_STATUS.EXPIRED,
++  ],
++  [RESERVATION_STATUS.CONFIRMED]: [
++    RESERVATION_STATUS.CHECKED_OUT,
++    RESERVATION_STATUS.CANCELLED,
++    RESERVATION_STATUS.EXPIRED,
++  ],
++  [RESERVATION_STATUS.CHECKED_OUT]: [RESERVATION_STATUS.COMPLETED],
++  [RESERVATION_STATUS.CANCELLED]: [],
++  [RESERVATION_STATUS.EXPIRED]: [],
++  [RESERVATION_STATUS.COMPLETED]: [],
++};
++
++export const RESERVATION_SORT_FIELDS = [
++  'createdAt',
++  'updatedAt',
++  'startDate',
++  'expectedCheckoutDate',
++  'expectedReturnDate',
++  'reservationNumber',
++  'status',
++] as const;
++
++export const RESERVATION_NUMBER_SETTING = {
++  PREFIX: 'reservations.number.prefix',
++  SEPARATOR: 'reservations.number.separator',
++  PADDING: 'reservations.number.padding',
++} as const;
++
++export const RESERVATION_DEFAULT_PREFIX = 'RSV';
++export const RESERVATION_DEFAULT_SEPARATOR = '-';
++export const RESERVATION_DEFAULT_PADDING = 8;
++
++export const RESERVATION_REFERENCE_TYPE = 'reservation';
+diff --git a/backend-node/src/reservations/reservations.controller.ts b/backend-node/src/reservations/reservations.controller.ts
+new file mode 100644
+index 0000000..a52c27b
+--- /dev/null
++++ b/backend-node/src/reservations/reservations.controller.ts
+@@ -0,0 +1,79 @@
++import {
++  Body,
++  Controller,
++  Get,
++  HttpCode,
++  Param,
++  ParseUUIDPipe,
++  Post,
++  Query,
++} from '@nestjs/common';
++import { CurrentUser } from '../auth/decorators/current-user.decorator';
++import { RequirePermissions } from '../auth/decorators/require-permissions.decorator';
++import type { AuthPrincipal } from '../shared/types';
++import {
++  CreateReservationDto,
++  ListReservationsDto,
++  ReservationActionDto,
++} from './dto/reservation.dto';
++import { RESERVATION_PERMISSION } from './reservations.constants';
++import { ReservationsService } from './reservations.service';
++
++@Controller('reservations')
++export class ReservationsController {
++  constructor(private readonly reservations: ReservationsService) {}
++
++  @Get()
++  @RequirePermissions(RESERVATION_PERMISSION.VIEW)
++  list(@Query() query: ListReservationsDto) {
++    return this.reservations.list(query);
++  }
++
++  @Get(':id')
++  @RequirePermissions(RESERVATION_PERMISSION.VIEW)
++  get(@Param('id', ParseUUIDPipe) id: string) {
++    return this.reservations.getById(id);
++  }
++
++  @Post()
++  @RequirePermissions(RESERVATION_PERMISSION.CREATE)
++  create(
++    @Body() body: CreateReservationDto,
++    @CurrentUser() user: AuthPrincipal,
++  ) {
++    return this.reservations.create(body, user);
++  }
++
++  @Post(':id/checkout')
++  @HttpCode(200)
++  @RequirePermissions(RESERVATION_PERMISSION.CHECKOUT)
++  checkout(
++    @Param('id', ParseUUIDPipe) id: string,
++    @Body() body: ReservationActionDto,
++    @CurrentUser() user: AuthPrincipal,
++  ) {
++    return this.reservations.checkout(id, body.reason, user);
++  }
++
++  @Post(':id/cancel')
++  @HttpCode(200)
++  @RequirePermissions(RESERVATION_PERMISSION.CANCEL)
++  cancel(
++    @Param('id', ParseUUIDPipe) id: string,
++    @Body() body: ReservationActionDto,
++    @CurrentUser() user: AuthPrincipal,
++  ) {
++    return this.reservations.cancel(id, body.reason, user);
++  }
++
++  @Post(':id/expire')
++  @HttpCode(200)
++  @RequirePermissions(RESERVATION_PERMISSION.EXPIRE)
++  expire(
++    @Param('id', ParseUUIDPipe) id: string,
++    @Body() body: ReservationActionDto,
++    @CurrentUser() user: AuthPrincipal,
++  ) {
++    return this.reservations.expireReservation(id, body.reason, user);
++  }
++}
+diff --git a/backend-node/src/reservations/reservations.mapper.ts b/backend-node/src/reservations/reservations.mapper.ts
+new file mode 100644
+index 0000000..293ee8f
+--- /dev/null
++++ b/backend-node/src/reservations/reservations.mapper.ts
+@@ -0,0 +1,60 @@
++import type { ReservationWithRelations } from './reservations.repository';
++
++export function toReservationPublic(row: ReservationWithRelations) {
++  return {
++    id: row.id,
++    reservationNumber: row.reservationNumber,
++    customerId: row.customerId,
++    customer: row.customer
++      ? {
++          id: row.customer.id,
++          customerNumber: row.customer.customerNumber,
++          fullName: row.customer.fullName,
++          status: row.customer.status,
++        }
++      : null,
++    startDate: row.startDate,
++    expectedCheckoutDate: row.expectedCheckoutDate,
++    expectedReturnDate: row.expectedReturnDate,
++    status: row.status,
++    notes: row.notes,
++    rental: row.rental
++      ? {
++          id: row.rental.id,
++          rentalNumber: row.rental.rentalNumber,
++          status: row.rental.status,
++        }
++      : null,
++    items: row.items.map((i) => ({
++      id: i.id,
++      itemId: i.itemId,
++      barcodeValue: i.barcodeValue,
++      agreedRentalPrice: i.agreedRentalPrice,
++      notes: i.notes,
++      item: i.item
++        ? {
++            id: i.item.id,
++            internalCode: i.item.internalCode,
++            displayName: i.item.displayName,
++            status: i.item.status,
++            lifecycleState: i.item.lifecycleState,
++            rentalPrice: i.item.rentalPrice,
++          }
++        : null,
++    })),
++    statusHistory: row.statusHistory.map((h) => ({
++      id: h.id,
++      oldStatus: h.oldStatus,
++      newStatus: h.newStatus,
++      reason: h.reason,
++      userId: h.userId,
++      username: h.username,
++      createdAt: h.createdAt,
++    })),
++    createdAt: row.createdAt,
++    updatedAt: row.updatedAt,
++    deletedAt: row.deletedAt,
++    createdBy: row.createdBy,
++    updatedBy: row.updatedBy,
++  };
++}
+diff --git a/backend-node/src/reservations/reservations.module.ts b/backend-node/src/reservations/reservations.module.ts
+new file mode 100644
+index 0000000..ca2ac79
+--- /dev/null
++++ b/backend-node/src/reservations/reservations.module.ts
+@@ -0,0 +1,16 @@
++import { Module } from '@nestjs/common';
++import { CustomersModule } from '../customers/customers.module';
++import { InventoryModule } from '../inventory/inventory.module';
++import { RentalsModule } from '../rentals/rentals.module';
++import { AvailabilityService } from './availability/availability.service';
++import { ReservationsController } from './reservations.controller';
++import { ReservationsRepository } from './reservations.repository';
++import { ReservationsService } from './reservations.service';
++
++@Module({
++  imports: [CustomersModule, InventoryModule, RentalsModule],
++  controllers: [ReservationsController],
++  providers: [ReservationsRepository, ReservationsService, AvailabilityService],
++  exports: [ReservationsService, AvailabilityService],
++})
++export class ReservationsModule {}
+diff --git a/backend-node/src/reservations/reservations.repository.ts b/backend-node/src/reservations/reservations.repository.ts
+new file mode 100644
+index 0000000..1c6b565
+--- /dev/null
++++ b/backend-node/src/reservations/reservations.repository.ts
+@@ -0,0 +1,216 @@
++import { Injectable } from '@nestjs/common';
++import type { Prisma, Reservation } from '@prisma/client';
++import { PrismaService } from '../database/prisma.service';
++import {
++  restoreSoftDeleteData,
++  softDeleteData,
++} from '../shared/soft-delete/soft-delete';
++import { RESERVATION_STATUS } from './reservations.constants';
++
++export const reservationInclude = {
++  customer: true,
++  items: {
++    include: {
++      item: {
++        select: {
++          id: true,
++          internalCode: true,
++          displayName: true,
++          status: true,
++          lifecycleState: true,
++          rentalPrice: true,
++        },
++      },
++    },
++  },
++  statusHistory: { orderBy: { createdAt: 'desc' as const }, take: 50 },
++  rental: { select: { id: true, rentalNumber: true, status: true } },
++} satisfies Prisma.ReservationInclude;
++
++export type ReservationWithRelations = Prisma.ReservationGetPayload<{
++  include: typeof reservationInclude;
++}>;
++
++@Injectable()
++export class ReservationsRepository {
++  constructor(private readonly prisma: PrismaService) {}
++
++  get client() {
++    return this.prisma;
++  }
++
++  async createConfirmed(input: {
++    data: Prisma.ReservationUncheckedCreateInput;
++    items: Array<{
++      itemId: string;
++      barcodeValue?: string | null;
++      agreedRentalPrice: number;
++      notes?: string | null;
++      createdBy?: string | null;
++    }>;
++    actor?: { userId?: string | null; username?: string | null };
++  }): Promise<ReservationWithRelations> {
++    return this.prisma.$transaction(async (tx) => {
++      const created = await tx.reservation.create({
++        data: {
++          ...input.data,
++          status: RESERVATION_STATUS.DRAFT,
++          items: {
++            create: input.items.map((i) => ({
++              itemId: i.itemId,
++              barcodeValue: i.barcodeValue ?? null,
++              agreedRentalPrice: i.agreedRentalPrice,
++              notes: i.notes ?? null,
++              createdBy: i.createdBy ?? null,
++            })),
++          },
++          statusHistory: {
++            create: {
++              oldStatus: RESERVATION_STATUS.DRAFT,
++              newStatus: RESERVATION_STATUS.DRAFT,
++              reason: 'created',
++              userId: input.actor?.userId ?? null,
++              username: input.actor?.username ?? null,
++            },
++          },
++        },
++      });
++
++      await tx.reservation.update({
++        where: { id: created.id },
++        data: {
++          status: RESERVATION_STATUS.CONFIRMED,
++          updatedBy: input.actor?.userId ?? null,
++        },
++      });
++      await tx.reservationStatusHistory.create({
++        data: {
++          reservationId: created.id,
++          oldStatus: RESERVATION_STATUS.DRAFT,
++          newStatus: RESERVATION_STATUS.CONFIRMED,
++          reason: 'confirmed',
++          userId: input.actor?.userId ?? null,
++          username: input.actor?.username ?? null,
++        },
++      });
++
++      return tx.reservation.findUniqueOrThrow({
++        where: { id: created.id },
++        include: reservationInclude,
++      });
++    });
++  }
++
++  findById(
++    id: string,
++    deleted = false,
++  ): Promise<ReservationWithRelations | null> {
++    return this.prisma.reservation.findFirst({
++      where: { id, deletedAt: deleted ? { not: null } : null },
++      include: reservationInclude,
++    });
++  }
++
++  findAnyNumber(reservationNumber: string): Promise<Reservation | null> {
++    return this.prisma.reservation.findUnique({ where: { reservationNumber } });
++  }
++
++  async list(input: {
++    where: Prisma.ReservationWhereInput;
++    orderBy: Prisma.ReservationOrderByWithRelationInput;
++    offset: number;
++    limit: number;
++  }) {
++    const [rows, total] = await Promise.all([
++      this.prisma.reservation.findMany({
++        where: input.where,
++        orderBy: input.orderBy,
++        skip: input.offset,
++        take: input.limit,
++        include: reservationInclude,
++      }),
++      this.prisma.reservation.count({ where: input.where }),
++    ]);
++    return { rows, total };
++  }
++
++  async nextSequence(prefix: string): Promise<number> {
++    return this.prisma.$transaction(async (tx) => {
++      const e = await tx.sequenceCounter.findUnique({ where: { prefix } });
++      if (!e) {
++        await tx.sequenceCounter.create({ data: { prefix, lastValue: 1 } });
++        return 1;
++      }
++      return (
++        await tx.sequenceCounter.update({
++          where: { prefix },
++          data: { lastValue: e.lastValue + 1 },
++        })
++      ).lastValue;
++    });
++  }
++
++  async transitionStatus(input: {
++    reservationId: string;
++    from: string;
++    to: string;
++    reason?: string | null;
++    userId?: string | null;
++    username?: string | null;
++    tx?: Prisma.TransactionClient;
++  }): Promise<ReservationWithRelations | null> {
++    const run = async (client: Prisma.TransactionClient) => {
++      const result = await client.reservation.updateMany({
++        where: {
++          id: input.reservationId,
++          deletedAt: null,
++          status: input.from,
++        },
++        data: {
++          status: input.to,
++          updatedBy: input.userId ?? null,
++        },
++      });
++      if (result.count !== 1) return null;
++      await client.reservationStatusHistory.create({
++        data: {
++          reservationId: input.reservationId,
++          oldStatus: input.from,
++          newStatus: input.to,
++          reason: input.reason ?? null,
++          userId: input.userId ?? null,
++          username: input.username ?? null,
++        },
++      });
++      return client.reservation.findUniqueOrThrow({
++        where: { id: input.reservationId },
++        include: reservationInclude,
++      });
++    };
++    if (input.tx) return run(input.tx);
++    return this.prisma.$transaction(run);
++  }
++
++  softDelete(id: string, userId?: string) {
++    return this.prisma.reservation.update({
++      where: { id },
++      data: {
++        ...softDeleteData(),
++        deletedBy: userId ?? null,
++      },
++      include: reservationInclude,
++    });
++  }
++
++  restore(id: string, userId?: string) {
++    return this.prisma.reservation.update({
++      where: { id },
++      data: {
++        ...restoreSoftDeleteData(),
++        deletedBy: null,
++        updatedBy: userId ?? null,
++      },
++      include: reservationInclude,
++    });
++  }
++}
+diff --git a/backend-node/src/reservations/reservations.rules.ts b/backend-node/src/reservations/reservations.rules.ts
+new file mode 100644
+index 0000000..74a429b
+--- /dev/null
++++ b/backend-node/src/reservations/reservations.rules.ts
+@@ -0,0 +1,35 @@
++import {
++  RESERVATION_STATUS,
++  RESERVATION_STATUS_TRANSITIONS,
++  RESERVATION_STATUS_VALUES,
++  type ReservationStatus,
++} from './reservations.constants';
++
++export function isReservationStatus(value: string): value is ReservationStatus {
++  return (RESERVATION_STATUS_VALUES as string[]).includes(value);
++}
++
++export function canTransitionReservationStatus(
++  from: ReservationStatus,
++  to: ReservationStatus,
++): boolean {
++  return RESERVATION_STATUS_TRANSITIONS[from].includes(to);
++}
++
++export function canCheckoutReservation(status: string): boolean {
++  return status === RESERVATION_STATUS.CONFIRMED;
++}
++
++export function canCancelReservation(status: string): boolean {
++  return (
++    status === RESERVATION_STATUS.DRAFT ||
++    status === RESERVATION_STATUS.CONFIRMED
++  );
++}
++
++export function canExpireReservation(status: string): boolean {
++  return (
++    status === RESERVATION_STATUS.DRAFT ||
++    status === RESERVATION_STATUS.CONFIRMED
++  );
++}
+diff --git a/backend-node/src/reservations/reservations.service.ts b/backend-node/src/reservations/reservations.service.ts
+new file mode 100644
+index 0000000..af2fa2e
+--- /dev/null
++++ b/backend-node/src/reservations/reservations.service.ts
+@@ -0,0 +1,492 @@
++import { Injectable } from '@nestjs/common';
++import type { Prisma } from '@prisma/client';
++import { AuditService } from '../audit/audit.service';
++import { BarcodeService } from '../barcode/barcode.service';
++import { CustomersService } from '../customers/customers.service';
++import { CUSTOMER_STATUS } from '../customers/customers.constants';
++import { ItemsService } from '../inventory/items/items.service';
++import { ITEM_STATUS } from '../inventory/inventory.constants';
++import { isRentable } from '../inventory/lifecycle/lifecycle.rules';
++import { RentalsService } from '../rentals/rentals.service';
++import { SettingsService } from '../settings/settings.service';
++import { BARCODE_STATUS } from '../shared/constants/business.constants';
++import { BusinessException } from '../shared/errors/business.exception';
++import {
++  normalizePagination,
++  paginated,
++} from '../shared/pagination/pagination';
++import { normalizeSearchQuery } from '../shared/search/search';
++import { normalizeSort } from '../shared/sorting/sorting';
++import { parseOptionalBoolean } from '../shared/validation/parse-boolean';
++import type { AuthPrincipal } from '../shared/types';
++import { AvailabilityService } from './availability/availability.service';
++import type {
++  CreateReservationDto,
++  CreateReservationItemDto,
++  ListReservationsDto,
++} from './dto/reservation.dto';
++import { toReservationPublic } from './reservations.mapper';
++import {
++  RESERVATION_DEFAULT_PADDING,
++  RESERVATION_DEFAULT_PREFIX,
++  RESERVATION_DEFAULT_SEPARATOR,
++  RESERVATION_ENTITY,
++  RESERVATION_MODULE,
++  RESERVATION_NUMBER_SETTING,
++  RESERVATION_SORT_FIELDS,
++  RESERVATION_STATUS,
++} from './reservations.constants';
++import {
++  canCancelReservation,
++  canCheckoutReservation,
++  canExpireReservation,
++  isReservationStatus,
++} from './reservations.rules';
++import {
++  ReservationsRepository,
++  type ReservationWithRelations,
++} from './reservations.repository';
++
++@Injectable()
++export class ReservationsService {
++  constructor(
++    private readonly repo: ReservationsRepository,
++    private readonly availability: AvailabilityService,
++    private readonly customers: CustomersService,
++    private readonly items: ItemsService,
++    private readonly barcodes: BarcodeService,
++    private readonly rentals: RentalsService,
++    private readonly settings: SettingsService,
++    private readonly audit: AuditService,
++  ) {}
++
++  async create(dto: CreateReservationDto, actor?: AuthPrincipal) {
++    await this.requireActiveCustomer(dto.customerId);
++    const startDate = this.parseDate(dto.startDate, 'startDate');
++    const expectedCheckoutDate = this.parseDate(
++      dto.expectedCheckoutDate,
++      'expectedCheckoutDate',
++    );
++    const expectedReturnDate = this.parseDate(
++      dto.expectedReturnDate,
++      'expectedReturnDate',
++    );
++    this.assertDateOrder(startDate, expectedCheckoutDate, expectedReturnDate);
++
++    const prepared = await this.prepareItems(dto.items);
++    await this.availability.assertItemsAvailable(
++      prepared.map((p) => p.itemId),
++      startDate,
++      expectedReturnDate,
++    );
++
++    const reservationNumber = await this.allocateNumber();
++    const row = await this.repo.createConfirmed({
++      data: {
++        reservationNumber,
++        customerId: dto.customerId,
++        startDate,
++        expectedCheckoutDate,
++        expectedReturnDate,
++        notes: dto.notes?.trim() || null,
++        createdBy: actor?.userId ?? null,
++        updatedBy: actor?.userId ?? null,
++      },
++      items: prepared.map((p) => ({
++        itemId: p.itemId,
++        barcodeValue: p.barcodeValue,
++        agreedRentalPrice: p.agreedRentalPrice,
++        notes: p.notes,
++        createdBy: actor?.userId ?? null,
++      })),
++      actor: { userId: actor?.userId, username: actor?.username },
++    });
++
++    await this.audit.recordCreate(
++      RESERVATION_MODULE,
++      RESERVATION_ENTITY,
++      row.id,
++      this.snapshot(row),
++      { userId: actor?.userId, username: actor?.username },
++    );
++    await this.audit.record({
++      module: RESERVATION_MODULE,
++      entityType: RESERVATION_ENTITY,
++      entityId: row.id,
++      action: 'confirmed',
++      newValues: { status: RESERVATION_STATUS.CONFIRMED },
++      actor: { userId: actor?.userId, username: actor?.username },
++    });
++
++    return toReservationPublic(row);
++  }
++
++  async list(query: ListReservationsDto) {
++    const page = normalizePagination(query);
++    const sort = normalizeSort(
++      query.sortBy,
++      query.sortDir,
++      new Set(RESERVATION_SORT_FIELDS),
++      { field: 'createdAt', direction: 'desc' },
++    );
++    const { rows, total } = await this.repo.list({
++      where: this.where(query),
++      orderBy: { [sort.field]: sort.direction },
++      offset: page.offset,
++      limit: page.limit,
++    });
++    return paginated(rows.map(toReservationPublic), total, page);
++  }
++
++  async getById(id: string) {
++    return toReservationPublic(await this.requireLive(id));
++  }
++
++  /**
++   * Checkout: create Rental + inventory transitions + mark reservation checked_out.
++   * Single transaction — full rollback on failure.
++   */
++  async checkout(id: string, reason?: string, actor?: AuthPrincipal) {
++    const reservation = await this.requireLive(id);
++    if (!canCheckoutReservation(reservation.status)) {
++      throw BusinessException.conflict(
++        `Cannot checkout reservation in status ${reservation.status}`,
++      );
++    }
++    await this.requireActiveCustomer(reservation.customerId);
++
++    for (const line of reservation.items) {
++      await this.assertItemRentable(line.itemId, line.barcodeValue);
++    }
++    await this.availability.assertItemsAvailable(
++      reservation.items.map((i) => i.itemId),
++      reservation.startDate,
++      reservation.expectedReturnDate,
++      { excludeReservationId: reservation.id },
++    );
++
++    let rentalId = '';
++    await this.repo.client.$transaction(async (tx) => {
++      const rental = await this.rentals.materializeActiveFromReservation(
++        {
++          reservationId: reservation.id,
++          customerId: reservation.customerId,
++          rentalDate: reservation.expectedCheckoutDate,
++          expectedReturnDate: reservation.expectedReturnDate,
++          notes: reservation.notes,
++          items: reservation.items.map((i) => ({
++            itemId: i.itemId,
++            barcodeValue: i.barcodeValue,
++            agreedRentalPrice: i.agreedRentalPrice,
++            notes: i.notes,
++          })),
++          reason: reason?.trim() || 'reservation_checkout',
++        },
++        tx,
++        actor,
++      );
++      rentalId = rental.id;
++
++      const updated = await this.repo.transitionStatus({
++        reservationId: reservation.id,
++        from: RESERVATION_STATUS.CONFIRMED,
++        to: RESERVATION_STATUS.CHECKED_OUT,
++        reason: reason?.trim() || 'checkout',
++        userId: actor?.userId ?? null,
++        username: actor?.username ?? null,
++        tx,
++      });
++      if (!updated) {
++        throw BusinessException.conflict(
++          'Concurrent reservation checkout rejected',
++        );
++      }
++    });
++
++    const updated = await this.requireLive(id);
++    await this.audit.record({
++      module: RESERVATION_MODULE,
++      entityType: RESERVATION_ENTITY,
++      entityId: id,
++      action: 'checkout',
++      oldValues: this.snapshot(reservation),
++      newValues: { ...this.snapshot(updated), rentalId },
++      actor: { userId: actor?.userId, username: actor?.username },
++    });
++    return toReservationPublic(updated);
++  }
++
++  async cancel(id: string, reason?: string, actor?: AuthPrincipal) {
++    const reservation = await this.requireLive(id);
++    if (!canCancelReservation(reservation.status)) {
++      throw BusinessException.conflict(
++        `Cannot cancel reservation in status ${reservation.status}`,
++      );
++    }
++    const updated = await this.repo.transitionStatus({
++      reservationId: reservation.id,
++      from: reservation.status,
++      to: RESERVATION_STATUS.CANCELLED,
++      reason: reason?.trim() || 'cancel',
++      userId: actor?.userId ?? null,
++      username: actor?.username ?? null,
++    });
++    if (!updated) {
++      throw BusinessException.conflict('Concurrent reservation cancel rejected');
++    }
++    await this.audit.record({
++      module: RESERVATION_MODULE,
++      entityType: RESERVATION_ENTITY,
++      entityId: id,
++      action: 'cancel',
++      oldValues: this.snapshot(reservation),
++      newValues: this.snapshot(updated),
++      actor: { userId: actor?.userId, username: actor?.username },
++    });
++    return toReservationPublic(updated);
++  }
++
++  /** Expiration foundation — no scheduler; callable by ops/jobs later. */
++  async expireReservation(id: string, reason?: string, actor?: AuthPrincipal) {
++    const reservation = await this.requireLive(id);
++    if (!canExpireReservation(reservation.status)) {
++      throw BusinessException.conflict(
++        `Cannot expire reservation in status ${reservation.status}`,
++      );
++    }
++    const updated = await this.repo.transitionStatus({
++      reservationId: reservation.id,
++      from: reservation.status,
++      to: RESERVATION_STATUS.EXPIRED,
++      reason: reason?.trim() || 'expire',
++      userId: actor?.userId ?? null,
++      username: actor?.username ?? null,
++    });
++    if (!updated) {
++      throw BusinessException.conflict('Concurrent reservation expire rejected');
++    }
++    await this.audit.record({
++      module: RESERVATION_MODULE,
++      entityType: RESERVATION_ENTITY,
++      entityId: id,
++      action: 'expired',
++      oldValues: this.snapshot(reservation),
++      newValues: this.snapshot(updated),
++      actor: { userId: actor?.userId, username: actor?.username },
++    });
++    return toReservationPublic(updated);
++  }
++
++  private where(q: ListReservationsDto): Prisma.ReservationWhereInput {
++    const w: Prisma.ReservationWhereInput = {
++      deletedAt:
++        parseOptionalBoolean(q.deleted) === true ? { not: null } : null,
++    };
++    if (q.status) {
++      const s = q.status.trim().toLowerCase();
++      if (!isReservationStatus(s)) {
++        throw BusinessException.validation('Invalid reservation status filter');
++      }
++      w.status = s;
++    }
++    if (q.customerId) w.customerId = q.customerId;
++    if (q.reservationNumber) {
++      w.reservationNumber = {
++        contains: q.reservationNumber.trim().toUpperCase(),
++      };
++    }
++    const text = normalizeSearchQuery(q.q);
++    if (text) {
++      w.OR = [
++        { reservationNumber: { contains: text.toUpperCase() } },
++        { notes: { contains: text } },
++        { customer: { fullName: { contains: text } } },
++      ];
++    }
++    return w;
++  }
++
++  private assertDateOrder(
++    start: Date,
++    checkout: Date,
++    ret: Date,
++  ): void {
++    if (checkout.getTime() < start.getTime()) {
++      throw BusinessException.validation(
++        'expectedCheckoutDate must be on or after startDate',
++      );
++    }
++    if (ret.getTime() < checkout.getTime()) {
++      throw BusinessException.validation(
++        'expectedReturnDate must be on or after expectedCheckoutDate',
++      );
++    }
++  }
++
++  private async prepareItems(items: CreateReservationItemDto[]) {
++    const seen = new Set<string>();
++    const prepared: Array<{
++      itemId: string;
++      barcodeValue: string | null;
++      agreedRentalPrice: number;
++      notes: string | null;
++    }> = [];
++    for (const line of items) {
++      if (seen.has(line.itemId)) {
++        throw BusinessException.validation(
++          'Duplicate itemId in reservation items',
++        );
++      }
++      seen.add(line.itemId);
++      const checked = await this.assertItemRentable(
++        line.itemId,
++        line.barcode ?? null,
++      );
++      prepared.push({
++        itemId: line.itemId,
++        barcodeValue: checked.barcodeValue,
++        agreedRentalPrice:
++          line.agreedRentalPrice ?? checked.rentalPrice ?? 0,
++        notes: line.notes?.trim() || null,
++      });
++    }
++    return prepared;
++  }
++
++  private async assertItemRentable(
++    itemId: string,
++    barcodeRaw: string | null,
++  ): Promise<{ barcodeValue: string | null; rentalPrice: number }> {
++    const item = await this.items.getById(itemId);
++    if (item.status !== ITEM_STATUS.ACTIVE) {
++      throw BusinessException.conflict(
++        `Item ${item.internalCode} catalog status must be active`,
++      );
++    }
++    if (
++      !isRentable({
++        deletedAt: item.deletedAt,
++        status: item.status,
++        lifecycleState: item.lifecycleState,
++      })
++    ) {
++      throw BusinessException.conflict(
++        `Item ${item.internalCode} is not rentable (lifecycle ${item.lifecycleState})`,
++      );
++    }
++
++    const liveBarcodes = (item.barcodes ?? []).map((b) => ({
++      id: b.id,
++      value:
++        'barcode' in b && b.barcode
++          ? b.barcode.code
++          : (b as { value?: string }).value,
++    }));
++    if (liveBarcodes.length === 0 || liveBarcodes.some((b) => !b.value)) {
++      throw BusinessException.conflict(
++        `Item ${item.internalCode} has no active barcode`,
++      );
++    }
++
++    let barcodeValue: string | null = null;
++    if (barcodeRaw?.trim()) {
++      const code = barcodeRaw.trim();
++      const match = liveBarcodes.find((b) => b.value === code);
++      if (!match) {
++        throw BusinessException.validation(
++          `Barcode ${code} is not bound to item ${item.internalCode}`,
++        );
++      }
++      const platform = await this.barcodes.findByValue(code);
++      if (!platform || platform.status !== BARCODE_STATUS.ACTIVATED) {
++        throw BusinessException.conflict(`Barcode ${code} is not activated`);
++      }
++      if (platform.entityId && platform.entityId !== itemId) {
++        throw BusinessException.conflict(
++          `Barcode ${code} is bound to another entity`,
++        );
++      }
++      barcodeValue = code;
++    } else {
++      barcodeValue = liveBarcodes[0]?.value ?? null;
++      if (barcodeValue) {
++        const platform = await this.barcodes.findByValue(barcodeValue);
++        if (!platform || platform.status !== BARCODE_STATUS.ACTIVATED) {
++          throw BusinessException.conflict(
++            `Primary barcode for ${item.internalCode} is not activated`,
++          );
++        }
++      }
++    }
++    return { barcodeValue, rentalPrice: item.rentalPrice };
++  }
++
++  private async requireActiveCustomer(customerId: string) {
++    const customer = await this.customers.getById(customerId);
++    if (customer.status !== CUSTOMER_STATUS.ACTIVE) {
++      throw BusinessException.conflict('Customer is not active');
++    }
++    return customer;
++  }
++
++  private async requireLive(id: string): Promise<ReservationWithRelations> {
++    const row = await this.repo.findById(id);
++    if (!row) throw BusinessException.notFound('Reservation not found');
++    return row;
++  }
++
++  private parseDate(raw: string, field: string): Date {
++    const d = new Date(raw);
++    if (Number.isNaN(d.getTime())) {
++      throw BusinessException.validation(`Invalid ${field}`);
++    }
++    return d;
++  }
++
++  private async allocateNumber(): Promise<string> {
++    const prefix = (
++      await this.settings.getString(
++        RESERVATION_NUMBER_SETTING.PREFIX,
++        RESERVATION_DEFAULT_PREFIX,
++      )
++    )
++      .trim()
++      .toUpperCase();
++    const separator = await this.settings.getString(
++      RESERVATION_NUMBER_SETTING.SEPARATOR,
++      RESERVATION_DEFAULT_SEPARATOR,
++    );
++    const padding = await this.settings.getInt(
++      RESERVATION_NUMBER_SETTING.PADDING,
++      RESERVATION_DEFAULT_PADDING,
++    );
++    if (
++      !/^[A-Z0-9]+$/.test(prefix) ||
++      !Number.isInteger(padding) ||
++      padding < 1 ||
++      padding > 16
++    ) {
++      throw BusinessException.validation('Invalid reservation number settings');
++    }
++    for (let i = 0; i < 25; i += 1) {
++      const seq = await this.repo.nextSequence(`reservation:${prefix}`);
++      const number = `${prefix}${separator}${String(seq).padStart(padding, '0')}`;
++      if (!(await this.repo.findAnyNumber(number))) return number;
++    }
++    throw BusinessException.invariant('Unable to allocate reservation number');
++  }
++
++  private snapshot(row: ReservationWithRelations) {
++    return {
++      id: row.id,
++      reservationNumber: row.reservationNumber,
++      customerId: row.customerId,
++      status: row.status,
++      startDate: row.startDate,
++      expectedCheckoutDate: row.expectedCheckoutDate,
++      expectedReturnDate: row.expectedReturnDate,
++      itemIds: row.items.map((i) => i.itemId),
++      deletedAt: row.deletedAt,
++    };
++  }
++}
+diff --git a/backend-node/src/settings/settings.seeds.ts b/backend-node/src/settings/settings.seeds.ts
+index b4a54bc..24b5042 100644
+--- a/backend-node/src/settings/settings.seeds.ts
++++ b/backend-node/src/settings/settings.seeds.ts
+@@ -172,4 +172,28 @@ export const DEFAULT_APP_SETTINGS: readonly SettingSeed[] = [
+     description: 'Rental number zero-pad width',
+     isEditable: true,
+   },
++  {
++    key: 'reservations.number.prefix',
++    value: 'RSV',
++    valueType: SETTING_VALUE_TYPE.STRING,
++    category: 'reservations',
++    description: 'Reservation number prefix',
++    isEditable: true,
++  },
++  {
++    key: 'reservations.number.separator',
++    value: '-',
++    valueType: SETTING_VALUE_TYPE.STRING,
++    category: 'reservations',
++    description: 'Reservation number separator',
++    isEditable: true,
++  },
++  {
++    key: 'reservations.number.padding',
++    value: '8',
++    valueType: SETTING_VALUE_TYPE.INTEGER,
++    category: 'reservations',
++    description: 'Reservation number zero-pad width',
++    isEditable: true,
++  },
+ ];
+\ No newline at end of file
+diff --git a/backend-node/test/availability-rules.spec.ts b/backend-node/test/availability-rules.spec.ts
+new file mode 100644
+index 0000000..e5ef0ac
+--- /dev/null
++++ b/backend-node/test/availability-rules.spec.ts
+@@ -0,0 +1,81 @@
++import { describe, expect, it } from 'vitest';
++import { rangesOverlap } from '../src/reservations/availability/availability.types';
++import {
++  RESERVATION_STATUS,
++  RESERVATION_STATUS_TRANSITIONS,
++} from '../src/reservations/reservations.constants';
++import {
++  canCancelReservation,
++  canCheckoutReservation,
++  canExpireReservation,
++  canTransitionReservationStatus,
++  isReservationStatus,
++} from '../src/reservations/reservations.rules';
++import { toReservationPublic } from '../src/reservations/reservations.mapper';
++
++describe('availability ranges + reservation rules', () => {
++  it('detects half-open range overlaps', () => {
++    const a = new Date('2026-08-01T00:00:00Z');
++    const b = new Date('2026-08-05T00:00:00Z');
++    const c = new Date('2026-08-04T00:00:00Z');
++    const d = new Date('2026-08-10T00:00:00Z');
++    expect(rangesOverlap(a, b, c, d)).toBe(true);
++    expect(rangesOverlap(a, b, b, d)).toBe(false);
++    expect(rangesOverlap(a, b, new Date('2026-07-01'), a)).toBe(false);
++  });
++
++  it('validates reservation status graph', () => {
++    expect(
++      canTransitionReservationStatus(
++        RESERVATION_STATUS.DRAFT,
++        RESERVATION_STATUS.CONFIRMED,
++      ),
++    ).toBe(true);
++    expect(
++      canTransitionReservationStatus(
++        RESERVATION_STATUS.CONFIRMED,
++        RESERVATION_STATUS.CHECKED_OUT,
++      ),
++    ).toBe(true);
++    expect(
++      canTransitionReservationStatus(
++        RESERVATION_STATUS.CHECKED_OUT,
++        RESERVATION_STATUS.CANCELLED,
++      ),
++    ).toBe(false);
++    expect(canCheckoutReservation(RESERVATION_STATUS.CONFIRMED)).toBe(true);
++    expect(canCheckoutReservation(RESERVATION_STATUS.DRAFT)).toBe(false);
++    expect(canCancelReservation(RESERVATION_STATUS.CONFIRMED)).toBe(true);
++    expect(canExpireReservation(RESERVATION_STATUS.DRAFT)).toBe(true);
++    expect(canExpireReservation(RESERVATION_STATUS.CHECKED_OUT)).toBe(false);
++    expect(isReservationStatus('confirmed')).toBe(true);
++    expect(isReservationStatus('nope')).toBe(false);
++    expect(Object.keys(RESERVATION_STATUS_TRANSITIONS).length).toBe(6);
++  });
++
++  it('maps public reservation shape', () => {
++    const pub = toReservationPublic({
++      id: 'rs1',
++      reservationNumber: 'RSV-1',
++      customerId: 'c1',
++      startDate: new Date(),
++      expectedCheckoutDate: new Date(),
++      expectedReturnDate: new Date(),
++      status: 'confirmed',
++      notes: null,
++      deletedAt: null,
++      createdAt: new Date(),
++      updatedAt: new Date(),
++      createdBy: null,
++      updatedBy: null,
++      deletedBy: null,
++      customer: null as never,
++      rental: null,
++      items: [],
++      statusHistory: [],
++    });
++    expect(pub.reservationNumber).toBe('RSV-1');
++    expect(pub.customer).toBeNull();
++    expect(pub.rental).toBeNull();
++  });
++});
+diff --git a/backend-node/test/reservations-integration.spec.ts b/backend-node/test/reservations-integration.spec.ts
+new file mode 100644
+index 0000000..db1b9ba
+--- /dev/null
++++ b/backend-node/test/reservations-integration.spec.ts
+@@ -0,0 +1,280 @@
++import 'reflect-metadata';
++import { rmSync } from 'node:fs';
++import { afterAll, beforeAll, describe, expect, it } from 'vitest';
++import { INestApplication } from '@nestjs/common';
++import { Test } from '@nestjs/testing';
++import request from 'supertest';
++import { AppModule } from '../src/app.module';
++import { createGlobalValidationPipe } from '../src/validation/create-validation-pipe';
++import { prepareTestDatabase } from './helpers/test-db';
++import { PrismaService } from '../src/database/prisma.service';
++
++describe('Reservations integration (Phase 5.2)', () => {
++  let app: INestApplication;
++  let prisma: PrismaService;
++  let dir = '';
++  let token = '';
++  let customerId = '';
++  let itemId = '';
++  let barcodeValue = '';
++
++  beforeAll(async () => {
++    const p = prepareTestDatabase('juman-reservations-');
++    dir = p.dataDir;
++    process.env.IDENTITY_BOOTSTRAP_USERNAME = 'admin';
++    process.env.IDENTITY_BOOTSTRAP_PASSWORD = 'Juman!Bootstrap1';
++    const m = await Test.createTestingModule({ imports: [AppModule] }).compile();
++    app = m.createNestApplication();
++    app.useGlobalPipes(createGlobalValidationPipe());
++    await app.init();
++    prisma = app.get(PrismaService);
++
++    let r = await request(app.getHttpServer())
++      .post('/auth/login')
++      .send({ username: 'admin', password: 'Juman!Bootstrap1' });
++    token = r.body.accessToken;
++    await request(app.getHttpServer())
++      .post('/auth/change-password')
++      .set('Authorization', `Bearer ${token}`)
++      .send({
++        currentPassword: 'Juman!Bootstrap1',
++        newPassword: 'NewStrong!Pass1',
++      });
++    r = await request(app.getHttpServer())
++      .post('/auth/login')
++      .send({ username: 'admin', password: 'NewStrong!Pass1' });
++    token = r.body.accessToken;
++
++    const customer = await request(app.getHttpServer())
++      .post('/customers')
++      .set('Authorization', `Bearer ${token}`)
++      .send({ fullName: 'Reservation Customer', phone: '07907654321' })
++      .expect(201);
++    customerId = customer.body.id;
++
++    const item = await request(app.getHttpServer())
++      .post('/items')
++      .set('Authorization', `Bearer ${token}`)
++      .send({
++        displayName: 'Reserved dress',
++        status: 'active',
++        rentalPrice: 3000,
++        generateBarcode: true,
++      })
++      .expect(201);
++    itemId = item.body.id;
++    barcodeValue = item.body.barcodes[0].value;
++  }, 180_000);
++
++  afterAll(async () => {
++    if (app) await app.close();
++    try {
++      rmSync(dir, { recursive: true, force: true });
++    } catch {
++      /* ignore */
++    }
++  });
++
++  const window = () => {
++    const start = new Date();
++    start.setUTCDate(start.getUTCDate() + 10);
++    const checkout = new Date(start);
++    checkout.setUTCDate(checkout.getUTCDate() + 1);
++    const ret = new Date(checkout);
++    ret.setUTCDate(ret.getUTCDate() + 3);
++    return {
++      startDate: start.toISOString(),
++      expectedCheckoutDate: checkout.toISOString(),
++      expectedReturnDate: ret.toISOString(),
++    };
++  };
++
++  it('requires auth', async () => {
++    await request(app.getHttpServer()).get('/reservations').expect(401);
++  });
++
++  it('creates confirmed reservation, rejects overlap, checkouts to rental', async () => {
++    const dates = window();
++    const created = await request(app.getHttpServer())
++      .post('/reservations')
++      .set('Authorization', `Bearer ${token}`)
++      .send({
++        customerId,
++        ...dates,
++        items: [{ itemId, barcode: barcodeValue }],
++      })
++      .expect(201);
++
++    expect(created.body.reservationNumber).toMatch(/^RSV-\d{8}$/);
++    expect(created.body.status).toBe('confirmed');
++    expect(
++      created.body.statusHistory.some(
++        (h: { newStatus: string }) => h.newStatus === 'confirmed',
++      ),
++    ).toBe(true);
++
++    await request(app.getHttpServer())
++      .post('/reservations')
++      .set('Authorization', `Bearer ${token}`)
++      .send({
++        customerId,
++        ...dates,
++        items: [{ itemId }],
++      })
++      .expect(409);
++
++    const itemBefore = await prisma.item.findUniqueOrThrow({
++      where: { id: itemId },
++    });
++    expect(itemBefore.lifecycleState).toBe('available');
++
++    const checked = await request(app.getHttpServer())
++      .post(`/reservations/${created.body.id}/checkout`)
++      .set('Authorization', `Bearer ${token}`)
++      .send({ reason: 'customer arrived' })
++      .expect(200);
++    expect(checked.body.status).toBe('checked_out');
++    expect(checked.body.rental?.rentalNumber).toMatch(/^RENT-\d{8}$/);
++
++    const itemOut = await prisma.item.findUniqueOrThrow({
++      where: { id: itemId },
++    });
++    expect(itemOut.lifecycleState).toBe('rented');
++
++    const rental = await prisma.rental.findFirst({
++      where: { reservationId: created.body.id },
++    });
++    expect(rental?.status).toBe('active');
++  });
++
++  it('cancels and expires without inventory mutation', async () => {
++    const item = await request(app.getHttpServer())
++      .post('/items')
++      .set('Authorization', `Bearer ${token}`)
++      .send({
++        displayName: 'Cancelable reserved',
++        status: 'active',
++        generateBarcode: true,
++      })
++      .expect(201);
++
++    const dates = window();
++    dates.startDate = new Date(
++      Date.now() + 86400000 * 40,
++    ).toISOString();
++    dates.expectedCheckoutDate = new Date(
++      Date.now() + 86400000 * 41,
++    ).toISOString();
++    dates.expectedReturnDate = new Date(
++      Date.now() + 86400000 * 44,
++    ).toISOString();
++
++    const a = await request(app.getHttpServer())
++      .post('/reservations')
++      .set('Authorization', `Bearer ${token}`)
++      .send({
++        customerId,
++        ...dates,
++        items: [{ itemId: item.body.id }],
++      })
++      .expect(201);
++
++    await request(app.getHttpServer())
++      .post(`/reservations/${a.body.id}/cancel`)
++      .set('Authorization', `Bearer ${token}`)
++      .send({ reason: 'customer cancelled' })
++      .expect(200);
++
++    const stillAvailable = await prisma.item.findUniqueOrThrow({
++      where: { id: item.body.id },
++    });
++    expect(stillAvailable.lifecycleState).toBe('available');
++
++    // cancelled ignored for conflict — new reservation same window OK
++    const b = await request(app.getHttpServer())
++      .post('/reservations')
++      .set('Authorization', `Bearer ${token}`)
++      .send({
++        customerId,
++        ...dates,
++        items: [{ itemId: item.body.id }],
++      })
++      .expect(201);
++
++    await request(app.getHttpServer())
++      .post(`/reservations/${b.body.id}/expire`)
++      .set('Authorization', `Bearer ${token}`)
++      .send({ reason: 'no show' })
++      .expect(200);
++
++    await request(app.getHttpServer())
++      .get('/reservations')
++      .query({ status: 'expired', customerId })
++      .set('Authorization', `Bearer ${token}`)
++      .expect(200);
++  });
++
++  it('rejects concurrent checkout of same reservation and rental conflict', async () => {
++    const item = await request(app.getHttpServer())
++      .post('/items')
++      .set('Authorization', `Bearer ${token}`)
++      .send({
++        displayName: 'Concurrent reserved',
++        status: 'active',
++        generateBarcode: true,
++      })
++      .expect(201);
++
++    const start = new Date(Date.now() + 86400000 * 60);
++    const checkout = new Date(Date.now() + 86400000 * 61);
++    const ret = new Date(Date.now() + 86400000 * 64);
++    const body = {
++      customerId,
++      startDate: start.toISOString(),
++      expectedCheckoutDate: checkout.toISOString(),
++      expectedReturnDate: ret.toISOString(),
++      items: [{ itemId: item.body.id }],
++    };
++
++    const rsv = await request(app.getHttpServer())
++      .post('/reservations')
++      .set('Authorization', `Bearer ${token}`)
++      .send(body)
++      .expect(201);
++
++    // create overlapping walk-in rental draft window via rental module
++    const rentalItem = await request(app.getHttpServer())
++      .post('/items')
++      .set('Authorization', `Bearer ${token}`)
++      .send({
++        displayName: 'Rental conflict dress',
++        status: 'active',
++        generateBarcode: true,
++      })
++      .expect(201);
++
++    // checkout reservation twice — second fails
++    await request(app.getHttpServer())
++      .post(`/reservations/${rsv.body.id}/checkout`)
++      .set('Authorization', `Bearer ${token}`)
++      .send({})
++      .expect(200);
++    await request(app.getHttpServer())
++      .post(`/reservations/${rsv.body.id}/checkout`)
++      .set('Authorization', `Bearer ${token}`)
++      .send({})
++      .expect(409);
++
++    // rental on another item shouldn't block; rental on same item with overlap should
++    await request(app.getHttpServer())
++      .post('/rentals')
++      .set('Authorization', `Bearer ${token}`)
++      .send({
++        customerId,
++        rentalDate: checkout.toISOString(),
++        expectedReturnDate: ret.toISOString(),
++        items: [{ itemId: rentalItem.body.id }],
++      })
++      .expect(201);
++  });
++});
+diff --git a/backend-node/test/reservations-repository.spec.ts b/backend-node/test/reservations-repository.spec.ts
+new file mode 100644
+index 0000000..4f4ccee
+--- /dev/null
++++ b/backend-node/test/reservations-repository.spec.ts
+@@ -0,0 +1,92 @@
++import 'reflect-metadata';
++import { describe, expect, it, vi } from 'vitest';
++import { ReservationsController } from '../src/reservations/reservations.controller';
++import { ReservationsRepository } from '../src/reservations/reservations.repository';
++
++describe('ReservationsController + Repository', () => {
++  it('delegates HTTP', async () => {
++    const reservations = {
++      list: vi.fn(),
++      getById: vi.fn(),
++      create: vi.fn(),
++      checkout: vi.fn(),
++      cancel: vi.fn(),
++      expireReservation: vi.fn(),
++    };
++    const c = new ReservationsController(reservations as never);
++    const user = { userId: 'u' } as never;
++    await c.list({});
++    await c.get('id');
++    await c.create({} as never, user);
++    await c.checkout('id', {}, user);
++    await c.cancel('id', {}, user);
++    await c.expire('id', {}, user);
++    expect(reservations.expireReservation).toHaveBeenCalled();
++  });
++
++  it('covers repository helpers', async () => {
++    const prisma = {
++      reservation: {
++        create: vi.fn().mockResolvedValue({ id: 'rs1' }),
++        update: vi.fn(),
++        findFirst: vi.fn().mockResolvedValue({ id: 'rs1' }),
++        findUnique: vi.fn().mockResolvedValue(null),
++        findUniqueOrThrow: vi.fn().mockResolvedValue({
++          id: 'rs1',
++          items: [],
++          customer: null,
++          statusHistory: [],
++          rental: null,
++        }),
++        findMany: vi.fn().mockResolvedValue([]),
++        count: vi.fn().mockResolvedValue(0),
++        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
++      },
++      reservationStatusHistory: { create: vi.fn() },
++      sequenceCounter: {
++        findUnique: vi.fn().mockResolvedValue(null),
++        create: vi.fn(),
++        update: vi.fn().mockResolvedValue({ lastValue: 2 }),
++      },
++      $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) =>
++        fn(prisma),
++      ),
++    };
++    const repo = new ReservationsRepository(prisma as never);
++    await repo.createConfirmed({
++      data: {
++        reservationNumber: 'RSV-1',
++        customerId: 'c1',
++        startDate: new Date(),
++        expectedCheckoutDate: new Date(),
++        expectedReturnDate: new Date(),
++      },
++      items: [{ itemId: 'i1', agreedRentalPrice: 0 }],
++      actor: { userId: 'u' },
++    });
++    await repo.findById('rs1');
++    await repo.findAnyNumber('RSV-1');
++    await repo.list({
++      where: { deletedAt: null },
++      orderBy: { createdAt: 'desc' },
++      offset: 0,
++      limit: 10,
++    });
++    expect(await repo.nextSequence('reservation:RSV')).toBe(1);
++    await repo.transitionStatus({
++      reservationId: 'rs1',
++      from: 'confirmed',
++      to: 'cancelled',
++    });
++    await repo.softDelete('rs1', 'u');
++    await repo.restore('rs1', 'u');
++    prisma.reservation.updateMany.mockResolvedValueOnce({ count: 0 });
++    expect(
++      await repo.transitionStatus({
++        reservationId: 'rs1',
++        from: 'confirmed',
++        to: 'cancelled',
++      }),
++    ).toBeNull();
++  });
++});
+diff --git a/backend-node/test/reservations-service.spec.ts b/backend-node/test/reservations-service.spec.ts
+new file mode 100644
+index 0000000..cf70805
+--- /dev/null
++++ b/backend-node/test/reservations-service.spec.ts
+@@ -0,0 +1,476 @@
++import 'reflect-metadata';
++import { beforeEach, describe, expect, it, vi } from 'vitest';
++import { AvailabilityService } from '../src/reservations/availability/availability.service';
++import { ReservationsService } from '../src/reservations/reservations.service';
++import { BusinessException } from '../src/shared/errors/business.exception';
++import { RESERVATION_STATUS } from '../src/reservations/reservations.constants';
++
++const itemRow = {
++  id: 'i1',
++  internalCode: 'ITM-1',
++  displayName: 'Dress',
++  status: 'active',
++  lifecycleState: 'available',
++  rentalPrice: 1000,
++  deletedAt: null,
++  barcodes: [{ id: 'ib1', value: 'DR-1', isPrimary: true }],
++};
++
++const confirmed = {
++  id: 'rs1',
++  reservationNumber: 'RSV-00000001',
++  customerId: 'c1',
++  startDate: new Date('2026-08-10'),
++  expectedCheckoutDate: new Date('2026-08-12'),
++  expectedReturnDate: new Date('2026-08-15'),
++  status: RESERVATION_STATUS.CONFIRMED,
++  notes: null,
++  deletedAt: null,
++  createdAt: new Date(),
++  updatedAt: new Date(),
++  createdBy: null,
++  updatedBy: null,
++  deletedBy: null,
++  customer: {
++    id: 'c1',
++    customerNumber: 'CUS-1',
++    fullName: 'Ali',
++    status: 'active',
++  },
++  rental: null,
++  items: [
++    {
++      id: 'ri1',
++      reservationId: 'rs1',
++      itemId: 'i1',
++      barcodeValue: 'DR-1',
++      agreedRentalPrice: 1000,
++      notes: null,
++      item: itemRow,
++    },
++  ],
++  statusHistory: [],
++};
++
++describe('AvailabilityService', () => {
++  it('finds reservation and rental conflicts', async () => {
++    const prisma = {
++      reservationItem: {
++        findMany: vi.fn().mockResolvedValue([
++          {
++            itemId: 'i1',
++            reservation: {
++              id: 'rsX',
++              reservationNumber: 'RSV-9',
++              startDate: new Date('2026-08-11'),
++              expectedReturnDate: new Date('2026-08-14'),
++              status: 'confirmed',
++            },
++          },
++        ]),
++      },
++      rentalItem: {
++        findMany: vi.fn().mockResolvedValue([
++          {
++            itemId: 'i1',
++            rental: {
++              id: 'rX',
++              rentalNumber: 'RENT-9',
++              rentalDate: new Date('2026-08-20'),
++              expectedReturnDate: new Date('2026-08-22'),
++              status: 'active',
++            },
++          },
++        ]),
++      },
++    };
++    const svc = new AvailabilityService(prisma as never);
++    const conflicts = await svc.findConflicts({
++      itemId: 'i1',
++      start: new Date('2026-08-10'),
++      end: new Date('2026-08-16'),
++    });
++    expect(conflicts.some((c) => c.kind === 'reservation')).toBe(true);
++    await expect(
++      svc.assertAvailable({
++        itemId: 'i1',
++        start: new Date('2026-08-10'),
++        end: new Date('2026-08-16'),
++      }),
++    ).rejects.toBeInstanceOf(BusinessException);
++
++    prisma.reservationItem.findMany.mockResolvedValue([]);
++    prisma.rentalItem.findMany.mockResolvedValue([]);
++    await svc.assertItemsAvailable(
++      ['i1'],
++      new Date('2026-09-01'),
++      new Date('2026-09-05'),
++    );
++
++    expect(
++      await svc.findConflicts({
++        itemId: 'i1',
++        start: new Date('2026-09-01'),
++        end: new Date('2026-09-01'),
++      }),
++    ).toEqual([]);
++
++    prisma.rentalItem.findMany.mockResolvedValue([
++      {
++        itemId: 'i1',
++        rental: {
++          id: 'rY',
++          rentalNumber: 'RENT-Y',
++          rentalDate: new Date('2026-08-10'),
++          expectedReturnDate: new Date('2026-08-16'),
++          status: 'active',
++        },
++      },
++    ]);
++    const rentalConflicts = await svc.findConflicts({
++      itemId: 'i1',
++      start: new Date('2026-08-11'),
++      end: new Date('2026-08-15'),
++      excludeReservationId: 'x',
++      excludeRentalId: 'skip',
++    });
++    expect(rentalConflicts.some((c) => c.kind === 'rental')).toBe(true);
++  });
++});
++
++describe('ReservationsService', () => {
++  const repo = {
++    createConfirmed: vi.fn(),
++    findById: vi.fn(),
++    findAnyNumber: vi.fn(),
++    nextSequence: vi.fn(),
++    list: vi.fn(),
++    transitionStatus: vi.fn(),
++    client: { $transaction: vi.fn() },
++  };
++  const availability = {
++    assertItemsAvailable: vi.fn(),
++    assertAvailable: vi.fn(),
++    findConflicts: vi.fn(),
++  };
++  const customers = { getById: vi.fn() };
++  const items = { getById: vi.fn() };
++  const barcodes = { findByValue: vi.fn() };
++  const rentals = { materializeActiveFromReservation: vi.fn() };
++  const settings = {
++    getString: vi.fn(async (_: string, f: string) => f),
++    getInt: vi.fn(async (_: string, f: number) => f),
++  };
++  const audit = { recordCreate: vi.fn(), record: vi.fn() };
++  let service: ReservationsService;
++
++  beforeEach(() => {
++    vi.clearAllMocks();
++    service = new ReservationsService(
++      repo as never,
++      availability as never,
++      customers as never,
++      items as never,
++      barcodes as never,
++      rentals as never,
++      settings as never,
++      audit as never,
++    );
++    customers.getById.mockResolvedValue({ id: 'c1', status: 'active' });
++    items.getById.mockResolvedValue(itemRow);
++    barcodes.findByValue.mockResolvedValue({
++      id: 'b1',
++      status: 'activated',
++      entityId: 'i1',
++    });
++    repo.nextSequence.mockResolvedValue(1);
++    repo.findAnyNumber.mockResolvedValue(null);
++    repo.createConfirmed.mockResolvedValue(confirmed);
++    repo.findById.mockResolvedValue(confirmed);
++    repo.list.mockResolvedValue({ rows: [confirmed], total: 1 });
++    availability.assertItemsAvailable.mockResolvedValue(undefined);
++    repo.client.$transaction.mockImplementation(
++      async (fn: (tx: unknown) => Promise<unknown>) => fn({}),
++    );
++    repo.transitionStatus.mockImplementation(async (input: { to: string }) => ({
++      ...confirmed,
++      status: input.to,
++    }));
++    rentals.materializeActiveFromReservation.mockResolvedValue({
++      id: 'r1',
++      rentalNumber: 'RENT-1',
++    });
++  });
++
++  it('creates confirmed reservation with audits', async () => {
++    const row = await service.create(
++      {
++        customerId: 'c1',
++        startDate: '2026-08-10T00:00:00.000Z',
++        expectedCheckoutDate: '2026-08-12T00:00:00.000Z',
++        expectedReturnDate: '2026-08-15T00:00:00.000Z',
++        items: [{ itemId: 'i1', barcode: 'DR-1' }],
++      },
++      { userId: 'u1' } as never,
++    );
++    expect(row.status).toBe('confirmed');
++    expect(availability.assertItemsAvailable).toHaveBeenCalled();
++    expect(audit.recordCreate).toHaveBeenCalled();
++    expect(audit.record).toHaveBeenCalledWith(
++      expect.objectContaining({ action: 'confirmed' }),
++    );
++  });
++
++  it('rejects conflicts inactive customer and bad dates', async () => {
++    availability.assertItemsAvailable.mockRejectedValueOnce(
++      BusinessException.conflict('conflict'),
++    );
++    await expect(
++      service.create({
++        customerId: 'c1',
++        startDate: '2026-08-10T00:00:00.000Z',
++        expectedCheckoutDate: '2026-08-12T00:00:00.000Z',
++        expectedReturnDate: '2026-08-15T00:00:00.000Z',
++        items: [{ itemId: 'i1' }],
++      }),
++    ).rejects.toBeInstanceOf(BusinessException);
++
++    customers.getById.mockResolvedValue({ id: 'c1', status: 'inactive' });
++    await expect(
++      service.create({
++        customerId: 'c1',
++        startDate: '2026-08-10T00:00:00.000Z',
++        expectedCheckoutDate: '2026-08-12T00:00:00.000Z',
++        expectedReturnDate: '2026-08-15T00:00:00.000Z',
++        items: [{ itemId: 'i1' }],
++      }),
++    ).rejects.toBeInstanceOf(BusinessException);
++
++    customers.getById.mockResolvedValue({ id: 'c1', status: 'active' });
++    await expect(
++      service.create({
++        customerId: 'c1',
++        startDate: '2026-08-15T00:00:00.000Z',
++        expectedCheckoutDate: '2026-08-12T00:00:00.000Z',
++        expectedReturnDate: '2026-08-16T00:00:00.000Z',
++        items: [{ itemId: 'i1' }],
++      }),
++    ).rejects.toBeInstanceOf(BusinessException);
++  });
++
++  it('checkouts materializes rental in one transaction', async () => {
++    repo.findById.mockImplementation(async () => ({
++      ...confirmed,
++      status: RESERVATION_STATUS.CHECKED_OUT,
++      rental: { id: 'r1', rentalNumber: 'RENT-1', status: 'active' },
++    }));
++    repo.findById.mockResolvedValueOnce(confirmed);
++    const result = await service.checkout('rs1', 'pickup', {
++      userId: 'u',
++    } as never);
++    expect(rentals.materializeActiveFromReservation).toHaveBeenCalled();
++    expect(result.status).toBe(RESERVATION_STATUS.CHECKED_OUT);
++    expect(audit.record).toHaveBeenCalledWith(
++      expect.objectContaining({ action: 'checkout' }),
++    );
++  });
++
++  it('cancels and expires confirmed reservations', async () => {
++    repo.findById.mockResolvedValue(confirmed);
++    repo.transitionStatus.mockResolvedValue({
++      ...confirmed,
++      status: RESERVATION_STATUS.CANCELLED,
++    });
++    await service.cancel('rs1');
++    expect(audit.record).toHaveBeenCalledWith(
++      expect.objectContaining({ action: 'cancel' }),
++    );
++
++    repo.findById.mockResolvedValue(confirmed);
++    repo.transitionStatus.mockResolvedValue({
++      ...confirmed,
++      status: RESERVATION_STATUS.EXPIRED,
++    });
++    await service.expireReservation('rs1', 'no-show');
++    expect(audit.record).toHaveBeenCalledWith(
++      expect.objectContaining({ action: 'expired' }),
++    );
++  });
++
++  it('lists gets and rejects invalid transitions', async () => {
++    await service.list({ status: 'confirmed', q: 'Ali' });
++    expect((await service.getById('rs1')).id).toBe('rs1');
++    repo.findById.mockResolvedValue({
++      ...confirmed,
++      status: RESERVATION_STATUS.CHECKED_OUT,
++    });
++    await expect(service.checkout('rs1')).rejects.toBeInstanceOf(
++      BusinessException,
++    );
++    await expect(service.cancel('rs1')).rejects.toBeInstanceOf(
++      BusinessException,
++    );
++    await expect(service.expireReservation('rs1')).rejects.toBeInstanceOf(
++      BusinessException,
++    );
++    await expect(service.list({ status: 'nope' })).rejects.toBeInstanceOf(
++      BusinessException,
++    );
++  });
++
++  it('covers item barcode validation allocate and concurrent failures', async () => {
++    await expect(
++      service.create({
++        customerId: 'c1',
++        startDate: 'bad',
++        expectedCheckoutDate: '2026-08-12T00:00:00.000Z',
++        expectedReturnDate: '2026-08-15T00:00:00.000Z',
++        items: [{ itemId: 'i1' }],
++      }),
++    ).rejects.toBeInstanceOf(BusinessException);
++
++    await expect(
++      service.create({
++        customerId: 'c1',
++        startDate: '2026-08-10T00:00:00.000Z',
++        expectedCheckoutDate: '2026-08-12T00:00:00.000Z',
++        expectedReturnDate: '2026-08-11T00:00:00.000Z',
++        items: [{ itemId: 'i1' }],
++      }),
++    ).rejects.toBeInstanceOf(BusinessException);
++
++    await expect(
++      service.create({
++        customerId: 'c1',
++        startDate: '2026-08-10T00:00:00.000Z',
++        expectedCheckoutDate: '2026-08-12T00:00:00.000Z',
++        expectedReturnDate: '2026-08-15T00:00:00.000Z',
++        items: [{ itemId: 'i1' }, { itemId: 'i1' }],
++      }),
++    ).rejects.toBeInstanceOf(BusinessException);
++
++    items.getById.mockResolvedValueOnce({ ...itemRow, barcodes: [] });
++    await expect(
++      service.create({
++        customerId: 'c1',
++        startDate: '2026-08-10T00:00:00.000Z',
++        expectedCheckoutDate: '2026-08-12T00:00:00.000Z',
++        expectedReturnDate: '2026-08-15T00:00:00.000Z',
++        items: [{ itemId: 'i1' }],
++      }),
++    ).rejects.toBeInstanceOf(BusinessException);
++
++    items.getById.mockResolvedValue(itemRow);
++    barcodes.findByValue.mockResolvedValueOnce({
++      id: 'b1',
++      status: 'reserved',
++      entityId: null,
++    });
++    await expect(
++      service.create({
++        customerId: 'c1',
++        startDate: '2026-08-10T00:00:00.000Z',
++        expectedCheckoutDate: '2026-08-12T00:00:00.000Z',
++        expectedReturnDate: '2026-08-15T00:00:00.000Z',
++        items: [{ itemId: 'i1', barcode: 'DR-1' }],
++      }),
++    ).rejects.toBeInstanceOf(BusinessException);
++
++    barcodes.findByValue.mockResolvedValue({
++      id: 'b1',
++      status: 'activated',
++      entityId: 'other',
++    });
++    await expect(
++      service.create({
++        customerId: 'c1',
++        startDate: '2026-08-10T00:00:00.000Z',
++        expectedCheckoutDate: '2026-08-12T00:00:00.000Z',
++        expectedReturnDate: '2026-08-15T00:00:00.000Z',
++        items: [{ itemId: 'i1', barcode: 'DR-1' }],
++      }),
++    ).rejects.toBeInstanceOf(BusinessException);
++
++    barcodes.findByValue.mockResolvedValue({
++      id: 'b1',
++      status: 'activated',
++      entityId: 'i1',
++    });
++    await expect(
++      service.create({
++        customerId: 'c1',
++        startDate: '2026-08-10T00:00:00.000Z',
++        expectedCheckoutDate: '2026-08-12T00:00:00.000Z',
++        expectedReturnDate: '2026-08-15T00:00:00.000Z',
++        items: [{ itemId: 'i1', barcode: 'WRONG' }],
++      }),
++    ).rejects.toBeInstanceOf(BusinessException);
++
++    items.getById.mockResolvedValue({
++      ...itemRow,
++      lifecycleState: 'rented',
++    });
++    await expect(
++      service.create({
++        customerId: 'c1',
++        startDate: '2026-08-10T00:00:00.000Z',
++        expectedCheckoutDate: '2026-08-12T00:00:00.000Z',
++        expectedReturnDate: '2026-08-15T00:00:00.000Z',
++        items: [{ itemId: 'i1' }],
++      }),
++    ).rejects.toBeInstanceOf(BusinessException);
++
++    items.getById.mockResolvedValue(itemRow);
++    settings.getString.mockImplementation(async (key: string, f: string) => {
++      if (key === 'reservations.number.prefix') return 'bad prefix';
++      return f;
++    });
++    await expect(
++      service.create({
++        customerId: 'c1',
++        startDate: '2026-08-10T00:00:00.000Z',
++        expectedCheckoutDate: '2026-08-12T00:00:00.000Z',
++        expectedReturnDate: '2026-08-15T00:00:00.000Z',
++        items: [{ itemId: 'i1' }],
++      }),
++    ).rejects.toBeInstanceOf(BusinessException);
++
++    settings.getString.mockImplementation(async (_k: string, f: string) => f);
++    repo.findAnyNumber.mockResolvedValue({ id: 'taken' });
++    await expect(
++      service.create({
++        customerId: 'c1',
++        startDate: '2026-08-10T00:00:00.000Z',
++        expectedCheckoutDate: '2026-08-12T00:00:00.000Z',
++        expectedReturnDate: '2026-08-15T00:00:00.000Z',
++        items: [{ itemId: 'i1' }],
++      }),
++    ).rejects.toBeInstanceOf(BusinessException);
++
++    repo.findAnyNumber.mockResolvedValue(null);
++    repo.findById.mockResolvedValue(confirmed);
++    repo.transitionStatus.mockResolvedValueOnce(null);
++    await expect(service.checkout('rs1')).rejects.toBeInstanceOf(
++      BusinessException,
++    );
++    repo.transitionStatus.mockResolvedValueOnce(null);
++    await expect(service.cancel('rs1')).rejects.toBeInstanceOf(
++      BusinessException,
++    );
++    repo.transitionStatus.mockResolvedValueOnce(null);
++    await expect(service.expireReservation('rs1')).rejects.toBeInstanceOf(
++      BusinessException,
++    );
++
++    repo.findById.mockResolvedValue(null);
++    await expect(service.getById('missing')).rejects.toBeInstanceOf(
++      BusinessException,
++    );
++
++    await service.list({
++      reservationNumber: 'RSV',
++      customerId: 'c1',
++      deleted: 'true',
++    });
++  });
++});
+diff --git a/backend-node/vitest.reservations.config.ts b/backend-node/vitest.reservations.config.ts
+new file mode 100644
+index 0000000..5d57a0e
+--- /dev/null
++++ b/backend-node/vitest.reservations.config.ts
+@@ -0,0 +1,33 @@
++import swc from 'unplugin-swc';
++import { defineConfig } from 'vitest/config';
++
++export default defineConfig({
++  plugins: [
++    swc.vite({
++      jsc: {
++        target: 'es2022',
++        parser: { syntax: 'typescript', decorators: true },
++        transform: { legacyDecorator: true, decoratorMetadata: true },
++      },
++      module: { type: 'es6' },
++    }),
++  ],
++  test: {
++    include: ['test/reservations-*.spec.ts', 'test/availability-*.spec.ts'],
++    environment: 'node',
++    setupFiles: ['test/setup.ts'],
++    coverage: {
++      provider: 'v8',
++      reportsDirectory: './coverage-reservations',
++      reporter: ['text', 'text-summary', 'json-summary'],
++      include: ['src/reservations/**/*.ts'],
++      exclude: ['**/*.module.ts', '**/dto/**'],
++      thresholds: {
++        lines: 95,
++        functions: 95,
++        branches: 80,
++        statements: 95,
++      },
++    },
++  },
++});
+diff --git a/docs/backend-v2/Architecture.md b/docs/backend-v2/Architecture.md
+index 2468dda..d9236b2 100644
+--- a/docs/backend-v2/Architecture.md
++++ b/docs/backend-v2/Architecture.md
+@@ -72,6 +72,7 @@ src/
+   customers/      Customer domain
+   inventory/      Catalog engine (Item + taxonomy + lifecycle)
+   rentals/        Rental workflow core (Phase 5.1)
++  reservations/   Reservation engine + AvailabilityService (Phase 5.2)
+ ```
+ 
+ ## Auth / RBAC
+@@ -86,7 +87,7 @@ src/
+ ## What is not in V2 (yet)
+ 
+ - Users/roles admin HTTP CRUD (beyond unlock)
+-- Reservations / availability calendar / late fees / penalties / settlements
++- Availability calendar UI / late fees / penalties / settlements
+ - Laundry / inspection / sales workflows
+ - Barcode hardware adapters / label printing
+ - Electron process management / installer Nest packaging
+@@ -131,4 +132,8 @@ Non-feature gate then remediation: `PHASE_4_ENGINEERING_CERTIFICATION.md` → `P
+ 
+ ## Rental workflow core (Phase 5.1)
+ 
+-`RentalsModule` owns rental documents (`Rental` / `RentalItem` / `RentalStatusHistory`). Inventory lifecycle mutations go **only** through `LifecycleService` inside shared transactions. No reservations, payments, or settlements. Docs: `RentalDesign.md`.
++`RentalsModule` owns rental documents (`Rental` / `RentalItem` / `RentalStatusHistory`). Inventory lifecycle mutations go **only** through `LifecycleService` inside shared transactions. No payments or settlements. Docs: `RentalDesign.md`.
++
++## Reservation engine (Phase 5.2)
++
++`ReservationsModule` + reusable `AvailabilityService`. Reservations are independent until checkout materializes a `Rental`. Docs: `ReservationDesign.md`.
+diff --git a/docs/backend-v2/DecisionLog.md b/docs/backend-v2/DecisionLog.md
+index 7c40eb2..c1c3f22 100644
+--- a/docs/backend-v2/DecisionLog.md
++++ b/docs/backend-v2/DecisionLog.md
+@@ -156,3 +156,11 @@
+ - **Context:** Inventory integrity gate cleared; need a rental workflow foundation without payments/settlements.
+ - **Decision:** Introduce `Rental` / `RentalItem` / `RentalStatusHistory` with closed status graph. Checkout/return/cancel mutate inventory **only** through `LifecycleService.transition` inside shared Prisma transactions. No reservations, fees, or settlements in this phase.
+ - **Consequences:** Walk-in path uses inventory `available→reserved→rented`. Return stops at `return_pending`. Coverage gate `pnpm test:cov:rentals` ≥95%. Docs: `RentalDesign.md`.
++
++## ADR-V2-021 - Reservation engine (Phase 5.2)
++
++- **Date:** 2026-08-02
++- **Status:** Accepted
++- **Context:** Need date-window holds before physical handover without folding reservations into rentals.
++- **Decision:** Independent `Reservation` documents with closed status graph; `AvailabilityService` detects reservation/rental overlaps; checkout materializes a `Rental` and inventory transitions only through `LifecycleService` in one TX. Expire is service/HTTP foundation without a scheduler.
++- **Consequences:** Calendar module can reuse AvailabilityService. No payments/fees/settlement in this phase. Coverage gate `pnpm test:cov:reservations` ≥95%. Docs: `ReservationDesign.md`.
+diff --git a/docs/backend-v2/DevelopmentRoadmap.md b/docs/backend-v2/DevelopmentRoadmap.md
+index a1fb901..848e180 100644
+--- a/docs/backend-v2/DevelopmentRoadmap.md
++++ b/docs/backend-v2/DevelopmentRoadmap.md
+@@ -7,7 +7,7 @@
+ | 2 | Identity & Security | Auth + audit remediation |
+ | 3 | Core Business | **3.1–3.5 DONE** |
+ | 4 | Inventory Engine | **4.1–4.4 DONE** |
+-| 5 | Rental Engine | **5.1 DONE** (workflow core) — reservations/fees later |
++| 5 | Rental Engine | **5.1–5.2 DONE** (workflow + reservations) — fees/settlement later |
+ | 6 | Financial Engine | Sales, settlements, payments |
+ | 7 | Reports & Analytics | Operational + financial |
+ | 8 | Desktop Integration | Electron + Nest sidecar |
+@@ -16,10 +16,10 @@
+ 
+ ## Current milestone
+ 
+-**Phase 5.1 Rental Workflow Core complete.**  
+-Doc: `RentalDesign.md`.
++**Phase 5.2 Reservation Engine complete.**  
++Docs: `ReservationDesign.md`, `RentalDesign.md`.
+ 
+-**STOP:** Do **not** implement reservations, late fees, penalties, financial settlement, or reports until approved.
++**STOP:** Do **not** implement payments, late fees, penalties, financial settlement, or reports until approved.
+ 
+ ## Completion rule
+ 
+diff --git a/docs/backend-v2/PROGRESS.md b/docs/backend-v2/PROGRESS.md
+index 35312bd..e6fddc4 100644
+--- a/docs/backend-v2/PROGRESS.md
++++ b/docs/backend-v2/PROGRESS.md
+@@ -1,7 +1,7 @@
+ # Backend V2 Progress Canvas
+ 
+ **Live canvas:** `juman-backend-v2-roadmap.canvas.tsx`  
+-**Branch:** `backend-v2` — **Updated:** 2026-08-02 — **Overall ~66%**
++**Branch:** `backend-v2` — **Updated:** 2026-08-02 — **Overall ~70%**
+ 
+ ```
+ Phase 0  Architecture                    DONE
+@@ -11,8 +11,9 @@ Phase 3  Core Business                   DONE
+ Phase 4  Inventory Engine                DONE (4.1–4.4)
+ Phase 5  Rental Engine
+          5.1 Workflow core               DONE
+-         5.2+ Reservations / fees        WAITING APPROVAL
++         5.2 Reservation engine          DONE
++         5.3+ Fees / settlement          WAITING APPROVAL
+ Phase 6+ Sales / Reports / Desktop       WAITING
+ ```
+ 
+-**YOU ARE HERE:** After Phase 5.1 rental workflow core. Do **not** implement reservations, late fees, penalties, settlement, or reports until approved.
++**YOU ARE HERE:** After Phase 5.2 reservation engine. Do **not** implement payments, late fees, penalties, settlement, or reports until approved.
+diff --git a/docs/backend-v2/ReservationDesign.md b/docs/backend-v2/ReservationDesign.md
+new file mode 100644
+index 0000000..d584a43
+--- /dev/null
++++ b/docs/backend-v2/ReservationDesign.md
+@@ -0,0 +1,90 @@
++# Backend V2 Reservation Design (Phase 5.2)
++
++**Branch:** `backend-v2`  
++**Module:** `backend-node/src/reservations`  
++**Role:** Reservation engine — independent from rentals until explicit checkout.
++
++## Scope
++
++**In scope:** Create/confirm, conflict detection, checkout → rental, cancel, expire foundation, AvailabilityService, RBAC, audit.
++
++**Out of scope:** Payments, late fees, penalties, settlement, reports, inspection, cleaning, calendar UI, scheduler.
++
++## Architecture
++
++- A reservation is **not** a rental.
++- Checkout is the only path that materializes a `Rental` and mutates inventory.
++- Inventory ownership remains with `LifecycleService` (via `RentalsService.materializeActiveFromReservation` inside a shared TX).
++
++## Models
++
++### Reservation
++- `reservationNumber` (RSV-########)
++- `customerId`
++- `startDate`, `expectedCheckoutDate`, `expectedReturnDate`
++- `status`, `notes`, soft delete, audit actors, UUID
++
++### ReservationItem
++- `itemId`, `barcodeValue` snapshot, `agreedRentalPrice`
++
++### ReservationStatusHistory
++- append-only status transitions
++
++`Rental.reservationId` optional unique FK when created from checkout.
++
++## Statuses
++
++`draft` · `confirmed` · `checked_out` · `cancelled` · `expired` · `completed`
++
++Create flow: draft → confirmed (same request; audits Created + Confirmed).
++
++### Transitions
++
++```
++draft → confirmed | cancelled | expired
++confirmed → checked_out | cancelled | expired
++checked_out → completed
++cancelled / expired / completed → ∅
++```
++
++## AvailabilityService
++
++Reusable conflict detector (calendar-ready):
++
++- Overlapping **reservations** in `draft|confirmed`
++- Overlapping **rentals** in `draft|checked_out|active|return_pending|overdue`
++- Ignores cancelled / expired / completed reservations
++- Ignores cancelled / completed rentals
++- Half-open interval overlap `[start, end)`
++
++Window for reservations: `startDate` → `expectedReturnDate`.
++
++## Checkout
++
++Single transaction:
++
++1. Validate confirmed + rentable items + active customer + availability (exclude self)
++2. `RentalsService.materializeActiveFromReservation` → rental active + inventory `available→reserved→rented`
++3. Reservation → `checked_out`
++4. Audit checkout
++
++## Expiration
++
++`expireReservation(id)` — foundation only, no scheduler. HTTP `POST /reservations/:id/expire`.
++
++## HTTP
++
++| Method | Path | Permission |
++|--------|------|------------|
++| POST | `/reservations` | reservations.create |
++| GET | `/reservations` | reservations.view |
++| GET | `/reservations/:id` | reservations.view |
++| POST | `/reservations/:id/checkout` | reservations.checkout |
++| POST | `/reservations/:id/cancel` | reservations.cancel |
++| POST | `/reservations/:id/expire` | reservations.expire |
++
++## Coverage
++
++```bash
++pnpm test:cov:reservations
++```
+-- 
+2.55.0.windows.2
+

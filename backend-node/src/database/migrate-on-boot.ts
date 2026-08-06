@@ -1,14 +1,24 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 
-function resolveBackendRoot(): string {
-  const here = __dirname;
-  const normalized = here.replace(/\\/g, '/');
-  if (normalized.endsWith('dist/database') || normalized.endsWith('src/database')) {
-    return join(here, '..', '..');
+/**
+ * Locate backend-node root (directory that owns prisma/schema.prisma).
+ * Nest may emit to dist/ or dist/src/; vitest may run from src/.
+ */
+export function resolveBackendRoot(fromDir: string = __dirname): string {
+  let dir = resolve(fromDir);
+  for (let i = 0; i < 8; i += 1) {
+    if (existsSync(join(dir, 'prisma', 'schema.prisma'))) {
+      return dir;
+    }
+    const parent = dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
   }
-  return join(here, '..', '..');
+  throw new Error(
+    `Migration aborted: could not locate prisma/schema.prisma walking up from ${fromDir}`,
+  );
 }
 
 function resolvePrismaCli(backendRoot: string): string {
@@ -82,6 +92,20 @@ export function runPendingMigrations(databaseUrl: string): { ok: true; backendRo
     runPrisma(prismaCli, ['migrate', 'deploy', ...schemaArgs], backendRoot, env);
   } catch (error: unknown) {
     const detail = error instanceof Error ? error.message : String(error);
+    if (detail.includes('P3005')) {
+      throw new Error(
+        [
+          'Prisma migrate deploy failed (P3005): database is not empty and has no migration history.',
+          'This usually means juman.db was created by db push / a partial boot.',
+          'Local recovery (dev only):',
+          '  1) Stop the backend',
+          '  2) Move/delete data/juman.db (and .db-wal / .db-shm if present)',
+          '  3) pnpm start:dev',
+          'Do NOT baseline a non-empty production DB without a deliberate migrate resolve plan.',
+          detail,
+        ].join('\n'),
+      );
+    }
     throw new Error(`Prisma migrate deploy failed. Backend will not start.\n${detail}`);
   }
 

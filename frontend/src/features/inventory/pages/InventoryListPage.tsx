@@ -1,288 +1,432 @@
-import * as React from 'react'
-import { Navigate, useNavigate } from 'react-router'
-import { useQuery } from '@tanstack/react-query'
-import {
-  BarcodeScannerField,
-  Button,
-  ConfirmationDialog,
-  createDataColumn,
-  DataTable,
-  EmptyState,
-  ErrorState,
-  FilterBar,
-  MoneyDisplay,
-  Page,
-  PageActions,
-  PageHeader,
-  PermissionGuard,
-  SearchBar,
-  StatusBadge,
-  mapStatus,
-  type DataColumnFilter,
-  type DataPaginationState,
-  type DataRowAction,
-  type DataSortingState,
-  type FilterFieldDef
-} from '@/components/ui'
-import { usePermission } from '@/hooks/usePermission'
-import { apiClient } from '@/services/apiClient'
-import type { DressDto } from '@/services/domainTypes'
-import { useDeleteDress, useDressesList } from '../hooks'
-import { DRESS_STATUS_MAP } from '../statusMap'
-import { inventoryApi } from '../api'
-import { toast } from '@/components/ui/toast'
-import { toastAppError } from '@/lib/errors/appError'
+import { useState } from 'react'
+import { useNavigate } from 'react-router'
+import { usePermission } from '@/features/permissions/PermissionProvider'
+import { PERMISSION } from '@/shared/constants/permissions'
+import { 
+  useItemsList, 
+  useDeleteItem, 
+  useRestoreItem, 
+  useCategories, 
+  useBrands 
+} from '../hooks/useInventory'
+import { InventoryDialog } from '../dialogs/InventoryDialog'
+import type { ItemDto } from '../api/api'
+import { 
+  Plus, 
+  Search, 
+  Trash2, 
+  RotateCcw, 
+  Edit3, 
+  Eye, 
+  RefreshCw, 
+  ChevronRight, 
+  ChevronLeft,
+  AlertTriangle,
+  LayoutGrid,
+  List,
+  Shirt,
+  Info
+} from 'lucide-react'
 
-export default function InventoryListPage(): React.ReactElement {
-  const canView = usePermission('inventory.view')
+// Fils to AED helper
+function formatFils(fils: number | null | undefined): string {
+  if (!fils) return '—'
+  return `${(fils / 1000).toLocaleString('ar-AE', { maximumFractionDigits: 2 })} د.إ`
+}
+
+export function InventoryListPage() {
+  const { can } = usePermission()
   const navigate = useNavigate()
-  const [q, setQ] = React.useState('')
-  const [barcodeExact, setBarcodeExact] = React.useState('')
-  const [filters, setFilters] = React.useState<DataColumnFilter[]>([])
-  const [sorting, setSorting] = React.useState<DataSortingState>([
-    { id: 'created_at', desc: true }
-  ])
-  const [pagination, setPagination] = React.useState<DataPaginationState>({
-    pageIndex: 0,
-    pageSize: 20
+
+  // Layout View Switcher
+  const [viewMode, setViewMode] = useState<'table' | 'gallery'>('table')
+
+  // Filter & Search states
+  const [q, setQ] = useState('')
+  const [categoryId, setCategoryId] = useState('')
+  const [brandId, setBrandId] = useState('')
+  const [status, setStatus] = useState('')
+  const [showDeleted, setShowDeleted] = useState(false)
+  const [sortBy, setSortBy] = useState('createdAt')
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
+  const [limit] = useState(10)
+  const [offset, setOffset] = useState(0)
+
+  // Dialog State
+  const [dialogOpen, setDialogOpen] = useState(false)
+  const [selectedItem, setSelectedItem] = useState<ItemDto | null>(null)
+
+  // Taxonomy queries
+  const { data: categories = [] } = useCategories()
+  const { data: brands = [] } = useBrands()
+
+  // List Query Hook
+  const { data, isLoading, isError, refetch } = useItemsList({
+    q: q.trim() || undefined,
+    categoryId: categoryId || undefined,
+    brandId: brandId || undefined,
+    status: status || undefined,
+    deleted: showDeleted ? 'true' : 'false',
+    sortBy,
+    sortDir,
+    limit,
+    offset
   })
-  const [rowSelection, setRowSelection] = React.useState<Record<string, boolean>>({})
-  const [deleteTarget, setDeleteTarget] = React.useState<DressDto | null>(null)
 
-  const categories = useQuery({
-    queryKey: ['categories', 'list', { limit: 200 }],
-    queryFn: () => apiClient.categories.list({ limit: 200 })
-  })
-  const categoryName = React.useMemo(() => {
-    const map = new Map<string, string>()
-    for (const c of categories.data?.data ?? []) map.set(c.id, c.name_ar)
-    return map
-  }, [categories.data])
+  // Mutation Hooks
+  const deleteItem = useDeleteItem()
+  const restoreItem = useRestoreItem()
 
-  const statusFilter = filters.find((f) => f.id === 'status')?.value
-  const categoryFilter = filters.find((f) => f.id === 'category_id')?.value
-  const activeFilter = filters.find((f) => f.id === 'is_active')?.value
+  const handleEditClick = (item: ItemDto) => {
+    setSelectedItem(item)
+    setDialogOpen(true)
+  }
 
-  const listParams = React.useMemo(
-    () => ({
-      page: pagination.pageIndex + 1,
-      page_size: pagination.pageSize,
-      q: q || undefined,
-      barcode: barcodeExact.trim() || undefined,
-      category_id: typeof categoryFilter === 'string' && categoryFilter !== 'all' ? categoryFilter : undefined,
-      status: typeof statusFilter === 'string' && statusFilter !== 'all' ? statusFilter : undefined,
-      is_active:
-        activeFilter === 'true' ? true : activeFilter === 'false' ? false : undefined,
-      sort_by: sorting[0]?.id ?? 'created_at',
-      sort_dir: (sorting[0]?.desc ? 'desc' : 'asc') as 'asc' | 'desc'
-    }),
-    [pagination, q, barcodeExact, categoryFilter, statusFilter, activeFilter, sorting]
-  )
+  const handleCreateClick = () => {
+    setSelectedItem(null)
+    setDialogOpen(true)
+  }
 
-  const listQuery = useDressesList(listParams)
-  const deleteMutation = useDeleteDress()
+  const handleDeleteClick = async (id: string, name: string) => {
+    const ok = window.confirm(`هل أنت متأكد من حذف القطعة "${name}" مؤقتاً؟`)
+    if (!ok) return
+    try {
+      await deleteItem.mutateAsync(id)
+    } catch (err: any) {
+      alert(err?.message || 'فشل حذف القطعة.')
+    }
+  }
 
-  const filterFields = React.useMemo<FilterFieldDef[]>(
-    () => [
-      {
-        id: 'category_id',
-        label: 'الفئة',
-        type: 'select',
-        options: [
-          { value: 'all', label: 'الكل' },
-          ...(categories.data?.data ?? []).map((c) => ({ value: c.id, label: c.name_ar }))
-        ]
-      },
-      {
-        id: 'status',
-        label: 'الحالة',
-        type: 'select',
-        options: [
-          { value: 'all', label: 'الكل' },
-          ...Object.entries(DRESS_STATUS_MAP).map(([value, v]) => ({
-            value,
-            label: String(v.label)
-          }))
-        ]
-      },
-      {
-        id: 'is_active',
-        label: 'التفعيل',
-        type: 'select',
-        options: [
-          { value: 'all', label: 'الكل' },
-          { value: 'true', label: 'نشط' },
-          { value: 'false', label: 'غير نشط' }
-        ]
-      }
-    ],
-    [categories.data]
-  )
+  const handleRestoreClick = async (id: string, name: string) => {
+    const ok = window.confirm(`هل تريد استعادة القطعة "${name}"؟`)
+    if (!ok) return
+    try {
+      await restoreItem.mutateAsync(id)
+    } catch (err: any) {
+      alert(err?.message || 'فشل استعادة القطعة.')
+    }
+  }
 
-  const columns = React.useMemo(
-    () => [
-      createDataColumn<DressDto>({
-        accessorKey: 'barcode',
-        header: 'الباركود',
-        sortable: true
-      }),
-      createDataColumn<DressDto>({
-        accessorKey: 'name_ar',
-        header: 'الاسم',
-        sortable: true
-      }),
-      createDataColumn<DressDto>({
-        id: 'category',
-        header: 'الفئة',
-        cell: ({ row }) => categoryName.get(row.category_id) ?? '—'
-      }),
-      createDataColumn<DressDto>({
-        id: 'status',
-        header: 'الحالة',
-        cell: ({ row }) => {
-          const mapped = mapStatus(String(row.status), DRESS_STATUS_MAP)
-          return <StatusBadge tone={mapped.tone}>{mapped.label}</StatusBadge>
-        }
-      }),
-      createDataColumn<DressDto>({
-        id: 'rental',
-        header: 'إيجار يومي',
-        cell: ({ row }) => <MoneyDisplay value={row.default_daily_rental_price} />
-      }),
-      createDataColumn<DressDto>({
-        id: 'active',
-        header: 'نشط',
-        cell: ({ row }) => (row.is_active ? 'نعم' : 'لا')
-      })
-    ],
-    [categoryName]
-  )
+  const handlePageChange = (nextOffset: number) => {
+    if (nextOffset >= 0) {
+      setOffset(nextOffset)
+    }
+  }
 
-  const actions = React.useMemo<DataRowAction<DressDto>[]>(
-    () => [
-      {
-        id: 'view',
-        label: 'عرض',
-        icon: 'Eye',
-        permission: 'inventory.view',
-        onClick: (row) => void navigate(`/inventory/${row.id}`)
-      },
-      {
-        id: 'edit',
-        label: 'تعديل',
-        icon: 'Pencil',
-        permission: 'inventory.update',
-        onClick: (row) => void navigate(`/inventory/${row.id}/edit`)
-      },
-      {
-        id: 'delete',
-        label: 'حذف',
-        icon: 'Trash2',
-        tone: 'danger',
-        permission: 'inventory.delete',
-        onClick: (row) => setDeleteTarget(row)
-      }
-    ],
-    [navigate]
-  )
+  const toggleDeletedView = () => {
+    setShowDeleted(!showDeleted)
+    setOffset(0)
+  }
 
-  if (!canView) return <Navigate to="/forbidden" replace />
-
-  const rows = listQuery.data?.data ?? []
-  const total = listQuery.data?.meta.total ?? 0
-  const pageCount = Math.max(1, listQuery.data?.meta.pages ?? 1)
+  const page = Math.floor(offset / limit) + 1
+  const totalPages = data ? Math.ceil(data.total / limit) : 1
 
   return (
-    <Page size="full" as="main">
-      <PageHeader
-        title="المخزون"
-        description="فساتين الإيجار والبيع"
-        actions={
-          <PageActions>
-            <PermissionGuard permission="inventory.create">
-              <Button type="button" onClick={() => void navigate('/inventory/new')}>
-                فستان جديد
-              </Button>
-            </PermissionGuard>
-          </PageActions>
-        }
-        toolbar={
-          <div className="flex w-full flex-col gap-3">
-            <div className="flex flex-wrap gap-3">
-              <SearchBar value={q} onValueChange={setQ} placeholder="بحث بالاسم أو الباركود…" />
-              <BarcodeScannerField
-                value={barcodeExact}
-                onValueChange={setBarcodeExact}
-                onScanRequest={async () => {
-                  const code = barcodeExact.trim()
-                  if (!code) return
-                  try {
-                    const res = await inventoryApi.getByBarcode(code)
-                    void navigate(`/inventory/${res.data.id}`)
-                  } catch (err) {
-                    toastAppError(err, 'لم يُعثر على الباركود')
-                  }
-                }}
-                placeholder="باركود دقيق"
-                className="max-w-xs"
-              />
-            </div>
-            <FilterBar fields={filterFields} value={filters} onChange={setFilters} />
+    <div className="space-y-6 select-none" dir="rtl">
+      {/* Header Toolbar */}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-base-content/5 pb-4">
+        <div>
+          <h1 className="text-2xl font-black text-base-content flex items-center gap-2">
+            <Shirt className="text-primary" />
+            كتالوج المخزون العام
+          </h1>
+          <p className="text-xs text-base-content/50 mt-1">
+            إدارة وتتبع الفساتين والقطع الفنية المتاحة للإيجار أو البيع
+          </p>
+        </div>
+        <div className="flex gap-2 shrink-0">
+          <div className="join border border-base-content/10">
+            <button
+              onClick={() => setViewMode('table')}
+              className={`btn btn-xs join-item ${viewMode === 'table' ? 'btn-active btn-primary' : 'btn-ghost'}`}
+            >
+              <List size={14} />
+            </button>
+            <button
+              onClick={() => setViewMode('gallery')}
+              className={`btn btn-xs join-item ${viewMode === 'gallery' ? 'btn-active btn-primary' : 'btn-ghost'}`}
+            >
+              <LayoutGrid size={14} />
+            </button>
           </div>
-        }
-      />
 
-      {listQuery.isError ? (
-        <ErrorState
-          title="تعذر تحميل المخزون"
-          message="تحقق من الاتصال ثم أعد المحاولة"
-          onRetry={() => void listQuery.refetch()}
-        />
-      ) : (
-        <>
-          <DataTable
-            columns={columns}
-            data={rows}
-            getRowId={(r) => r.id}
-            manual
-            enableRowSelection
-            rowSelection={rowSelection}
-            onRowSelectionChange={setRowSelection}
-            loading={listQuery.isLoading || listQuery.isFetching}
-            sorting={sorting}
-            onSortingChange={(next) => {
-              setSorting(next)
-              setPagination((p) => ({ ...p, pageIndex: 0 }))
+          <button
+            onClick={toggleDeletedView}
+            className={`btn btn-sm ${showDeleted ? 'btn-error' : 'btn-outline border-base-content/10'}`}
+          >
+            {showDeleted ? 'عرض النشط' : 'سلة المحذوفات'}
+          </button>
+          {can(PERMISSION.INVENTORY_CREATE) && (
+            <button onClick={handleCreateClick} className="btn btn-primary btn-sm gap-2">
+              <Plus size={14} />
+              إضافة قطعة جديدة
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Filter and Search Bar */}
+      <div className="grid gap-4 grid-cols-1 md:grid-cols-5 bg-base-300/40 p-4 rounded-xl border border-base-content/5 items-end">
+        <div className="form-control w-full col-span-2">
+          <span className="label-text mb-1.5 text-xs text-base-content/50">بحث سريع بالاسم</span>
+          <div className="relative">
+            <input
+              type="text"
+              placeholder="ابحث باسم القطعة..."
+              className="input input-bordered w-full bg-base-200 pl-10 text-xs h-10"
+              value={q}
+              onChange={(e) => {
+                setQ(e.target.value)
+                setOffset(0)
+              }}
+            />
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-base-content/40">
+              <Search size={16} />
+            </span>
+          </div>
+        </div>
+
+        <div className="form-control w-full">
+          <span className="label-text mb-1.5 text-xs text-base-content/50 font-semibold">التصنيف</span>
+          <select
+            className="select select-bordered w-full bg-base-200 text-xs h-10 min-h-0"
+            value={categoryId}
+            onChange={(e) => {
+              setCategoryId(e.target.value)
+              setOffset(0)
             }}
-            pagination={pagination}
-            onPaginationChange={setPagination}
-            pageCount={pageCount}
-            totalItems={total}
-            actions={actions}
-            empty={<EmptyState title="لا توجد فساتين" description="أضف فستاناً للبدء" />}
-          />
-        </>
+          >
+            <option value="">كل التصنيفات</option>
+            {categories.map((cat) => (
+              <option key={cat.id} value={cat.id}>{cat.name}</option>
+            ))}
+          </select>
+        </div>
+
+        <div className="form-control w-full">
+          <span className="label-text mb-1.5 text-xs text-base-content/50 font-semibold">البراند</span>
+          <select
+            className="select select-bordered w-full bg-base-200 text-xs h-10 min-h-0"
+            value={brandId}
+            onChange={(e) => {
+              setBrandId(e.target.value)
+              setOffset(0)
+            }}
+          >
+            <option value="">كل الماركات</option>
+            {brands.map((br) => (
+              <option key={br.id} value={br.id}>{br.name}</option>
+            ))}
+          </select>
+        </div>
+
+        <button
+          onClick={() => void refetch()}
+          className="btn btn-outline border-base-content/10 hover:border-primary/20 btn-md text-xs w-full flex items-center justify-center gap-2 h-10 min-h-0"
+        >
+          <RefreshCw size={14} />
+          تحديث التصفية
+        </button>
+      </div>
+
+      {/* Main Grid View Switcher */}
+      {isLoading ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+          {[...Array(4)].map((_, i) => (
+            <div key={i} className="h-48 bg-base-300/50 rounded-xl animate-pulse" />
+          ))}
+        </div>
+      ) : isError ? (
+        <div className="alert alert-error text-sm flex gap-2">
+          <AlertTriangle size={18} />
+          <span>حدث خطأ أثناء تحميل قطع المخزون.</span>
+        </div>
+      ) : (data?.data || []).length === 0 ? (
+        <div className="text-center py-16 bg-base-300/25 border border-dashed border-base-content/10 rounded-2xl flex flex-col items-center justify-center">
+          <Shirt size={48} className="text-base-content/20 mb-3" />
+          <p className="font-bold text-base-content/50">لا توجد قطع مخزون مطابقة للبحث</p>
+          <p className="text-xs text-base-content/40 mt-1">تأكد من كتابة الاسم أو تعديل فلاتر الكتالوج</p>
+        </div>
+      ) : viewMode === 'gallery' ? (
+        /* Photo Gallery Grid View */
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+          {(data?.data || []).map((item) => (
+            <div key={item.id} className="card bg-base-300/40 border border-base-content/10 shadow-md hover:shadow-xl transition-shadow flex flex-col justify-between">
+              <figure className="h-44 bg-base-200 relative flex items-center justify-center overflow-hidden">
+                <Shirt size={48} className="text-base-content/20" />
+                <span className="absolute bottom-2 right-2 badge badge-neutral badge-xs text-[9px] font-mono">{item.internalCode}</span>
+              </figure>
+              <div className="p-4 space-y-3 flex-1 flex flex-col justify-between">
+                <div>
+                  <h3 className="font-black text-sm text-base-content line-clamp-1">{item.displayName}</h3>
+                  <div className="flex gap-1.5 mt-1.5 wrap">
+                    <span className="badge badge-outline badge-xs text-[9px]">{item.category?.name || 'تصنيف'}</span>
+                    <span className="badge badge-outline badge-xs text-[9px]">{item.brand?.name || 'ماركة'}</span>
+                  </div>
+                </div>
+                <div className="flex justify-between items-center border-t border-base-content/5 pt-3">
+                  <div>
+                    <p className="text-[10px] text-base-content/50">سعر الإيجار</p>
+                    <p className="text-xs font-bold text-primary">{formatFils(item.rentalPrice)}</p>
+                  </div>
+                  <div className="flex gap-1.5">
+                    <button
+                      onClick={() => navigate(`/inventory/${item.id}`)}
+                      className="btn btn-ghost btn-square btn-xs text-primary"
+                      title="عرض"
+                    >
+                      <Eye size={12} />
+                    </button>
+                    {!showDeleted ? (
+                      <>
+                        {can(PERMISSION.INVENTORY_UPDATE) && (
+                          <button
+                            onClick={() => handleEditClick(item)}
+                            className="btn btn-ghost btn-square btn-xs text-info"
+                            title="تعديل"
+                          >
+                            <Edit3 size={12} />
+                          </button>
+                        )}
+                        {can(PERMISSION.INVENTORY_DELETE) && (
+                          <button
+                            onClick={() => void handleDeleteClick(item.id, item.displayName)}
+                            className="btn btn-ghost btn-square btn-xs text-error"
+                            title="حذف"
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        )}
+                      </>
+                    ) : (
+                      can(PERMISSION.INVENTORY_RESTORE) && (
+                        <button
+                          onClick={() => void handleRestoreClick(item.id, item.displayName)}
+                          className="btn btn-ghost btn-square btn-xs text-success"
+                          title="استعادة"
+                        >
+                          <RotateCcw size={12} />
+                        </button>
+                      )
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        /* Detailed Table View */
+        <div className="overflow-x-auto border border-base-content/10 bg-base-300/40 rounded-xl shadow-md">
+          <table className="table table-sm w-full">
+            <thead>
+              <tr className="border-b border-base-content/10 text-xs text-base-content/60">
+                <th>الرمز التعريفي</th>
+                <th>اسم القطعة</th>
+                <th>التصنيف</th>
+                <th>الماركة</th>
+                <th>سعر الإيجار</th>
+                <th>الحالة</th>
+                <th>البيئة الحياتية</th>
+                <th className="text-left">الإجراءات</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(data?.data || []).map((item) => (
+                <tr key={item.id} className="border-b border-base-content/5 hover:bg-base-200/40 transition-colors">
+                  <td className="font-mono font-bold text-primary">{item.internalCode}</td>
+                  <td className="font-bold">{item.displayName}</td>
+                  <td>{item.category?.name || '—'}</td>
+                  <td>{item.brand?.name || '—'}</td>
+                  <td className="font-bold text-primary">{formatFils(item.rentalPrice)}</td>
+                  <td>
+                    {item.status === 'active' ? (
+                      <span className="badge badge-success badge-xs font-bold text-[9px] rounded-sm">نشط</span>
+                    ) : (
+                      <span className="badge badge-ghost badge-xs font-bold text-[9px] rounded-sm">غير نشط</span>
+                    )}
+                  </td>
+                  <td>
+                    <span className="badge badge-neutral badge-xs font-mono text-[9px]">{item.lifecycleState}</span>
+                  </td>
+                  <td className="text-left flex justify-end gap-1">
+                    <button
+                      onClick={() => navigate(`/inventory/${item.id}`)}
+                      className="btn btn-ghost btn-square btn-xs text-primary"
+                      title="عرض التفاصيل"
+                    >
+                      <Eye size={14} />
+                    </button>
+                    {!showDeleted ? (
+                      <>
+                        {can(PERMISSION.INVENTORY_UPDATE) && (
+                          <button
+                            onClick={() => handleEditClick(item)}
+                            className="btn btn-ghost btn-square btn-xs text-info"
+                            title="تعديل البيانات"
+                          >
+                            <Edit3 size={14} />
+                          </button>
+                        )}
+                        {can(PERMISSION.INVENTORY_DELETE) && (
+                          <button
+                            onClick={() => void handleDeleteClick(item.id, item.displayName)}
+                            className="btn btn-ghost btn-square btn-xs text-error"
+                            title="حذف مؤقت"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        )}
+                      </>
+                    ) : (
+                      can(PERMISSION.INVENTORY_RESTORE) && (
+                        <button
+                          onClick={() => void handleRestoreClick(item.id, item.displayName)}
+                          className="btn btn-ghost btn-square btn-xs text-success"
+                          title="استعادة"
+                        >
+                          <RotateCcw size={14} />
+                        </button>
+                      )
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          {/* Pagination */}
+          <div className="flex justify-between items-center p-4 border-t border-base-content/5 bg-base-300/60">
+            <span className="text-xs text-base-content/50">
+              عرض {offset + 1} - {Math.min(offset + limit, data?.total ?? 0)} من إجمالي {data?.total ?? 0} قطع
+            </span>
+            <div className="flex gap-1.5">
+              <button
+                className="btn btn-ghost btn-square btn-xs"
+                onClick={() => handlePageChange(offset - limit)}
+                disabled={offset === 0}
+              >
+                <ChevronRight size={16} />
+              </button>
+              <span className="text-xs font-bold self-center px-2">صفحة {page} من {totalPages}</span>
+              <button
+                className="btn btn-ghost btn-square btn-xs"
+                onClick={() => handlePageChange(offset + limit)}
+                disabled={offset + limit >= (data?.total ?? 0)}
+              >
+                <ChevronLeft size={16} />
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
-      <ConfirmationDialog
-        open={deleteTarget != null}
-        onOpenChange={(open) => !open && setDeleteTarget(null)}
-        title="حذف الفستان"
-        description={
-          deleteTarget
-            ? `هل تريد حذف «${deleteTarget.name_ar}» (${deleteTarget.barcode})؟ هذا حذف ناعم.`
-            : null
-        }
-        confirmLabel="حذف"
-        tone="danger"
-        loading={deleteMutation.isPending}
-        onConfirm={async () => {
-          if (!deleteTarget) return
-          await deleteMutation.mutateAsync(deleteTarget.id)
-          setDeleteTarget(null)
-          toast.success('تم الحذف')
-        }}
+      {/* Inventory Create/Edit Dialog */}
+      <InventoryDialog
+        isOpen={dialogOpen}
+        onClose={() => setDialogOpen(false)}
+        item={selectedItem}
       />
-    </Page>
+    </div>
   )
 }

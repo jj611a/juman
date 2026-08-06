@@ -1,139 +1,94 @@
-import { app, ipcMain } from 'electron'
+import { BrowserWindow, ipcMain } from 'electron'
 import type { AxiosInstance } from 'axios'
 import { IpcChannels } from '../../shared/channels'
 import type { ApiResult } from '../../shared/api'
 import type { ApiInvokeRequest } from '../../shared/apiInvoke'
 import type { SessionManager } from '../auth/sessionManager'
-import type { createDesktopHandlers } from '../desktop/stubs'
-import { executeApiInvoke } from './apiInvoke'
-
-type Desktop = ReturnType<typeof createDesktopHandlers>
+import type { MainConfig } from '../config'
 
 function ok<T>(data: T): ApiResult<T> {
   return { ok: true, data }
 }
 
-function fail(error: { code: string; message: string; details?: unknown }): ApiResult<never> {
-  return { ok: false, error }
+function fail(code: string, message: string): ApiResult<never> {
+  return { ok: false, error: { code, message } }
 }
 
 export function registerIpcHandlers(
   session: SessionManager,
-  desktop: Desktop,
-  http: AxiosInstance
+  http: AxiosInstance,
+  config: MainConfig
 ): void {
-  ipcMain.handle(IpcChannels.AUTH_GET_SESSION, async () => {
-    return ok(session.getSessionView())
-  })
+  ipcMain.handle(IpcChannels.AUTH_GET_SESSION, () => ok(session.view()))
 
   ipcMain.handle(
     IpcChannels.AUTH_LOGIN,
-    async (_e, payload: { username: string; password: string; remember?: boolean }) => {
+    async (_e, payload: { username: string; password: string }) => {
       try {
-        return ok(
-          await session.login(payload.username, payload.password, { remember: payload.remember })
-        )
-      } catch (error) {
-        return fail(session.asAppError(error))
+        return ok(await session.login(payload.username, payload.password))
+      } catch (err) {
+        const e = err as { code?: string; message?: string }
+        return fail(e.code ?? 'AUTH_FAILED', e.message ?? 'Login failed')
       }
     }
   )
+
+  ipcMain.handle(IpcChannels.AUTH_LOGOUT, async () => ok(await session.logout()))
 
   ipcMain.handle(
     IpcChannels.AUTH_CHANGE_PASSWORD,
     async (_e, payload: { currentPassword: string; newPassword: string }) => {
       try {
-        return ok(await session.changePassword(payload.currentPassword, payload.newPassword))
-      } catch (error) {
-        return fail(session.asAppError(error))
+        await session.changePassword(payload.currentPassword, payload.newPassword)
+        return ok(undefined)
+      } catch (err) {
+        const e = err as { code?: string; message?: string }
+        return fail(e.code ?? 'PASSWORD_CHANGE_FAILED', e.message ?? 'Password change failed')
       }
     }
   )
 
-  ipcMain.handle(IpcChannels.AUTH_REFRESH, async () => {
-    const refreshed = await session.refresh()
-    return ok({ refreshed, session: session.getSessionView() })
-  })
+  ipcMain.handle(IpcChannels.APP_GET_CONFIG, () =>
+    ok({ apiBaseUrl: config.apiBaseUrl })
+  )
 
-  ipcMain.handle(IpcChannels.AUTH_LOGOUT, async () => {
-    return ok(await session.logout())
+  ipcMain.handle(IpcChannels.WINDOW_MINIMIZE, (e) => {
+    BrowserWindow.fromWebContents(e.sender)?.minimize()
+    return ok(undefined)
   })
-
-  ipcMain.handle(IpcChannels.AUTH_LOGOUT_ALL, async () => {
-    return ok(await session.logoutAll())
+  ipcMain.handle(IpcChannels.WINDOW_MAXIMIZE, (e) => {
+    const win = BrowserWindow.fromWebContents(e.sender)
+    if (!win) return ok(undefined)
+    if (win.isMaximized()) win.unmaximize()
+    else win.maximize()
+    return ok(undefined)
   })
-
-  ipcMain.handle(IpcChannels.AUTH_IS_AUTHENTICATED, async () => {
-    return ok(session.isAuthenticated())
-  })
-
-  ipcMain.handle(IpcChannels.SYSTEM_HEALTH, async () => {
-    try {
-      return ok(await session.systemHealth())
-    } catch (error) {
-      return fail(session.asAppError(error))
-    }
-  })
-
-  ipcMain.handle(IpcChannels.SYSTEM_VERSION, async () => {
-    try {
-      return ok(await session.systemVersion())
-    } catch (error) {
-      return fail(session.asAppError(error))
-    }
+  ipcMain.handle(IpcChannels.WINDOW_CLOSE, (e) => {
+    BrowserWindow.fromWebContents(e.sender)?.close()
+    return ok(undefined)
   })
 
   ipcMain.handle(IpcChannels.API_INVOKE, async (_e, request: ApiInvokeRequest) => {
     try {
-      if (!request || typeof request.path !== 'string' || typeof request.method !== 'string') {
-        return fail({ code: 'INVALID_REQUEST', message: 'طلب API غير صالح' })
+      const token = session.getAccessToken()
+      const res = await http.request({
+        method: request.method,
+        url: request.path,
+        params: request.query,
+        data: request.body,
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined
+      })
+      if (res.status >= 400) {
+        const body = res.data as { message?: string; error?: { message?: string; code?: string } }
+        return fail(
+          body.error?.code ?? `HTTP_${res.status}`,
+          body.error?.message ?? body.message ?? `Request failed (${res.status})`
+        )
       }
-      return ok(await executeApiInvoke(http, request))
-    } catch (error) {
-      return fail(session.asAppError(error))
+      return ok(res.data)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Network error'
+      return fail('NETWORK', message)
     }
   })
-
-  ipcMain.handle(IpcChannels.APP_GET_CONFIG, async () => {
-    return ok({
-      locale: 'ar' as const,
-      direction: 'rtl' as const,
-      appName: 'Juman',
-      appNameAr: 'جمان'
-    })
-  })
-
-  ipcMain.handle(IpcChannels.APP_GET_VERSION, async () => {
-    return ok(app.getVersion())
-  })
-
-  ipcMain.handle(IpcChannels.DESKTOP_DIALOG_MESSAGE, async (_e, options) => {
-    return ok(await desktop.messageBox(options))
-  })
-
-  ipcMain.handle(IpcChannels.DESKTOP_WINDOW_MINIMIZE, async () => {
-    desktop.minimize()
-    return ok(true)
-  })
-
-  ipcMain.handle(IpcChannels.DESKTOP_WINDOW_MAXIMIZE, async () => {
-    desktop.maximize()
-    return ok(true)
-  })
-
-  ipcMain.handle(IpcChannels.DESKTOP_WINDOW_CLOSE, async () => {
-    desktop.close()
-    return ok(true)
-  })
-
-  ipcMain.handle(IpcChannels.DESKTOP_WINDOW_IS_MAXIMIZED, async () => {
-    return ok(desktop.isMaximized())
-  })
-
-  ipcMain.handle(IpcChannels.DESKTOP_WINDOW_SET_TITLE, async (_e, title: string) => {
-    desktop.setTitle(typeof title === 'string' ? title : 'جمان')
-    return ok(true)
-  })
-
-  ipcMain.handle(IpcChannels.DESKTOP_FS_STUB, async () => ok(desktop.fsStub()))
 }

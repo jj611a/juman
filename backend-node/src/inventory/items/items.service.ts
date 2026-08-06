@@ -109,11 +109,14 @@ export class ItemsService {
         'Item catalog fields are not editable in the current lifecycle state',
       );
     }
-    const row = await this.repo.update(
+    await this.repo.update(
       id,
       (await this.data(dto, actor, false)) as Prisma.ItemUncheckedUpdateInput,
     );
-    const enriched = await this.withMedia(row);
+    // UpdateItemDto already accepts barcode / generateBarcode; honor them when
+    // the item has no live binding (create-only path previously attached codes).
+    await this.ensureBarcodeBinding(id, dto, actor);
+    const enriched = await this.withMedia(await this.live(id));
     await this.audit.recordUpdate(
       INVENTORY_MODULE,
       ITEM_ENTITY,
@@ -123,6 +126,47 @@ export class ItemsService {
       { userId: actor?.userId, username: actor?.username },
     );
     return toItemPublic(enriched);
+  }
+
+  /**
+   * Attach a reserved/generated barcode when the DTO requests one and the item
+   * has no live ItemBarcode. Does not replace existing bindings.
+   */
+  private async ensureBarcodeBinding(
+    itemId: string,
+    dto: ItemPayload,
+    actor?: AuthPrincipal,
+  ): Promise<void> {
+    const wants = Boolean(dto.barcode?.trim() || dto.generateBarcode);
+    if (!wants) return;
+    const item = await this.live(itemId);
+    const live = item.barcodes ?? [];
+    if (live.length > 0) {
+      if (dto.barcode?.trim()) {
+        const code = dto.barcode.trim();
+        const match = live.some((b) => b.barcode?.code === code);
+        if (!match) {
+          throw BusinessException.conflict(
+            `Item ${item.internalCode} already has a barcode; replace is not supported via PATCH`,
+          );
+        }
+      }
+      return;
+    }
+    const reserved = dto.barcode?.trim()
+      ? await this.barcode.reserve(
+          { value: dto.barcode, createdBy: actor?.userId },
+          actor,
+        )
+      : await this.barcode.generate({ createdBy: actor?.userId }, actor);
+    const bound = await this.repo.attachBarcodeAtomic(
+      item.id,
+      reserved.id,
+      actor?.userId ?? null,
+    );
+    if (!bound) {
+      throw BusinessException.invariant('Barcode attach did not persist');
+    }
   }
 
   async softDelete(id: string, actor?: AuthPrincipal) {
@@ -321,8 +365,10 @@ export class ItemsService {
       x.createdBy = a?.userId ?? null;
     } else {
       if (d.displayName !== undefined) x.displayName = this.name(d.displayName);
-      if (d.description !== undefined)
-        x.description = d.description.trim() || null;
+      if (d.description !== undefined) {
+        x.description =
+          d.description == null ? null : String(d.description).trim() || null;
+      }
       if (d.purchasePrice !== undefined)
         x.purchasePrice = this.money(d.purchasePrice, 'purchasePrice');
       if (d.rentalPrice !== undefined)

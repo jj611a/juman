@@ -1,35 +1,24 @@
-# Frontend Folder Structure
+# Frontend Folder Structure — Phase 9
 
-```text
+```
 frontend/
-├── electron/
-│   ├── main/          # Main process
-│   ├── preload/       # contextBridge
-│   └── shared/        # IPC contracts (safe for renderer types)
-├── src/
-│   ├── app/           # Providers, router, gates, error boundary
-│   ├── features/      # Empty — business modules later
-│   ├── components/ui/ # shadcn primitives
-│   ├── layouts/
-│   ├── routes/        # Foundation routes only
-│   ├── services/      # Renderer ApiClient
-│   ├── stores/        # Zustand
-│   ├── hooks/
-│   ├── i18n/
-│   ├── styles/
-│   └── types/
-├── tests/
-└── package.json
+  electron/                 Main · preload · shared IPC contracts
+  src/
+    app/                    Providers · ErrorBoundary
+    router/                 Routes · auth guard
+    navigation/             Nav config · permission filter
+    layouts/shell/          AppShell · Sidebar · TopBar · StatusBar
+    features/<domain>/      pages · hooks · api · dialogs (per 9.x)
+    shared/
+      components/           logo · feedback · dialogs · cards
+      constants/            routes · permissions · app
+      hooks/
+      utils/
+    services/api/           Nest DTO clients via IPC
+    ipc/                    Renderer wrappers
+    theme/                  daisyUI juman globals
+  tests/unit/
+  scripts/validate-architecture.mjs
 ```
 
-Root monorepo:
-
-```text
-juman/
-├── backend-python/    # FastAPI V1 spec (uv, read-only on backend-v2)`n├── backend-node/      # NestJS V2 (Prisma + SQLite)
-├── frontend/          # this package (@juman/frontend)
-├── installer/         # reserved
-├── docs/frontend/
-├── package.json
-└── pnpm-workspace.yaml
-```
+`frontend-legacy/` is read-only compatibility history.

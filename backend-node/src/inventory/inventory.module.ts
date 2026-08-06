@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { CustomersModule } from '../customers/customers.module';
 import { CategoriesController } from './categories/categories.controller';
 import { CategoriesRepository } from './categories/categories.repository';
 import { CategoriesService } from './categories/categories.service';
@@ -17,8 +18,10 @@ import { ItemsService } from './items/items.service';
 import { LifecycleController } from './lifecycle/lifecycle.controller';
 import { LifecycleRepository } from './lifecycle/lifecycle.repository';
 import { LifecycleService } from './lifecycle/lifecycle.service';
+import { DemoDataBootstrapService } from './demo-data.bootstrap';
 
 @Module({
+  imports: [CustomersModule],
   controllers: [
     CategoriesController,
     BrandsController,
@@ -40,6 +43,7 @@ import { LifecycleService } from './lifecycle/lifecycle.service';
     ItemsService,
     LifecycleRepository,
     LifecycleService,
+    DemoDataBootstrapService,
   ],
   exports: [
     CategoriesService,

@@ -204,6 +204,17 @@ export class RentalsRepository {
     });
   }
 
+  updateNotes(id: string, notes: string | null, userId?: string | null) {
+    return this.prisma.rental.update({
+      where: { id },
+      data: {
+        notes,
+        updatedBy: userId ?? null,
+      },
+      include: rentalInclude,
+    });
+  }
+
   restore(id: string, userId?: string) {
     return this.prisma.rental.update({
       where: { id },
