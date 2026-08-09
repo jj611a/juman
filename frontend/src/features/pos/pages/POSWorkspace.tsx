@@ -33,10 +33,15 @@ import {
   HelpCircle
 } from 'lucide-react'
 
+import { formatIQD } from '@/shared/utils/money'
+import { useReceiptSettings } from '@/features/receipts/hooks/useReceiptSettings'
+import { useReceiptPrint } from '@/features/receipts/hooks/useReceiptPrint'
+import { buildSaleReceipt } from '@/features/receipts/utils/receipt'
+import { useSession } from '@/app/providers/SessionProvider'
+
 // Formatting helper
 function formatFils(fils: number | null | undefined): string {
-  if (!fils) return '0.00 د.إ'
-  return `${(fils / 1000).toLocaleString('ar-AE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} د.إ`
+  return formatIQD(fils)
 }
 
 export function POSWorkspace() {
@@ -70,7 +75,7 @@ export function POSWorkspace() {
   // Settlement and Payments
   const [discountAmount, setDiscountAmount] = useState(0)
   const [paymentAmountFils, setPaymentAmountFils] = useState(0)
-  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'card'>('cash')
+  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'card' | 'bank_transfer'>('cash')
 
   // Scanner animation trigger
   const [flashSuccess, setFlashSuccess] = useState(false)
@@ -82,6 +87,13 @@ export function POSWorkspace() {
   const [showCancelModal, setShowCancelModal] = useState(false)
   const [showReservationModal, setShowReservationModal] = useState(false)
   const [reservationSearch, setReservationSearch] = useState('')
+
+  // Last completed sale — needed to print its receipt
+  const [lastSale, setLastSale] = useState<import('@/features/pos/api/salesApi').SaleDto | null>(null)
+
+  const printReceipt = useReceiptPrint()
+  const { settings } = useReceiptSettings()
+  const { session } = useSession()
 
   // Live indicators clock
   const [timeStr, setTimeStr] = useState(new Date().toLocaleTimeString('ar-AE'))
@@ -148,8 +160,19 @@ export function POSWorkspace() {
     barcodeInputRef.current?.focus()
   }
 
-  const handlePrintReceipt = () => {
-    setSuccessMsg('تم إرسال الفاتورة إلى طابعة الإيصالات بنجاح.')
+  const handlePrintReceipt = async () => {
+    if (!lastSale) {
+      setErrorMsg('لا توجد فاتورة مكتملة للطباعة.')
+      return
+    }
+    const cashierName = session?.user?.displayName ?? session?.user?.username ?? ''
+    const data = buildSaleReceipt(lastSale, settings, cashierName)
+    const ok = await printReceipt.print(data, settings)
+    if (ok) {
+      setSuccessMsg('تم إرسال الفاتورة إلى طابعة الإيصالات بنجاح.')
+    } else if (!printReceipt.lastResult?.cancelled) {
+      setErrorMsg(printReceipt.error ?? 'فشل الطباعة')
+    }
     barcodeInputRef.current?.focus()
   }
 
@@ -165,7 +188,7 @@ export function POSWorkspace() {
     try {
       // 1. Fetch item by barcode / code
       const listRes = await inventoryApi.list({ q: barcodeInput.trim(), limit: 1 })
-      const matched = listRes.data?.[0]
+      const matched = listRes.items?.[0]
 
       if (!matched) {
         setFlashError(true)
@@ -284,14 +307,22 @@ export function POSWorkspace() {
         if (paymentAmountFils > 0) {
           await salesApi.payment(sale.id, {
             amountFils: paymentAmountFils,
-            method: paymentMethod === 'cash' ? 'cash' : 'card'
+            method: paymentMethod
           })
         }
-        await salesApi.complete(sale.id)
-        
+        const completed = await salesApi.complete(sale.id)
+
         await queryClient.invalidateQueries({ queryKey: ['items'] })
         await queryClient.invalidateQueries({ queryKey: ['sales'] })
-        
+        await queryClient.invalidateQueries({ queryKey: ['settlements'] })
+        await queryClient.invalidateQueries({ queryKey: ['finance'] })
+        await queryClient.invalidateQueries({ queryKey: ['customerOutstanding'] })
+        await queryClient.invalidateQueries({ queryKey: ['customerPayments'] })
+        await queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+        await queryClient.invalidateQueries({ queryKey: ['reports'] })
+        await queryClient.invalidateQueries({ queryKey: ['customers'] })
+
+        setLastSale(completed)
         setSuccessMsg(`تم إكمال فاتورة البيع بنجاح: ${sale.saleNumber}`)
         setCart([])
       }
@@ -404,9 +435,9 @@ export function POSWorkspace() {
               </div>
 
               {/* Dynamic Suggestions List */}
-              {customerSearch && (customersData?.data || []).length > 0 && (
+              {customerSearch && (customersData?.items || []).length > 0 && (
                 <div className="bg-base-200 border border-base-content/5 rounded-xl mt-1 overflow-hidden divide-y divide-base-content/5 shadow-lg z-10 relative">
-                  {(customersData?.data || []).map((c) => (
+                  {(customersData?.items || []).map((c) => (
                     <button
                       key={c.id}
                       type="button"
@@ -447,8 +478,8 @@ export function POSWorkspace() {
             ) : (
               <button 
                 onClick={() => {
-                  if (customersData?.data?.[0]) {
-                    setSelectedCustomer(customersData.data[0])
+                  if (customersData?.items?.[0]) {
+                    setSelectedCustomer(customersData.items[0])
                   }
                 }}
                 className="w-full btn btn-outline border-base-content/10 hover:border-primary/20 btn-md text-xs rounded-xl flex items-center justify-center gap-2 h-10 min-h-0"
@@ -556,7 +587,7 @@ export function POSWorkspace() {
                     </div>
                     <div className="flex items-center gap-4">
                       <span className="font-bold text-primary text-sm">
-                        {((mode === 'rental' ? c.rentalPrice : c.salePrice) / 1000).toLocaleString('ar-AE')} د.إ
+                        {formatFils(mode === 'rental' ? c.rentalPrice : c.salePrice)}
                       </span>
                       <button
                         onClick={() => handleRemoveItem(c.id)}
@@ -671,6 +702,7 @@ export function POSWorkspace() {
                 >
                   <option value="cash">نقدي (Cash)</option>
                   <option value="card">بطاقة بنكية (Card)</option>
+                  <option value="bank_transfer">تحويل (Bank Transfer)</option>
                 </select>
               </div>
               <div className="form-control">

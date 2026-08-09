@@ -1,6 +1,6 @@
 {
   "phase": "6.7.1",
-  "generatedAt": "2026-08-05T09:34:33.364Z",
+  "generatedAt": "2026-08-09T08:18:17.251Z",
   "checks": [
     {
       "id": "rbac.anon",

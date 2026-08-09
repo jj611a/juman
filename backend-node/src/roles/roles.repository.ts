@@ -65,4 +65,11 @@ export class RolesRepository {
     });
     return rows.map((r) => r.permission.key).sort();
   }
+
+  findAllActive() {
+    return this.prisma.role.findMany({
+      where: { isActive: true, deletedAt: null },
+      orderBy: { name: 'asc' },
+    });
+  }
 }

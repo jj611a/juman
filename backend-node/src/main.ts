@@ -74,3 +74,4 @@ void bootstrap().catch((error: unknown) => {
   console.error(`Fatal startup error: ${message}`);
   process.exit(1);
 });
+

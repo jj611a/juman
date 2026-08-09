@@ -24,10 +24,11 @@ import {
   Undo
 } from 'lucide-react'
 
+import { formatIQD } from '@/shared/utils/money'
+
 // Helper for currency conversion
 function formatFils(fils: number | null | undefined): string {
-  if (!fils) return '0.00 د.إ'
-  return `${(fils / 1000).toLocaleString('ar-AE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} د.إ`
+  return formatIQD(fils)
 }
 
 export function RentalDetailPage() {

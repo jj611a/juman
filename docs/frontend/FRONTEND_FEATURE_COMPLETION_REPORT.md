@@ -1,7 +1,7 @@
-# Frontend Feature Completion Report — Phase 2
+# Frontend Feature Completion Report — Phase 2 / Phase 9.11
 
-**Date:** 2026-08-03  
-**Scope:** `frontend-legacy/` wired to Nest V2 HTTP (no UI redesign)  
+**Date:** 2026-08-09  
+**Scope:** `frontend-legacy/` wired to Nest V2 HTTP (no UI redesign); Phase 9.11 added Employees/RBAC portal  
 **Gate for Phase 3:** Nest-backed surfaces usable from Electron; Nest-less domains remain blocked (not invented).
 
 ---
@@ -10,15 +10,15 @@
 
 | Metric | Estimate | Notes |
 |--------|----------|-------|
-| Backend endpoint coverage (Nest HTTP with FE action) | **~92%** | Critical rental/reservation/settlement/media/taxonomy/finance/barcode wired |
-| UI coverage of Nest-backed features | **~90%** | New pages: brands, colors, sizes, finance, barcodes; lifecycle actions on rental detail |
-| True 100% gate | **Not met** | Blocked by missing Nest HTTP + a few FE gaps below |
+| Backend endpoint coverage (Nest HTTP with FE action) | **~95%** | Added Users/Roles/Permissions + Employees CRUD; critical rental/reservation/settlement/media/taxonomy/finance/barcode wired |
+| UI coverage of Nest-backed features | **~93%** | New pages: employees, brands, colors, sizes, finance, barcodes; lifecycle actions on rental detail |
+| True 100% gate | **Not met** | Blocked by missing Nest HTTP (settings/audit/calendar/backups) + a few FE gaps below |
 
 Honest gate: **Phase 3 redesign must not start claiming 100% until blockers below are resolved or explicitly accepted as out-of-scope.**
 
 ---
 
-## Completed in Phase 2 (critical path)
+## Completed in Phase 2 + Phase 9.11 (critical path)
 
 | ID | Item | Status |
 |----|------|--------|
@@ -33,6 +33,10 @@ Honest gate: **Phase 3 redesign must not start claiming 100% until blockers belo
 | M-03 | Settlement refund / discount / late-fee / close / cancel | Done |
 | M-05 | Dashboard returns quick-action removed | Done |
 | Nav | Brands, colors, sizes, finance, barcodes reachable | Done |
+| RBAC-01 | Users/Roles/Permissions HTTP endpoints + FE portal | Done (Phase 9.11) |
+| RBAC-02 | Employees page: list, create, edit, activate/deactivate, unlock, password reset, soft-delete/restore, view permissions | Done (Phase 9.11) |
+| RBAC-03 | TopBar portal dropdown (view switcher) | Done (Phase 9.11) |
+| Seed | `availability.view` permission added to catalog & inventory role | Done (Phase 9.11) |
 
 ---
 
@@ -40,7 +44,7 @@ Honest gate: **Phase 3 redesign must not start claiming 100% until blockers belo
 
 ### Wired / usable
 
-- Auth: login, logout, change-password, session, me  
+- Auth: login, logout, change-password, session, me, admin unlock  
 - Customers CRUD (+ restore API exists; restore UI may remain partial)  
 - Categories / brands / colors / sizes CRUD  
 - Items CRUD, transition, barcode patch, media attach  
@@ -52,6 +56,9 @@ Honest gate: **Phase 3 redesign must not start claiming 100% until blockers belo
 - Media upload/download/metadata  
 - Reports: existing report routes already in reports module (PDF/Excel remain disabled where Nest lacks export)  
 - Health  
+- **Users: list, get, create, update, deactivate, activate, unlock, reset-password, soft-delete, restore**  
+- **Roles: list active with permissions**  
+- **Permissions: catalog list**  
 
 ### Missing frontend screens / thin spots
 
@@ -74,7 +81,6 @@ Honest gate: **Phase 3 redesign must not start claiming 100% until blockers belo
 | Settings editor | No Nest HTTP |
 | Audit log browser | No Nest HTTP (`audit.view` seeded only) |
 | Calendar HTTP | No Nest HTTP (availability enforced server-side on confirm/checkout) |
-| Users / roles CRUD | No Nest HTTP |
 | Backups | No Nest HTTP |
 | Returns / processing / sales modules | V2_UNSUPPORTED façades |
 | Settlement create | Intentionally absent (created on checkout) |
@@ -88,7 +94,7 @@ Honest gate: **Phase 3 redesign must not start claiming 100% until blockers belo
 |-------|----------|
 | `/settlements/new` | Explainer only — redirects users to rental checkout |
 | `/settings`, `/audit` | Routes may still exist; **hidden from nav** |
-| `/returns/*`, `/processing/*`, `/sales/*`, `/users/*`, `/roles/*`, `/calendar/*` | Routes may still mount; **hidden from nav**; API → `v2Unsupported` |
+| `/returns/*`, `/processing/*`, `/sales/*`, `/calendar/*` | Routes may still mount; **hidden from nav**; API → `v2Unsupported` |
 | Dashboard “مرتجع” | Removed |
 
 ---
@@ -106,7 +112,8 @@ Honest gate: **Phase 3 redesign must not start claiming 100% until blockers belo
 - Nav items use `permission` / `anyOf` from shell config.  
 - Action buttons use `PermissionGuard` with Nest-aligned keys where known.  
 - Dual vocab (`rental.view` vs `rentals.view`) still present — do not invent new keys.  
-- Nest-less permissions (`settings.*`, `audit.view`, `calendar.*`) no longer drive primary nav.
+- Nest-less permissions (`settings.*`, `audit.view`, `calendar.*`) no longer drive primary nav.  
+- **Users/Roles/Permissions now have HTTP endpoints; `users.*`, `roles.*`, `permissions.*` drive Employees portal and TopBar portal dropdown.**
 
 ---
 
@@ -114,16 +121,17 @@ Honest gate: **Phase 3 redesign must not start claiming 100% until blockers belo
 
 | Check | Result |
 |-------|--------|
-| `tsc --noEmit` (frontend-legacy) | **Passed** 2026-08-03 |
-| Unit tests (`vitest run`) | Run separately; expand coverage still required for 95% target |
+| `tsc --noEmit` (frontend-legacy) | **Passed** 2026-08-09 |
+| Unit tests (`vitest run`) | **Passed** (66 tests) 2026-08-09 |
+| Architecture validation (`validate:arch`) | **Passed** 2026-08-09 |
 | Target 95%+ | **Not claimed** — expand page/mutation/route tests before Phase 3 |
 
 ---
 
 ## Remaining blockers before redesign (Phase 3)
 
-1. Accept Nest-less domains as product non-goals **or** approve Nest HTTP (settings/audit/users/calendar/backups).  
-2. Fix rental bridge money mapping (TD-04) so detail KPIs aren’t zeros when settlement exists.  
+1. Accept Nest-less domains as product non-goals **or** approve Nest HTTP (settings/audit/calendar/backups).  
+2. Fix rental bridge money mapping (TD-04) so detail KPIs aren't zeros when settlement exists.  
 3. Item history/state UI + restore UIs.  
 4. Auth unlock + richer session/permissions viewer.  
 5. Raise automated test coverage toward 95%.  
@@ -134,5 +142,5 @@ Honest gate: **Phase 3 redesign must not start claiming 100% until blockers belo
 
 ## Verdict
 
-Phase 2 **materially closes critical Nest parity gaps** (checkout/return/settlement modifiers/taxonomy/media/finance/barcodes).  
+Phase 2 + Phase 9.11 **materially closes critical Nest parity gaps** (checkout/return/settlement modifiers/taxonomy/media/finance/barcodes + Users/Roles/Permissions/Employees RBAC).  
 **Do not declare 100%/100% Final Gate passed.** Proceed to Phase 3 only after product accepts blockers above or closes them.

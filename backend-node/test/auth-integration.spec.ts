@@ -184,7 +184,7 @@ describe('Auth integration', () => {
     await request(app.getHttpServer())
       .post('/auth/login')
       .send({ username: 'admin', password: 'NewStrong!Pass1' })
-      .expect(401);
+      .expect(423);
   });
 
   it('GET /health remains public', async () => {

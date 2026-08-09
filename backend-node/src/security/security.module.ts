@@ -3,6 +3,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
 import type { AppConfig } from '../shared/types';
 import { JwtTokenService } from './jwt-token.service';
+import { LoginRateLimiterService } from './login-rate-limiter.service';
 import { OpaqueTokenService } from './opaque-token.service';
 import { PasswordHasherService } from './password-hasher.service';
 import { PasswordPolicyService } from './password-policy.service';
@@ -29,6 +30,7 @@ import { PasswordPolicyService } from './password-policy.service';
     PasswordPolicyService,
     JwtTokenService,
     OpaqueTokenService,
+    LoginRateLimiterService,
   ],
   exports: [
     JwtModule,
@@ -36,6 +38,7 @@ import { PasswordPolicyService } from './password-policy.service';
     PasswordPolicyService,
     JwtTokenService,
     OpaqueTokenService,
+    LoginRateLimiterService,
   ],
 })
 export class SecurityModule {}

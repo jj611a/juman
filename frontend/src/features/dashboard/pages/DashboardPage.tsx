@@ -23,10 +23,11 @@ import {
   Database
 } from 'lucide-react'
 
-// Formatting helper for Fils to AED
+import { formatIQD } from '@/shared/utils/money'
+
+// Formatting helper for Fils to IQD
 function formatFils(fils: number | undefined): string {
-  if (fils === undefined) return '— د.إ'
-  return `${(fils / 1000).toLocaleString('ar-AE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} د.إ`
+  return formatIQD(fils)
 }
 
 export function DashboardPage() {
@@ -46,19 +47,19 @@ export function DashboardPage() {
   }, [summary.data])
 
   // Queries for secondary metrics
-  const customers = useQuery<{ total: number }>({
+  const customers = useQuery<{ items: any[]; meta: { total: number } }>({
     queryKey: ['dashboardCustomers'],
     queryFn: () => apiInvoke({ method: 'GET', path: '/customers' }),
     retry: 1
   })
 
-  const reservations = useQuery<any[]>({
+  const reservations = useQuery<{ items: any[]; meta: { total: number } }>({
     queryKey: ['dashboardReservations'],
     queryFn: () => apiInvoke({ method: 'GET', path: '/reports/rentals/reservations' }),
     retry: 1
   })
 
-  const overdues = useQuery<any[]>({
+  const overdues = useQuery<{ items: any[]; meta: { total: number } }>({
     queryKey: ['dashboardOverdues'],
     queryFn: () => apiInvoke({ method: 'GET', path: '/reports/rentals/overdue' }),
     retry: 1
@@ -133,7 +134,7 @@ export function DashboardPage() {
           />
           <DashboardCard
             title="الحجوزات النشطة"
-            value={reservations.data?.length ?? 0}
+            value={reservations.data?.items?.length ?? 0}
             desc="إجمالي الحجوزات القادمة والمعتمدة"
             icon={<Calendar size={20} />}
             loading={reservations.isLoading}
@@ -165,7 +166,7 @@ export function DashboardPage() {
           />
           <DashboardCard
             title="قاعدة العملاء"
-            value={customers.data?.total ?? 0}
+            value={customers.data?.meta?.total ?? 0}
             desc="إجمالي العملاء المسجلين"
             icon={<Users size={20} />}
             loading={customers.isLoading}
@@ -236,8 +237,8 @@ export function DashboardPage() {
                   <span className="text-base-content/60 flex items-center gap-1">
                     <span className="h-1.5 w-1.5 rounded-full bg-error"></span> عقود تأجير متأخرة المرتجع
                   </span>
-                  <span className={`font-extrabold text-sm ${(overdues.data?.length ?? 0) > 0 ? 'text-error' : 'text-success'}`}>
-                    {overdues.data?.length ?? 0}
+                  <span className={`font-extrabold text-sm ${(overdues.data?.items?.length ?? 0) > 0 ? 'text-error' : 'text-success'}`}>
+                    {overdues.data?.items?.length ?? 0}
                   </span>
                 </div>
                 <div className="flex justify-between items-center py-2 border-b border-base-content/5">

@@ -21,10 +21,11 @@ import {
   Hourglass
 } from 'lucide-react'
 
-// Formatting helper for Fils to AED
+import { formatIQD } from '@/shared/utils/money'
+
+// Formatting helper for Fils to IQD
 function formatFils(fils: number | null | undefined): string {
-  if (!fils) return '— د.إ'
-  return `${(fils / 1000).toLocaleString('ar-AE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} د.إ`
+  return formatIQD(fils)
 }
 
 export function ReservationDetailPage() {

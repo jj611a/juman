@@ -14,6 +14,9 @@ import {
   DEFAULT_ARGON2_TIME_COST,
   DEFAULT_JWT_AUDIENCE,
   DEFAULT_JWT_ISSUER,
+  DEFAULT_LOGIN_RATE_LIMIT_MAX_PER_IP,
+  DEFAULT_LOGIN_RATE_LIMIT_MAX_PER_USERNAME,
+  DEFAULT_LOGIN_RATE_LIMIT_WINDOW_MS,
   DEFAULT_MAX_FAILED_LOGIN_ATTEMPTS,
   DEFAULT_PASSWORD_HISTORY_COUNT,
   DEFAULT_PASSWORD_MIN_LENGTH,
@@ -118,6 +121,18 @@ function buildAuthConfig(environment: AppEnvironmentName): AuthConfig {
     accountLockDurationMinutes: parsePositiveInt(
       process.env.ACCOUNT_LOCK_DURATION_MINUTES,
       DEFAULT_ACCOUNT_LOCK_DURATION_MINUTES,
+    ),
+    loginRateLimitWindowMs: parseStrictPositiveInt(
+      process.env.LOGIN_RATE_LIMIT_WINDOW_MS,
+      DEFAULT_LOGIN_RATE_LIMIT_WINDOW_MS,
+    ),
+    loginRateLimitMaxPerIp: parseStrictPositiveInt(
+      process.env.LOGIN_RATE_LIMIT_MAX_PER_IP,
+      DEFAULT_LOGIN_RATE_LIMIT_MAX_PER_IP,
+    ),
+    loginRateLimitMaxPerUsername: parseStrictPositiveInt(
+      process.env.LOGIN_RATE_LIMIT_MAX_PER_USERNAME,
+      DEFAULT_LOGIN_RATE_LIMIT_MAX_PER_USERNAME,
     ),
     passwordMinLength,
     passwordRequireComplexity: parseBoolean(process.env.PASSWORD_REQUIRE_COMPLEXITY, true),

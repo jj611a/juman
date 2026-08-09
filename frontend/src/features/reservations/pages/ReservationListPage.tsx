@@ -47,7 +47,7 @@ export function ReservationListPage() {
   }
 
   const page = Math.floor(offset / limit) + 1
-  const totalPages = data ? Math.ceil(data.total / limit) : 1
+  const totalPages = data ? Math.ceil((data.meta?.total ?? 0) / limit) : 1
 
   return (
     <div className="space-y-6 select-none" dir="rtl">
@@ -134,7 +134,7 @@ export function ReservationListPage() {
           <AlertTriangle size={18} />
           <span>حدث خطأ أثناء تحميل سجلات الحجوزات.</span>
         </div>
-      ) : (data?.data || []).length === 0 ? (
+      ) : (data?.items || []).length === 0 ? (
         <div className="text-center py-16 bg-base-300/25 border border-dashed border-base-content/10 rounded-2xl flex flex-col items-center justify-center">
           <CalendarCheck size={48} className="text-base-content/20 mb-3" />
           <p className="font-bold text-base-content/50">لا توجد حجوزات مطابقة للبحث</p>
@@ -155,7 +155,7 @@ export function ReservationListPage() {
               </tr>
             </thead>
             <tbody>
-              {(data?.data || []).map((res) => (
+              {(data?.items || []).map((res) => (
                 <tr key={res.id} className="border-b border-base-content/5 hover:bg-base-200/40 transition-colors">
                   <td className="font-mono font-bold text-primary">{res.reservationNumber}</td>
                   <td className="font-bold">{res.customer?.fullName || '—'}</td>
@@ -182,7 +182,7 @@ export function ReservationListPage() {
           {/* Pagination */}
           <div className="flex justify-between items-center p-4 border-t border-base-content/5 bg-base-300/60">
             <span className="text-xs text-base-content/50">
-              عرض {offset + 1} - {Math.min(offset + limit, data?.total ?? 0)} من إجمالي {data?.total ?? 0} حجوزات
+              عرض {offset + 1} - {Math.min(offset + limit, data?.meta?.total ?? 0)} من إجمالي {data?.meta?.total ?? 0} حجوزات
             </span>
             <div className="flex gap-1.5">
               <button
@@ -196,7 +196,7 @@ export function ReservationListPage() {
               <button
                 className="btn btn-ghost btn-square btn-xs"
                 onClick={() => handlePageChange(offset + limit)}
-                disabled={offset + limit >= (data?.total ?? 0)}
+                disabled={offset + limit >= (data?.meta?.total ?? 0)}
               >
                 <ChevronLeft size={16} />
               </button>

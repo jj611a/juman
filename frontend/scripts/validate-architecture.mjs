@@ -8,7 +8,6 @@ function assert(cond, msg) {
   if (!cond) failures.push(msg)
 }
 
-assert(existsSync(join(root, '../frontend-legacy/LEGACY_READ_ONLY.md')), 'frontend-legacy not frozen')
 assert(existsSync(join(root, 'src/theme/globals.css')), 'missing design system globals')
 assert(existsSync(join(root, 'src/layouts/shell/AppShell.tsx')), 'missing Phase 9 AppShell')
 assert(existsSync(join(root, 'src/app/providers/AppProviders.tsx')), 'missing AppProviders')

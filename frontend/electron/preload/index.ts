@@ -3,6 +3,7 @@ import { IpcChannels } from '../shared/channels'
 import type { ApiResult } from '../shared/api'
 import type { ApiInvokeRequest } from '../shared/apiInvoke'
 import type { SessionView } from '../shared/session'
+import type { StartupStatus } from '../shared/startup'
 import type { JumanPreloadApi } from '../shared/preload'
 
 async function invoke<T>(channel: string, ...args: unknown[]): Promise<T> {
@@ -29,8 +30,32 @@ const juman: JumanPreloadApi = {
     invoke: <T = unknown>(request: ApiInvokeRequest) =>
       invoke<T>(IpcChannels.API_INVOKE, request)
   },
+  media: {
+    upload: (file: { name: string; mimeType: string; buffer: ArrayBuffer }) =>
+      invoke(IpcChannels.MEDIA_UPLOAD, file)
+  },
+  receipt: {
+    print: (payload: { html: string; paperWidthMm?: number }) =>
+      invoke(IpcChannels.RECEIPT_PRINT, payload)
+  },
+  reports: {
+    export: (payload: { report: string; format: 'csv' | 'json'; query?: Record<string, unknown> }) =>
+      invoke(IpcChannels.REPORTS_EXPORT, payload)
+  },
   app: {
-    getConfig: () => invoke(IpcChannels.APP_GET_CONFIG)
+    getConfig: () => invoke(IpcChannels.APP_GET_CONFIG),
+    quit: () => invoke(IpcChannels.APP_QUIT)
+  },
+  startup: {
+    getStatus: () => invoke(IpcChannels.STARTUP_GET_STATUS),
+    retry: () => invoke(IpcChannels.STARTUP_RETRY),
+    onChanged: (listener) => {
+      const handler = (_: Electron.IpcRendererEvent, status: StartupStatus): void => {
+        listener(status)
+      }
+      ipcRenderer.on(IpcChannels.STARTUP_CHANGED, handler)
+      return () => ipcRenderer.removeListener(IpcChannels.STARTUP_CHANGED, handler)
+    }
   },
   window: {
     minimize: () => invoke(IpcChannels.WINDOW_MINIMIZE),

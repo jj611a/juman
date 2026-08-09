@@ -50,8 +50,8 @@ export interface ListRentalsQuery {
 }
 
 export interface PaginatedRentals {
-  data: RentalDto[]
-  total: number
+  items: RentalDto[]
+  meta: { total: number; offset: number; limit: number }
 }
 
 export interface CreateRentalPayload {

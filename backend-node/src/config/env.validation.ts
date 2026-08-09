@@ -111,6 +111,24 @@ class EnvironmentVariables {
   @IsOptional()
   @Type(() => Number)
   @IsInt()
+  @Min(1)
+  LOGIN_RATE_LIMIT_WINDOW_MS?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  LOGIN_RATE_LIMIT_MAX_PER_IP?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  LOGIN_RATE_LIMIT_MAX_PER_USERNAME?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
   @Min(8)
   PASSWORD_MIN_LENGTH?: number;
 

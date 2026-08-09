@@ -17,7 +17,9 @@ export const ROUTES = {
   FINANCE: '/finance',
   SETTLEMENTS: '/settlements',
   REPORTS: '/reports',
+  RECEIPT_SETTINGS: '/settings/receipts',
   SHELL_GUIDE: '/shell',
+  EMPLOYEES: '/employees',
 } as const
 
 export type AppRoutePath = (typeof ROUTES)[keyof typeof ROUTES]

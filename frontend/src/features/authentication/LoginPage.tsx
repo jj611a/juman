@@ -9,8 +9,8 @@ import { PasswordChangeDialog } from './PasswordChangeDialog'
 
 export function LoginPage() {
   const { session, loading, login } = useSession()
-  const [username, setUsername] = useState('admin')
-  const [password, setPassword] = useState('Asdf1234.,')
+  const [username, setUsername] = useState('')
+  const [password, setPassword] = useState('')
   const [remember, setRemember] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const [errorType, setErrorType] = useState<'invalid' | 'locked' | 'expired' | 'network' | 'rate_limit' | null>(null)
@@ -93,7 +93,7 @@ export function LoginPage() {
     } catch (err: any) {
       const code = err?.code
       const msg = err?.message || ''
-      const data = err?.data ?? err?.response?.data ?? {}
+      const data = err?.data ?? err?.details ?? err?.response?.data ?? {}
 
       if (code === 'NETWORK' || msg.toLowerCase().includes('network') || msg.toLowerCase().includes('enotfound') || msg.toLowerCase().includes('connrefused')) {
         setErrorType('network')
@@ -265,7 +265,9 @@ export function LoginPage() {
       {/* Force Change Password Dialog */}
       <PasswordChangeDialog
         isOpen={showForceChange}
-        onClose={() => setShowForceChange(false)}
+        onClose={() => {
+          if (!session?.mustChangePassword) setShowForceChange(false)
+        }}
         forceChange={true}
       />
     </div>

@@ -19,6 +19,15 @@ import { RentalListPage } from '@/features/rentals/pages/RentalListPage'
 import { RentalDetailPage } from '@/features/rentals/pages/RentalDetailPage'
 import { POSWorkspace } from '@/features/pos/pages/POSWorkspace'
 import { RouteGuard } from '@/features/permissions/RouteGuard'
+import { SalesListPage } from '@/features/sales/pages/SalesListPage'
+import { SalesDetailPage } from '@/features/sales/pages/SalesDetailPage'
+import { FinancePage } from '@/features/finance/pages/FinancePage'
+import { SettlementsPage } from '@/features/settlements/pages/SettlementsPage'
+import { ReportsPage } from '@/features/reports/pages/ReportsPage'
+import { CategoriesPage } from '@/features/categories/pages/CategoriesPage'
+import { ReceiptSettingsPage } from '@/features/receipts/pages/ReceiptSettingsPage'
+import { EmployeeListPage } from '@/features/employees/pages/EmployeeListPage'
+import { EmployeeDetailPage } from '@/features/employees/pages/EmployeeDetailPage'
 
 function RequireAuth({ children }: { children: ReactNode }) {
   const { session, loading } = useSession()
@@ -89,12 +98,14 @@ export function AppRouter() {
               </RouteGuard>
             } 
           />
-          <Route path="categories" element={placeholder(ROUTES.CATEGORIES)} />
-          <Route path="brands" element={placeholder(ROUTES.BRANDS)} />
-          <Route path="colors" element={placeholder(ROUTES.COLORS)} />
-          <Route path="sizes" element={placeholder(ROUTES.SIZES)} />
-          <Route path="media" element={placeholder(ROUTES.MEDIA)} />
-          <Route path="barcodes" element={placeholder(ROUTES.BARCODES)} />
+          <Route 
+            path="categories" 
+            element={
+              <RouteGuard permission="categories.view">
+                <CategoriesPage />
+              </RouteGuard>
+            } 
+          />
           <Route 
             path="reservations" 
             element={
@@ -127,7 +138,22 @@ export function AppRouter() {
               </RouteGuard>
             } 
           />
-          <Route path="sales" element={placeholder(ROUTES.SALES)} />
+          <Route 
+            path="sales" 
+            element={
+              <RouteGuard permission="sales.view">
+                <SalesListPage />
+              </RouteGuard>
+            } 
+          />
+          <Route 
+            path="sales/:id" 
+            element={
+              <RouteGuard permission="sales.view">
+                <SalesDetailPage />
+              </RouteGuard>
+            } 
+          />
           <Route 
             path="pos" 
             element={
@@ -136,9 +162,54 @@ export function AppRouter() {
               </RouteGuard>
             } 
           />
-          <Route path="finance" element={placeholder(ROUTES.FINANCE)} />
-          <Route path="settlements" element={placeholder(ROUTES.SETTLEMENTS)} />
-          <Route path="reports" element={placeholder(ROUTES.REPORTS)} />
+          <Route 
+            path="finance" 
+            element={
+              <RouteGuard permission="finance.view">
+                <FinancePage />
+              </RouteGuard>
+            } 
+          />
+          <Route 
+            path="settlements" 
+            element={
+              <RouteGuard permission="finance.settlement.view">
+                <SettlementsPage />
+              </RouteGuard>
+            } 
+          />
+          <Route 
+            path="reports" 
+            element={
+              <RouteGuard permission="reports.view">
+                <ReportsPage />
+              </RouteGuard>
+            } 
+          />
+          <Route 
+            path="settings/receipts" 
+            element={
+              <RouteGuard permission="finance.settlement.view">
+                <ReceiptSettingsPage />
+              </RouteGuard>
+            } 
+          />
+          <Route 
+            path="employees" 
+            element={
+              <RouteGuard permission="users.view">
+                <EmployeeListPage />
+              </RouteGuard>
+            } 
+          />
+          <Route 
+            path="employees/:id" 
+            element={
+              <RouteGuard permission="users.view">
+                <EmployeeDetailPage />
+              </RouteGuard>
+            } 
+          />
         </Route>
         <Route path="*" element={<Navigate to={ROUTES.HOME} replace />} />
       </Routes>

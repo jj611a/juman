@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useParams, useNavigate, Link } from 'react-router'
 import { 
   useCustomerDetail, 
@@ -6,6 +7,13 @@ import {
   useCustomerOutstanding, 
   useCustomerPayments 
 } from '../hooks/useCustomers'
+import { useOutstanding as useFinanceOutstanding } from '@/features/finance/hooks/useFinance'
+import { useSettlementsList, useSettlementPayment } from '@/features/settlements/hooks/useSettlements'
+import { useCreateFinancePayment } from '@/features/finance/hooks/useFinance'
+import { PaymentDialog } from '@/features/finance/components/PaymentDialog'
+import { usePermission } from '@/features/permissions/PermissionProvider'
+import { PERMISSION } from '@/shared/constants/permissions'
+import { formatIQD } from '@/shared/utils/money'
 import { 
   ChevronRight, 
   User, 
@@ -16,18 +24,16 @@ import {
   Calendar, 
   Shirt, 
   History,
-  AlertTriangle
+  AlertTriangle,
+  Banknote
 } from 'lucide-react'
-
-// Formatting helper for Fils to AED
-function formatFils(fils: number | undefined): string {
-  if (fils === undefined) return '— د.إ'
-  return `${(fils / 1000).toLocaleString('ar-AE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} د.إ`
-}
 
 export function CustomerDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const { can } = usePermission()
+
+  const [payDialogOpen, setPayDialogOpen] = useState(false)
 
   // Queries
   const detail = useCustomerDetail(id ?? '')
@@ -35,6 +41,53 @@ export function CustomerDetailPage() {
   const reservations = useCustomerReservations(id ?? '')
   const outstanding = useCustomerOutstanding(id ?? '')
   const payments = useCustomerPayments(id ?? '')
+  const financeOutstanding = useFinanceOutstanding(id ? { customerId: id } : {})
+  const settlements = useSettlementsList({
+    customerId: id,
+    sortBy: 'createdAt',
+    sortDir: 'desc',
+    limit: 10,
+  })
+
+  const settlementPayment = useSettlementPayment()
+  const createFinancePayment = useCreateFinancePayment()
+
+  const openSettlement = (settlements.data?.items ?? []).find(
+    (s) => s.status === 'open' || s.status === 'partially_paid',
+  )
+  const canPay = can(PERMISSION.FINANCE_PAYMENT)
+
+  const handlePaySubmit = async (payload: { amountFils: number; method: string; notes?: string; idempotencyKey: string }) => {
+    // When an open/partial settlement exists the backend rejects standalone
+    // finance payments — route through the settlement payment endpoint instead.
+    if (openSettlement) {
+      try {
+        await settlementPayment.mutateAsync({
+          id: openSettlement.id,
+          body: { amountFils: payload.amountFils, method: payload.method, notes: payload.notes, idempotencyKey: payload.idempotencyKey },
+        })
+        setPayDialogOpen(false)
+        return { ok: true }
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : 'فشل تسجيل الدفعة' }
+      }
+    }
+    if (!financeOutstanding.data?.accountId) {
+      return { ok: false, error: 'لا يوجد حساب مالي مرتبط بالعميل' }
+    }
+    try {
+      await createFinancePayment.mutateAsync({
+        accountId: financeOutstanding.data.accountId,
+        amountFils: payload.amountFils,
+        method: payload.method,
+        notes: payload.notes,
+      })
+      setPayDialogOpen(false)
+      return { ok: true }
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : 'فشل تسجيل الدفعة' }
+    }
+  }
 
   if (detail.isLoading) {
     return (
@@ -55,6 +108,7 @@ export function CustomerDetailPage() {
 
   const cust = detail.data
   const initial = (cust.fullName || 'U').charAt(0).toUpperCase()
+  const remainingFils = outstanding.data?.remainingFils ?? 0
 
   return (
     <div className="space-y-6 select-none text-sm" dir="rtl">
@@ -85,7 +139,7 @@ export function CustomerDetailPage() {
             )}
           </div>
           <p className="text-xs text-base-content/40 font-mono">ID: {cust.id}</p>
-          <p className="text-xs text-base-content/50">تم التسجيل في: {new Date(cust.createdAt).toLocaleString('ar-AE')}</p>
+          <p className="text-xs text-base-content/50">تم التسجيل في: {new Date(cust.createdAt).toLocaleString('ar-IQ')}</p>
         </div>
       </div>
 
@@ -125,7 +179,7 @@ export function CustomerDetailPage() {
             {cust.birthDate && (
               <div className="flex flex-col gap-1 border-b border-base-content/5 pb-2">
                 <span className="text-base-content/40">تاريخ الميلاد</span>
-                <span>{new Date(cust.birthDate).toLocaleDateString('ar-AE')}</span>
+                <span>{new Date(cust.birthDate).toLocaleDateString('ar-IQ')}</span>
               </div>
             )}
             {cust.notes && (
@@ -146,15 +200,24 @@ export function CustomerDetailPage() {
                 <DollarSign size={14} className="text-warning" /> المبالغ المعلقة
               </div>
               <div className="stat-value text-lg text-warning mt-1 font-bold">
-                {outstanding.isLoading ? '...' : formatFils(outstanding.data?.remainingFils)}
+                {outstanding.isLoading ? '...' : formatIQD(remainingFils)}
               </div>
+              {canPay && remainingFils > 0 && (
+                <button
+                  onClick={() => setPayDialogOpen(true)}
+                  className="btn btn-primary btn-xs mt-3 gap-1 w-full"
+                >
+                  <Banknote size={12} />
+                  دفع الرصيد
+                </button>
+              )}
             </div>
             <div className="stat rounded-xl border border-base-content/10 bg-base-300/80 p-4 shadow">
               <div className="stat-title text-base-content/50 text-xs flex items-center gap-1.5">
                 <Shirt size={14} className="text-primary" /> عقود التأجير
               </div>
               <div className="stat-value text-lg text-primary mt-1 font-bold">
-                {rentals.isLoading ? '...' : rentals.data?.length ?? 0}
+                {rentals.isLoading ? '...' : rentals.data?.items?.length ?? 0}
               </div>
             </div>
             <div className="stat rounded-xl border border-base-content/10 bg-base-300/80 p-4 shadow">
@@ -162,7 +225,7 @@ export function CustomerDetailPage() {
                 <Calendar size={14} className="text-info" /> الحجوزات النشطة
               </div>
               <div className="stat-value text-lg text-info mt-1 font-bold">
-                {reservations.isLoading ? '...' : reservations.data?.length ?? 0}
+                {reservations.isLoading ? '...' : reservations.data?.items?.length ?? 0}
               </div>
             </div>
           </div>
@@ -175,7 +238,7 @@ export function CustomerDetailPage() {
             </h3>
             {rentals.isLoading ? (
               <span className="loading loading-spinner text-primary loading-sm" />
-            ) : rentals.data?.length === 0 ? (
+            ) : rentals.data?.items?.length === 0 ? (
               <p className="text-xs text-base-content/40 italic">لا توجد عقود تأجير مسجلة لهذا العميل</p>
             ) : (
               <div className="overflow-x-auto text-xs">
@@ -189,11 +252,11 @@ export function CustomerDetailPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {(rentals.data || []).map((rent: any) => (
+                    {(rentals.data?.items || []).map((rent: any) => (
                       <tr key={rent.id} className="border-b border-base-content/5 hover:bg-base-200/40">
                         <td className="font-mono font-bold text-primary">{rent.rentalNumber}</td>
-                        <td>{new Date(rent.rentalDate).toLocaleDateString('ar-AE')}</td>
-                        <td>{new Date(rent.expectedReturnDate).toLocaleDateString('ar-AE')}</td>
+                        <td>{new Date(rent.rentalDate).toLocaleDateString('ar-IQ')}</td>
+                        <td>{new Date(rent.expectedReturnDate).toLocaleDateString('ar-IQ')}</td>
                         <td>
                           <span className="badge badge-outline badge-xs font-semibold">{rent.status}</span>
                         </td>
@@ -213,7 +276,7 @@ export function CustomerDetailPage() {
             </h3>
             {payments.isLoading ? (
               <span className="loading loading-spinner text-primary loading-sm" />
-            ) : payments.data?.length === 0 ? (
+            ) : payments.data?.items?.length === 0 ? (
               <p className="text-xs text-base-content/40 italic">لا توجد معاملات دفع مسجلة لهذا العميل</p>
             ) : (
               <div className="overflow-x-auto text-xs">
@@ -227,16 +290,16 @@ export function CustomerDetailPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {(payments.data || []).map((pay: any) => (
+                    {(payments.data?.items || []).map((pay: any) => (
                       <tr key={pay.id} className="border-b border-base-content/5 hover:bg-base-200/40">
                         <td className="font-mono font-bold text-primary">{pay.paymentNumber}</td>
-                        <td className="font-bold">{formatFils(pay.amountFils)}</td>
+                        <td className="font-bold">{formatIQD(pay.amountFils)}</td>
                         <td>
                           <span className={`badge badge-xs font-bold ${pay.status === 'completed' ? 'badge-success' : 'badge-ghost'}`}>
                             {pay.status}
                           </span>
                         </td>
-                        <td className="text-base-content/50">{new Date(pay.completedAt || pay.createdAt).toLocaleDateString('ar-AE')}</td>
+                        <td className="text-base-content/50">{new Date(pay.completedAt || pay.createdAt).toLocaleDateString('ar-IQ')}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -246,6 +309,17 @@ export function CustomerDetailPage() {
           </div>
         </div>
       </div>
+
+      <PaymentDialog
+        open={payDialogOpen}
+        onClose={() => setPayDialogOpen(false)}
+        targetLabel={`العميل ${cust.fullName}`}
+        subtitle={openSettlement ? `تسوية ${openSettlement.settlementNumber}` : 'دفعة على الحساب'}
+        remainingFils={remainingFils}
+        defaultAmountFils={remainingFils > 0 ? remainingFils : undefined}
+        title="دفع الرصيد"
+        onSubmit={handlePaySubmit}
+      />
     </div>
   )
 }

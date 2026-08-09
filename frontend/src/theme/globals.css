@@ -80,3 +80,27 @@ html[data-glass='off'] .glass {
   backdrop-filter: none;
   background-color: var(--color-base-200);
 }
+
+/* Startup splash: indeterminate gold progress line */
+@keyframes juman-splash-slide {
+  0% {
+    transform: translateX(-100%);
+  }
+  50% {
+    transform: translateX(200%);
+  }
+  100% {
+    transform: translateX(400%);
+  }
+}
+
+.juman-splash-bar {
+  animation: juman-splash-slide 1.6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .juman-splash-bar {
+    animation: none;
+    transform: none;
+  }
+}

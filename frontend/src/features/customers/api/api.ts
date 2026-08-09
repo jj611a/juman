@@ -32,8 +32,8 @@ export interface ListCustomersQuery {
 }
 
 export interface PaginatedCustomers {
-  data: CustomerDto[]
-  total: number
+  items: CustomerDto[]
+  meta: { total: number; offset: number; limit: number }
 }
 
 export interface CreateCustomerPayload {
@@ -77,11 +77,11 @@ export const customersApi = {
   },
 
   // Reports API integration
-  getRentals(id: string): Promise<any[]> {
+  getRentals(id: string): Promise<{ items: any[]; meta: { total: number; offset: number; limit: number } }> {
     return apiInvoke({ method: 'GET', path: `/reports/customers/${id}/rentals` })
   },
 
-  getReservations(id: string): Promise<any[]> {
+  getReservations(id: string): Promise<{ items: any[]; meta: { total: number; offset: number; limit: number } }> {
     return apiInvoke({ method: 'GET', path: `/reports/customers/${id}/reservations` })
   },
 
@@ -89,7 +89,7 @@ export const customersApi = {
     return apiInvoke({ method: 'GET', path: `/reports/customers/${id}/outstanding` })
   },
 
-  getPayments(id: string): Promise<any[]> {
+  getPayments(id: string): Promise<{ items: any[]; meta: { total: number; offset: number; limit: number } }> {
     return apiInvoke({ method: 'GET', path: `/reports/customers/${id}/payments` })
   }
 }

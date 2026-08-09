@@ -1,16 +1,23 @@
 import { apiInvoke } from '@/ipc/api'
 
 export interface SaleItemDto {
+  id: string
   itemId: string
   priceFils?: number
   discountFils?: number
   quantity?: number
   barcode?: string
+  totalFils?: number
+  barcodeSnapshot?: string | null
+  itemNameSnapshot?: string | null
   item?: {
     id: string
-    displayName: string
     internalCode: string
-  }
+    displayName: string
+    status?: string
+    lifecycleState?: string
+    salePrice?: number | null
+  } | null
 }
 
 export interface SaleDto {
@@ -18,23 +25,44 @@ export interface SaleDto {
   saleNumber: string
   customerId?: string | null
   status: 'draft' | 'confirmed' | 'completed' | 'cancelled'
-  notes?: string | null
+  subtotalFils: number
   discountFils: number
   taxFils: number
+  totalFils: number
+  notes?: string | null
+  completedAt?: string | null
   createdAt: string
   updatedAt: string
+  deletedAt?: string | null
   customer?: {
     id: string
+    customerNumber: string
     fullName: string
     phone: string
   } | null
   items?: SaleItemDto[]
   settlement?: {
     id: string
+    settlementNumber: string
+    status: string
     totalFils: number
     paidFils: number
-    status: string
+    remainingFils: number
+    customerId: string
+    accountId: string
   } | null
+  history?: Array<{
+    id: string
+    oldStatus: string
+    newStatus: string
+    action: string
+    reason?: string | null
+    userId?: string | null
+    username?: string | null
+    createdAt: string
+  }>
+  createdBy?: string | null
+  updatedBy?: string | null
 }
 
 export interface CreateSalePayload {
@@ -58,12 +86,16 @@ export interface SalePaymentPayload {
 }
 
 export const salesApi = {
-  list(query: any): Promise<{ data: SaleDto[]; total: number }> {
+  list(query?: Record<string, unknown>): Promise<{ items: SaleDto[]; meta: { total: number; offset: number; limit: number } }> {
     return apiInvoke({ method: 'GET', path: '/sales', query })
   },
 
   getById(id: string): Promise<SaleDto> {
     return apiInvoke({ method: 'GET', path: `/sales/${id}` })
+  },
+
+  history(id: string): Promise<SaleDto['history']> {
+    return apiInvoke({ method: 'GET', path: `/sales/${id}/history` })
   },
 
   create(body: CreateSalePayload): Promise<SaleDto> {

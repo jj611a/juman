@@ -29,6 +29,9 @@ export interface AuthConfig {
   readonly argon2: Argon2Config;
   readonly maxFailedLoginAttempts: number;
   readonly accountLockDurationMinutes: number;
+  readonly loginRateLimitWindowMs: number;
+  readonly loginRateLimitMaxPerIp: number;
+  readonly loginRateLimitMaxPerUsername: number;
   readonly passwordMinLength: number;
   readonly passwordRequireComplexity: boolean;
   readonly passwordHistoryCount: number;

@@ -7,6 +7,8 @@ import type { SafeStorageCredentialStore } from '../security/credentialStore'
 interface TokenBundle {
   accessToken: string
   refreshToken?: string
+  /** When true, the bundle may be persisted (Remember Me). False = session-only. */
+  rememberMe: boolean
   user: SessionView['user']
   mustChangePassword: boolean
 }
@@ -72,6 +74,7 @@ export class SessionManager {
           this.bundle = {
             accessToken: data.tokens.accessToken,
             refreshToken: data.tokens.refreshToken ?? parsed.refreshToken,
+            rememberMe: parsed.rememberMe ?? true,
             user: {
               id: data.tokens.user.id,
               username: data.tokens.user.username,
@@ -85,6 +88,7 @@ export class SessionManager {
         } else {
           this.bundle = {
             ...parsed,
+            rememberMe: parsed.rememberMe ?? true,
             user: {
               id: data.session.user.id,
               username: data.session.user.username,
@@ -130,14 +134,9 @@ export class SessionManager {
   }
 
   async login(username: string, password: string, rememberMe?: boolean): Promise<SessionView> {
-    let effectivePassword = password
-    if (username.trim().toLowerCase() === 'admin' && password === 'Asdf1234.,') {
-      effectivePassword = 'Juman!Bootstrap1'
-    }
-
     const res = await this.http.post('/auth/login', {
       username,
-      password: effectivePassword,
+      password,
       rememberMe,
       deviceName: 'Juman Desktop'
     })
@@ -146,7 +145,9 @@ export class SessionManager {
         (res.data as { message?: string; error?: { message?: string } })?.error?.message ||
         (res.data as { message?: string })?.message ||
         'Login failed'
-      throw { code: 'AUTH_FAILED', message }
+      const code =
+        res.status === 423 ? 'HTTP_423' : res.status === 429 ? 'HTTP_429' : 'AUTH_FAILED'
+      throw { code, message, data: res.data }
     }
     const data = res.data as {
       accessToken: string
@@ -163,6 +164,7 @@ export class SessionManager {
     this.bundle = {
       accessToken: data.accessToken,
       refreshToken: data.refreshToken,
+      rememberMe: rememberMe === true,
       user: {
         id: data.user.id,
         username: data.user.username,
@@ -179,12 +181,15 @@ export class SessionManager {
 
   async logout(): Promise<SessionView> {
     try {
-      if (this.bundle?.accessToken) {
-        await this.http.post(
-          '/auth/logout',
-          {},
-          { headers: { Authorization: `Bearer ${this.bundle.accessToken}` } }
-        )
+      if (this.bundle) {
+        const headers: Record<string, string> = {}
+        if (this.bundle.accessToken) {
+          headers['Authorization'] = `Bearer ${this.bundle.accessToken}`
+        }
+        if (this.bundle.refreshToken) {
+          headers['x-refresh-token'] = this.bundle.refreshToken
+        }
+        await this.http.post('/auth/logout', {}, { headers })
       }
     } catch {
       /* ignore network on logout */
@@ -200,14 +205,9 @@ export class SessionManager {
       throw { code: 'UNAUTHORIZED', message: 'No active session' }
     }
 
-    let effectiveCurrent = currentPassword
-    if (this.bundle.user?.username === 'admin' && currentPassword === 'Asdf1234.,') {
-      effectiveCurrent = 'Juman!Bootstrap1'
-    }
-
     const res = await this.http.post(
       '/auth/change-password',
-      { currentPassword: effectiveCurrent, newPassword },
+      { currentPassword, newPassword },
       { headers: { Authorization: `Bearer ${this.bundle.accessToken}` } }
     )
     if (res.status >= 400) {
@@ -225,11 +225,81 @@ export class SessionManager {
   }
 
   private persist(): void {
-    if (!this.bundle) {
+    if (!this.bundle || !this.bundle.rememberMe) {
       this.store.clear()
       return
     }
     this.store.save(JSON.stringify(this.bundle))
+  }
+
+  /**
+   * Rotate tokens via the backend (GET /auth/session with the refresh token).
+   * Called on 401 so a session survives access-token expiry. Returns true when
+   * a new access token was obtained.
+   */
+  async refreshAccessToken(): Promise<boolean> {
+    if (!this.bundle?.refreshToken || !this.bundle.user) return false
+    const currentUser = this.bundle.user
+    try {
+      const res = await this.http.get('/auth/session', {
+        headers: { 'x-refresh-token': this.bundle.refreshToken }
+      })
+      if (res.status >= 400 || !res.data?.tokens?.accessToken) return false
+      const tokens = res.data.tokens as {
+        accessToken: string
+        refreshToken?: string
+        user?: {
+          id: string
+          username: string
+          fullName?: string
+          roleName?: string
+          mustChangePassword?: boolean
+          permissions?: string[]
+        }
+      }
+      this.bundle = {
+        ...this.bundle,
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken ?? this.bundle.refreshToken,
+        user: {
+          id: tokens.user?.id ?? currentUser.id,
+          username: tokens.user?.username ?? currentUser.username,
+          displayName: tokens.user?.fullName ?? currentUser.displayName,
+          roles: tokens.user?.roleName
+            ? [tokens.user.roleName]
+            : currentUser.roles,
+          permissions: tokens.user?.permissions
+            ? [...tokens.user.permissions]
+            : currentUser.permissions
+        },
+        mustChangePassword:
+          tokens.user?.mustChangePassword ?? this.bundle.mustChangePassword
+      }
+      this.persist()
+      this.emit()
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  /** Force local logout (e.g. refresh failed). Best-effort server revocation. */
+  async terminate(): Promise<SessionView> {
+    try {
+      if (this.bundle?.refreshToken) {
+        await this.http.post(
+          '/auth/logout',
+          {},
+          { headers: { 'x-refresh-token': this.bundle.refreshToken } }
+        )
+      }
+    } catch {
+      /* ignore */
+    }
+    this.bundle = null
+    this.store.clear()
+    this.emit()
+    return this.view()
   }
 
   private emit(): void {

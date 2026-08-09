@@ -1,0 +1,20 @@
+{
+    "keep": {
+        "days": true,
+        "amount": 30
+    },
+    "auditLog": "C:\\Users\\moham\\Desktop\\juman\\logs\\.26f615c84dff5c645c547ce68a38f99e07cb237a-audit.json",
+    "files": [
+        {
+            "date": 1786175225370,
+            "name": "C:\\Users\\moham\\Desktop\\juman\\logs\\requests-2026-08-08.log",
+            "hash": "3da4e91f6a7baa6d758b6732bb09e5d7e969263d67341c440c12788c4487fe60"
+        },
+        {
+            "date": 1786257367492,
+            "name": "C:\\Users\\moham\\Desktop\\juman\\logs\\requests-2026-08-09.log",
+            "hash": "5f3d8286fcdfe09f42a12f833d315f05019d52965fd259d28c6f2f7918025e40"
+        }
+    ],
+    "hashType": "sha256"
+}

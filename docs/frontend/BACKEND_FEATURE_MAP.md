@@ -1,6 +1,6 @@
 # Backend V2 Feature Map
 
-**Generated:** 2026-08-03 (Frontend rebuild Phase 1)  
+**Generated:** 2026-08-09 (Frontend rebuild Phase 9.11 — Employees/RBAC)  
 **Phase 9 note:** Frontend rebuild adapts to this map only — **do not add Nest routes from FE work.**  
 **Refined with:** full controller scan  
 **Source of truth:** `backend-node/` · **No global `/api` prefix** · Paths from host root  
@@ -19,7 +19,7 @@
 
 ---
 
-## HTTP modules (16 controllers · ≈112 routes)
+## HTTP modules (19 controllers · ≈128 routes)
 
 ### Health — `GET /health` (`@Public`)
 
@@ -36,6 +36,39 @@
 | GET | `/me` | JWT |
 
 Login returns `accessToken`, `refreshToken`, `user{id,username,fullName,roleId,roleName,mustChangePassword,permissions,…}`.
+
+### Users — `/users` · `users.*`
+
+| Method | Path | Permission |
+|--------|------|------------|
+| GET | `/` | `users.view` |
+| GET | `/:id` | `users.view` |
+| POST | `/` | `users.create` |
+| PATCH | `/:id` | `users.update` |
+| POST | `/:id/deactivate` | `users.update` |
+| POST | `/:id/activate` | `users.update` |
+| POST | `/:id/unlock` | `users.unlock` |
+| POST | `/:id/reset-password` | `users.update` |
+| DELETE | `/:id` | `users.delete` |
+| POST | `/:id/restore` | `users.update` |
+
+List query: `q`, `status` (active|inactive|locked), `roleId`, `deleted`, `sortBy` (username|fullName|createdAt|updatedAt|lastLoginAt), `sortDir`, `offset`, `limit`.
+
+### Roles — `/roles` · `roles.view`
+
+| Method | Path | Permission |
+|--------|------|------------|
+| GET | `/` | `roles.view` |
+
+Returns active roles with permissionKeys.
+
+### Permissions — `/permissions` · `permissions.view`
+
+| Method | Path | Permission |
+|--------|------|------------|
+| GET | `/` | `permissions.view` |
+
+Returns catalog: `key`, `displayName`, `description`, `module`.
 
 ### Customers — `/customers` · `customer.*`
 
@@ -108,21 +141,20 @@ Dashboard, financial, rentals (current/overdue/returns/reservations/history), in
 | `AvailabilityModule` | Sole overlap allocator (`runExclusive`) |
 | `AuditModule` | Append-only write; **no list HTTP** |
 | `SettingsModule` | Boot defaults; **no settings HTTP** |
-| `UsersModule` / `RolesModule` / `PermissionsModule` | Seed + auth internals; **no CRUD HTTP** |
 
 ---
 
 ## Seeded permissions without Nest HTTP
 
-`users.*` (except unlock), `roles.*`, `permissions.*`, `settings.*`, `audit.view`, `calendar.*`, `return.*`, `inspection.*`, `processing.*`, `sale.*`, `system.*`, singular `reservation.*` / `rental.*` aliases, …
+`settings.*`, `audit.view`, `calendar.*`, `return.*`, `inspection.*`, `processing.*`, `sale.*`, `system.*`, singular `reservation.*` / `rental.*` aliases, …
 
 ---
 
 ## Target FE navigation (HTTP-backed only)
 
-`/login` · `/` · `/customers` · `/inventory` · `/categories` · `/brands` · `/colors` · `/sizes` · `/media` · `/barcodes` · `/reservations` · `/rentals` · `/settlements` · `/finance` · `/reports` · `/hardware` · `/diagnostics`  
+`/login` · `/` · `/customers` · `/inventory` · `/categories` · `/brands` · `/colors` · `/sizes` · `/media` · `/barcodes` · `/reservations` · `/rentals` · `/settlements` · `/finance` · `/reports` · `/employees` · `/hardware` · `/diagnostics`
 
-**Blocked until Nest HTTP:** users, roles, settings editor, audit browser, calendar, backups.
+**Blocked until Nest HTTP:** settings editor, audit browser, calendar, backups.
 
 ---
 
@@ -135,3 +167,7 @@ Dashboard, financial, rentals (current/overdue/returns/reservations/history), in
 ### Phase 2 note (2026-08-03)
 
 `frontend-legacy` now exercises Nest-backed modules for primary ops. Coverage: `FRONTEND_FEATURE_COMPLETION_REPORT.md`. Nest-less domains remain FE non-goals.
+
+### Phase 9.11 note (2026-08-09)
+
+Added Users, Roles, Permissions HTTP endpoints (previously service-only). Admin portal now includes employee management (list, create, edit, activate/deactivate, unlock, password reset, soft-delete/restore, view role permissions). TopBar portal dropdown provides quick module switching. Seed fix: `availability.view` permission added to catalog and inventory role.

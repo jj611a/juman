@@ -14,6 +14,9 @@ interface ErrorBody {
   error: string;
   path: string;
   timestamp: string;
+  code?: string;
+  lockedUntil?: string | null;
+  retryAfterMs?: number;
 }
 
 @Catch()
@@ -60,6 +63,18 @@ export class GlobalHttpExceptionFilter implements ExceptionFilter {
       path: request.url,
       timestamp: new Date().toISOString(),
     };
+
+    if (exception instanceof HttpException) {
+      const payload = exception.getResponse();
+      if (typeof payload === 'object' && payload !== null) {
+        const source = payload as Record<string, unknown>;
+        if (typeof source.code === 'string') body.code = source.code;
+        if (typeof source.lockedUntil === 'string' || source.lockedUntil === null) {
+          body.lockedUntil = source.lockedUntil;
+        }
+        if (typeof source.retryAfterMs === 'number') body.retryAfterMs = source.retryAfterMs;
+      }
+    }
 
     if (status >= 500) {
       this.logger.request('HTTP 5xx', { status, path: request.url, method: request.method });

@@ -27,13 +27,13 @@ Rebuild the Electron desktop client as a modern Arabic-first enterprise POS/ERP 
 | **9.3** | Dashboard redesign | **DONE** |
 | **9.4** | Customers CRM | **DONE** |
 | **9.5** | Inventory catalog | **DONE** |
-| **9.6** | Reservations | **DONE** |
+| **9.6** | Operator integration (sales, finance, settlements, reports, receipts, categories, taxonomy/media/barcode in item workflow) | **DONE** |
 | **9.6A**| Availability API & Panel | **DONE** |
-| **9.7** | Rentals | **DONE** |
+| **9.7** | Operator Completion (receipt production readiness, settings UX, sales reporting fallback, media UX, barcode UX, POS consistency, error handling) | **DONE** |
 | **9.8** | Sales POS | **DONE** |
 | **9.8.3**| POS Redesign | **DONE** |
-| **9.8.4**| POS Finalization | Awaiting approval |
-| **9.9** | Finance & settlements | Pending |
+| **9.8.4**| POS Finalization | **DONE** |
+| **9.9** | Finance & settlements (shared IQD formatting, escapeHtml security fix, reusable PaymentDialog, settlement adjustment permission wiring, POS print + bank_transfer + invalidation, payment/refund/settlement receipts, route-guard fix) | **DONE** |
 | **9.10** | Reports | Pending |
 
 **Stop rule:** After each `9.x` phase, produce verification report and wait for explicit approval before the next phase.

@@ -40,7 +40,7 @@ export function RentalForm({
 
   const handleAddItem = () => {
     if (!currentItemId) return
-    const matched = (itemsData?.data || []).find((i) => i.id === currentItemId)
+    const matched = (itemsData?.items || []).find((i) => i.id === currentItemId)
     if (matched) {
       if (selectedItems.some((i) => i.itemId === matched.id)) return
       setSelectedItems([
@@ -110,7 +110,7 @@ export function RentalForm({
           required
         >
           <option value="">اختر عميل...</option>
-          {(customersData?.data || []).map((c) => (
+          {(customersData?.items || []).map((c) => (
             <option key={c.id} value={c.id}>{c.fullName} ({c.phone})</option>
           ))}
         </select>
@@ -130,7 +130,7 @@ export function RentalForm({
             disabled={busy}
           >
             <option value="">اختر قطعة لإضافتها للتأجير...</option>
-            {(itemsData?.data || [])
+            {(itemsData?.items || [])
               .filter((i) => !selectedItems.some((sel) => sel.itemId === i.id))
               .map((item) => (
                 <option key={item.id} value={item.id}>

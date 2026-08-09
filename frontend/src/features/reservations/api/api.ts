@@ -44,8 +44,8 @@ export interface ListReservationsQuery {
 }
 
 export interface PaginatedReservations {
-  data: ReservationDto[]
-  total: number
+  items: ReservationDto[]
+  meta: { total: number; offset: number; limit: number }
 }
 
 export interface CreateReservationPayload {

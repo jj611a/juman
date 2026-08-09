@@ -7,6 +7,8 @@ export type NavGroupId =
   | 'operations'
   | 'money'
   | 'insights'
+  | 'settings'
+  | 'admin'
 
 export interface NavItem {
   readonly id: string
@@ -29,6 +31,8 @@ export const NAV_GROUPS: readonly NavGroup[] = [
   { id: 'operations', label: 'التشغيل' },
   { id: 'money', label: 'المالية' },
   { id: 'insights', label: 'التقارير' },
+  { id: 'settings', label: 'الإعدادات' },
+  { id: 'admin', label: 'الإدارة' },
 ] as const
 
 export const NAV_ITEMS: readonly NavItem[] = [
@@ -70,48 +74,8 @@ export const NAV_ITEMS: readonly NavItem[] = [
     to: ROUTES.CATEGORIES,
     label: 'التصنيفات',
     group: 'catalog',
-    phase: '9.5',
+    phase: '9.6',
     permission: PERMISSION.CATEGORIES_VIEW,
-  },
-  {
-    id: 'brands',
-    to: ROUTES.BRANDS,
-    label: 'العلامات',
-    group: 'catalog',
-    phase: '9.5',
-    permission: PERMISSION.INVENTORY_VIEW,
-  },
-  {
-    id: 'colors',
-    to: ROUTES.COLORS,
-    label: 'الألوان',
-    group: 'catalog',
-    phase: '9.5',
-    permission: PERMISSION.INVENTORY_VIEW,
-  },
-  {
-    id: 'sizes',
-    to: ROUTES.SIZES,
-    label: 'المقاسات',
-    group: 'catalog',
-    phase: '9.5',
-    permission: PERMISSION.INVENTORY_VIEW,
-  },
-  {
-    id: 'media',
-    to: ROUTES.MEDIA,
-    label: 'الوسائط',
-    group: 'catalog',
-    phase: '9.5',
-    permission: PERMISSION.MEDIA_VIEW,
-  },
-  {
-    id: 'barcodes',
-    to: ROUTES.BARCODES,
-    label: 'الباركود',
-    group: 'catalog',
-    phase: '9.5',
-    permission: PERMISSION.BARCODE_VIEW,
   },
   {
     id: 'pos',
@@ -169,6 +133,24 @@ export const NAV_ITEMS: readonly NavItem[] = [
     group: 'insights',
     phase: '9.10',
     permission: PERMISSION.REPORTS_VIEW,
+  },
+  {
+    id: 'receipt-settings',
+    to: ROUTES.RECEIPT_SETTINGS,
+    label: 'إعدادات الإيصالات',
+    group: 'settings',
+    phase: '9.6',
+    permission: PERMISSION.FINANCE_SETTLEMENT_VIEW,
+    keywords: ['receipt', 'invoice', 'إيصال', 'فواتير', 'طباعة'],
+  },
+  {
+    id: 'employees',
+    to: ROUTES.EMPLOYEES,
+    label: 'الموظفون',
+    group: 'admin',
+    phase: '9.11',
+    permission: PERMISSION.USERS_VIEW,
+    keywords: ['employees', 'users', 'staff', 'الموظفين'],
   },
 ] as const
 

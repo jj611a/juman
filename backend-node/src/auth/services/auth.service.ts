@@ -1,6 +1,8 @@
 import {
   BadRequestException,
   ForbiddenException,
+  HttpException,
+  HttpStatus,
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -123,7 +125,16 @@ export class AuthService {
         deviceName: command.deviceName,
         userAgent: command.userAgent,
       });
-      throw new UnauthorizedException(GENERIC_AUTH_ERROR);
+      throw new HttpException(
+        {
+          message:
+            'Account is temporarily locked due to too many failed login attempts',
+          error: 'Locked',
+          code: 'account_locked',
+          lockedUntil: unlocked.lockedUntil?.toISOString() ?? null,
+        },
+        HttpStatus.LOCKED,
+      );
     }
 
     const passwordOk = await this.users.verifyPassword(unlocked, command.password);
@@ -209,6 +220,45 @@ export class AuthService {
       username: principal.username,
       sessionId: principal.sessionId,
     });
+  }
+
+  /**
+   * Logout driven by a refresh token. Works even when the access token has
+   * already expired (the common case: a long idle session before logout).
+   * Idempotent — a revoked/expired refresh token is treated as logged out.
+   */
+  async logoutWithRefreshToken(refreshToken: string): Promise<void> {
+    try {
+      const current = await this.refreshTokens.assertNotReuse(refreshToken);
+      await this.sessions.revoke(current.sessionId, current.userId);
+      await this.refreshTokens.revokeSessionFamily(current.sessionId);
+      const user = await this.users.findById(current.userId);
+      await this.history.recordLogout({
+        userId: current.userId,
+        username: user?.username ?? 'unknown',
+        sessionId: current.sessionId,
+      });
+    } catch {
+      /* idempotent logout: nothing to revoke */
+    }
+  }
+
+  /**
+   * Logout driven by a still-valid access token. Idempotent.
+   */
+  async logoutWithAccessToken(accessToken: string): Promise<void> {
+    try {
+      const principal = await this.resolvePrincipalFromAccessToken(accessToken);
+      await this.sessions.revoke(principal.sessionId, principal.userId);
+      await this.refreshTokens.revokeSessionFamily(principal.sessionId);
+      await this.history.recordLogout({
+        userId: principal.userId,
+        username: principal.username,
+        sessionId: principal.sessionId,
+      });
+    } catch {
+      /* idempotent logout */
+    }
   }
 
   /**

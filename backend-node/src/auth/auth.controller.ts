@@ -1,7 +1,18 @@
-import { Body, Controller, Get, Headers, HttpCode, Post, Req } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Headers,
+  HttpCode,
+  HttpException,
+  HttpStatus,
+  Post,
+  Req,
+} from '@nestjs/common';
 import type { Request } from 'express';
 import { ACCOUNT_UNLOCK_PERMISSION, AUTH_API_PREFIX } from '../core/auth.constants';
 import { Public } from '../core/public.decorator';
+import { LoginRateLimiterService } from '../security/login-rate-limiter.service';
 import type { AuthPrincipal } from '../shared/types';
 import { CurrentUser } from './decorators/current-user.decorator';
 import { RequirePermissions } from './decorators/require-permissions.decorator';
@@ -12,12 +23,27 @@ import { AuthService } from './services/auth.service';
 
 @Controller(AUTH_API_PREFIX)
 export class AuthController {
-  constructor(private readonly auth: AuthService) {}
+  constructor(
+    private readonly auth: AuthService,
+    private readonly rateLimiter: LoginRateLimiterService,
+  ) {}
 
   @Public()
   @Post('login')
   @HttpCode(200)
   login(@Body() body: LoginDto, @Req() req: Request) {
+    const decision = this.rateLimiter.consume(req.ip ?? 'unknown', body.username);
+    if (!decision.allowed) {
+      throw new HttpException(
+        {
+          message: 'Too many login attempts. Please try again later.',
+          error: 'Too Many Requests',
+          code: 'rate_limit',
+          retryAfterMs: decision.retryAfterMs,
+        },
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
     return this.auth.login({
       username: body.username,
       password: body.password,
@@ -28,10 +54,28 @@ export class AuthController {
     });
   }
 
+  /**
+   * Public so logout always succeeds — including when the access token has
+   * already expired. Prefers the refresh token (long-lived, can always be
+   * revoked); falls back to the access token when present.
+   */
+  @Public()
   @Post('logout')
   @HttpCode(200)
-  async logout(@CurrentUser() user: AuthPrincipal) {
-    await this.auth.logout(user);
+  async logout(
+    @Headers('authorization') authorization?: string,
+    @Headers('x-refresh-token') refreshToken?: string,
+  ) {
+    if (refreshToken) {
+      await this.auth.logoutWithRefreshToken(refreshToken);
+      return { success: true, message: 'Logged out' };
+    }
+    const accessToken = authorization?.startsWith('Bearer ')
+      ? authorization.slice('Bearer '.length).trim()
+      : undefined;
+    if (accessToken) {
+      await this.auth.logoutWithAccessToken(accessToken);
+    }
     return { success: true, message: 'Logged out' };
   }
 

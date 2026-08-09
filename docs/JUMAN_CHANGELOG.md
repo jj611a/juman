@@ -4,6 +4,38 @@ Focused companion changelog for roadmap-facing work. Root [`CHANGELOG.md`](../CH
 
 ---
 
+## 2026-08-09 — Phase 9.11 Employee Management & RBAC Portal
+
+### Added
+
+- **Backend HTTP endpoints** (previously service-only):
+  - Users: `/users` (list, get, create, update, deactivate, activate, unlock, reset-password, soft-delete, restore)
+  - Roles: `/roles` (list active with permissionKeys)
+  - Permissions: `/permissions` (catalog list)
+- **Frontend Employees portal** (`/employees`):
+  - List with search, pagination, filters (status, role), sorting
+  - Create dialog (username, fullName, password, role, mustChangePassword)
+  - Edit dialog (fullName, role)
+  - Detail page: status badges, last login, timestamps, permissions via role
+  - Actions: activate/deactivate, unlock, reset password, soft-delete/restore
+  - Admin safety: self-protection + last-admin guard on deactivate/delete
+- **TopBar portal dropdown** (view switcher): grouped nav by category, keyboard accessible
+- **Navigation**: Employees item in Admin group (requires `users.view`)
+- **Seed fix**: `availability.view` permission added to catalog and Inventory role
+
+### Changed
+
+- `BACKEND_FEATURE_MAP.md` updated with new HTTP modules and FE navigation
+- `FRONTEND_FEATURE_COMPLETION_REPORT.md` updated with RBAC coverage
+- Removed Users/Roles from "Missing backend endpoints" and "Quarantine pages"
+
+### Gates
+
+- Backend: build ✓, lint ✓, vitest ✓ (1 pre-existing flaky test unrelated)
+- Frontend: build ✓, lint ✓, vitest ✓ (66 tests), validate:arch ✓
+
+---
+
 ## 2026-07-30 — Phase 10 Production Release Preparation
 
 ### Added

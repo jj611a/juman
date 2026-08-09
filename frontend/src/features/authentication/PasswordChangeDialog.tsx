@@ -23,16 +23,21 @@ export function PasswordChangeDialog({ isOpen, onClose, forceChange = false }: P
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
 
-  // Password rules validation
+  // Password rules validation (mirrors the backend policy: min 10 chars,
+  // 3 of 4 character classes).
   const rules = useMemo(() => {
     return {
-      length: newPassword.length >= 8,
+      length: newPassword.length >= 10,
       uppercase: /[A-Z]/.test(newPassword),
       lowercase: /[a-z]/.test(newPassword),
       number: /[0-9]/.test(newPassword),
       special: /[^A-Za-z0-9]/.test(newPassword),
     }
   }, [newPassword])
+
+  const classesPassed = useMemo(() => {
+    return [rules.uppercase, rules.lowercase, rules.number, rules.special].filter(Boolean).length
+  }, [rules])
 
   const strength = useMemo(() => {
     const passed = Object.values(rules).filter(Boolean).length
@@ -45,10 +50,11 @@ export function PasswordChangeDialog({ isOpen, onClose, forceChange = false }: P
   const isValid = useMemo(() => {
     return (
       currentPassword.length > 0 &&
-      Object.values(rules).every(Boolean) &&
+      rules.length &&
+      classesPassed >= 3 &&
       newPassword === confirmPassword
     )
-  }, [currentPassword, rules, newPassword, confirmPassword])
+  }, [currentPassword, rules, classesPassed, newPassword, confirmPassword])
 
   if (!isOpen) return null
 
@@ -152,7 +158,7 @@ export function PasswordChangeDialog({ isOpen, onClose, forceChange = false }: P
                 {/* Rules Checklist */}
                 <div className="grid grid-cols-2 gap-1.5 mt-2">
                   <span className={`flex items-center gap-1 ${rules.length ? 'text-success' : 'text-base-content/40'}`}>
-                    {rules.length ? <Check size={12} /> : <X size={12} />} 8 أحرف على الأقل
+                    {rules.length ? <Check size={12} /> : <X size={12} />} 10 أحرف على الأقل
                   </span>
                   <span className={`flex items-center gap-1 ${rules.uppercase ? 'text-success' : 'text-base-content/40'}`}>
                     {rules.uppercase ? <Check size={12} /> : <X size={12} />} حرف كبير (A-Z)

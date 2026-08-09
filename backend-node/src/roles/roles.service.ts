@@ -65,4 +65,26 @@ export class RolesService implements OnModuleInit {
     const keys = await this.listPermissionKeys(roleId);
     return permissionKeys.every((k) => keys.includes(k));
   }
+
+  async listActiveWithPermissions(): Promise<Array<{
+    id: string;
+    name: string;
+    description: string | null;
+    isSystem: boolean;
+    permissionKeys: string[];
+  }>> {
+    const roles = await this.repo.findAllActive();
+    const result = [];
+    for (const role of roles) {
+      const permissionKeys = await this.listPermissionKeys(role.id);
+      result.push({
+        id: role.id,
+        name: role.name,
+        description: role.description,
+        isSystem: role.isSystem,
+        permissionKeys,
+      });
+    }
+    return result;
+  }
 }
